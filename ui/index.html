@@ -12,7 +12,6 @@
                     <div class="logo"><span class="bolt">⚡</span>PULSE</div>
                     <div class="tagline">Feel the model's heartbeat.</div>
                 </div>
-                </div>
             </header>
             <input id="search" type="search" placeholder="Search beats..." />
             <div class="side-label">
@@ -142,10 +141,10 @@
 
         <div id="overlay" class="overlay">
             <div id="settings">
-                <div style="display:flex;justify-content:space-between;align-items:center">
+                <header id="settings-head">
                     <h2>Settings</h2>
-                    <button id="close-settings">✕</button>
-                </div>
+                    <button id="close-settings" title="Close">✕</button>
+                </header>
                 <div id="settings-body">
                     <nav id="settings-tabs">
                         <button data-tab="providers" class="active">Providers</button>
@@ -153,16 +152,14 @@
                     </nav>
                     <div id="settings-content">
                         <div id="pane-providers" class="tab-pane">
+                            <p class="field-label">OpenRouter API key</p>
                             <div class="keyrow">
-                                <input
-                                    id="key"
-                                    type="password"
-                                    placeholder="OpenRouter API key (sk-or-...)"
-                                />
-                                <button class="btn" id="save">Save key</button>
+                                <input id="key" type="password" placeholder="sk-or-..." />
+                                <button class="btn" id="save">Save</button>
                             </div>
                             <p id="settings-status"></p>
                             <div class="divider"></div>
+                            <p class="field-label">Models</p>
                             <div class="modelbar">
                                 <input id="filter" type="search" placeholder="Filter models…" />
                                 <button class="btn" id="load">List models</button>
@@ -183,10 +180,14 @@
                             </div>
                         </div>
                         <div id="pane-appearance" class="tab-pane" style="display:none">
-                            <p class="pane-label">THEME</p>
+                            <p class="field-label">Theme</p>
                             <div id="theme-seg">
-                                <button data-theme="light">☀ Light</button>
-                                <button data-theme="dark" class="active">🌙 Dark</button>
+                                <button data-theme="light">
+                                    <span class="swatch swatch-light"></span>Light
+                                </button>
+                                <button data-theme="dark" class="active">
+                                    <span class="swatch swatch-dark"></span>Dark
+                                </button>
                             </div>
                         </div>
                     </div>
