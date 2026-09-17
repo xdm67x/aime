@@ -1,6 +1,7 @@
 // App/window assembly. Window title, size and frontendDist are declarative in
 // tauri.conf.json; this file only wires the command handlers.
 
+mod beats;
 mod config;
 mod db;
 mod openrouter;
@@ -12,6 +13,11 @@ fn main() {
             config::save_api_key,
             config::get_api_key,
             openrouter::list_models,
+            beats::list_beats,
+            beats::create_beat,
+            beats::set_beat_archived,
+            beats::delete_beat,
+            beats::record_beat_usage,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
