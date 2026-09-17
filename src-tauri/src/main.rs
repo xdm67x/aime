@@ -6,6 +6,7 @@ mod db;
 mod openrouter;
 
 fn main() {
+    openrouter::spawn_refresh_loop();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             config::save_api_key,
