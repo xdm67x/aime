@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pulse</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { font: 13px/1.4 -apple-system, system-ui, sans-serif; background: #111; color: #ddd; margin: 0; padding: 16px; }
+  h1 { font-size: 15px; margin: 0 0 12px; }
+  .bar { display: flex; gap: 8px; margin-bottom: 12px; }
+  input { background: #1c1c1e; color: #ddd; border: 1px solid #333; border-radius: 6px; padding: 7px 10px; }
+  #key { flex: 1; }
+  button { background: #2f6feb; color: #fff; border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { margin: 0 0 10px; min-height: 1.2em; color: #888; }
+  #status.err { color: #f66; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; position: sticky; top: -16px; background: #111; padding: 6px 8px; border-bottom: 1px solid #333; color: #999; font-weight: 500; }
+  td { padding: 5px 8px; border-bottom: 1px solid #222; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .scroll { max-height: calc(100vh - 130px); overflow-y: auto; }
+  .free { color: #6c6; }
+</style>
+</head>
+<body>
+<h1>Pulse — OpenRouter models</h1>
+<div class="bar">
+  <input id="key" type="password" placeholder="OpenRouter API key (sk-or-...)">
+  <button id="save">Save key</button>
+  <input id="filter" type="search" placeholder="Filter models…" style="width:180px">
+  <button id="load">List models</button>
+</div>
+<p id="status"></p>
+<div class="scroll">
+  <table>
+    <thead><tr><th>Model ID</th><th>Name</th><th class="num">Context</th><th class="num">Input $/1M</th><th class="num">Output $/1M</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<script>
+const { invoke } = window.__TAURI__.core;
+const $ = (id) => document.getElementById(id);
+const status = (msg, err = false) => { $('status').textContent = msg; $('status').className = err ? 'err' : ''; };
+
+let models = [];
+function price(x) {
+  const p = parseFloat(x);
+  if (!p) return '<span class="free">Free</span>';
+  return '$' + (p * 1e6).toFixed(p * 1e6 < 10 ? 3 : 2);
+}
+function render() {
+  const q = $('filter').value.toLowerCase();
+  $('rows').innerHTML = models
+    .filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))
+    .map(m => `<tr><td>${m.id}</td><td>${m.name}</td><td class="num">${m.context_length ?? '—'}</td>
+      <td class="num">${price(m.pricing.prompt)}</td><td class="num">${price(m.pricing.completion)}</td></tr>`)
+    .join('');
+}
+
+$('save').onclick = async () => {
+  try {
+    await invoke('save_api_key', { key: $('key').value });
+    status('API key saved.');
+  } catch (e) { status(String(e), true); }
+};
+
+$('load').onclick = async () => {
+  $('load').disabled = true;
+  status('Loading models…');
+  try {
+    models = await invoke('list_models');
+    status(`${models.length} models from OpenRouter.`);
+    render();
+  } catch (e) { status(String(e), true); }
+  $('load').disabled = false;
+};
+$('filter').oninput = render;
+
+(async () => {
+  const key = await invoke('get_api_key');
+  if (key) $('key').placeholder = `Saved: ••••${key.slice(-4)} (enter to replace)`;
+})();
+</script>
+</body>
+</html>
