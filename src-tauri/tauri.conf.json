@@ -11,8 +11,8 @@
     "windows": [
       {
         "title": "Pulse",
-        "width": 960,
-        "height": 660
+        "width": 1280,
+        "height": 800
       }
     ],
     "security": {

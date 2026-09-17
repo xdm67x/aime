@@ -6,42 +6,203 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { font: 13px/1.4 -apple-system, system-ui, sans-serif; background: #111; color: #ddd; margin: 0; padding: 16px; }
-  h1 { font-size: 15px; margin: 0 0 12px; }
-  .bar { display: flex; gap: 8px; margin-bottom: 12px; }
-  input { background: #1c1c1e; color: #ddd; border: 1px solid #333; border-radius: 6px; padding: 7px 10px; }
-  #key { flex: 1; }
-  button { background: #2f6feb; color: #fff; border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; }
-  button:disabled { opacity: .5; cursor: default; }
-  #status { margin: 0 0 10px; min-height: 1.2em; color: #888; }
-  #status.err { color: #f66; }
+  body { font: 14px/1.45 -apple-system, system-ui, sans-serif; background: #0b0b0c; color: #e4e4e6; margin: 0; height: 100vh; display: flex; overflow: hidden; }
+
+  /* ---- left panel ---- */
+  #side { width: 300px; min-width: 300px; background: #101012; border-right: 1px solid #232326; padding: 22px 18px; display: flex; flex-direction: column; }
+  #side header { display: flex; align-items: flex-start; justify-content: space-between; }
+  .logo { font-size: 20px; font-weight: 800; letter-spacing: .5px; }
+  .logo .bolt { color: #ff9f0a; margin-right: 8px; }
+  .tagline { color: #8a8a90; font-size: 13px; margin: 4px 0 22px; }
+  #toggle { background: none; border: 0; color: #8a8a90; font-size: 16px; cursor: pointer; padding: 2px 6px; }
+  #toggle:hover { color: #fff; }
+  #side.collapsed { width: 48px; min-width: 48px; padding: 14px 8px; display: flex; flex-direction: column; align-items: center; }
+  #side.collapsed #search, #side.collapsed .side-label, #side.collapsed #runs,
+  #side.collapsed .logo, #side.collapsed .tagline { display: none; }
+  #side.collapsed #toggle::before { content: '»'; }
+  #side.collapsed #settings-btn { margin-top: auto; padding: 9px 0; width: 32px; font-size: 16px; text-align: center; }
+  #side.collapsed #settings-btn span { display: none; }
+  #toggle::before { content: '«'; }
+
+  #search { width: 100%; background: #1a1a1d; border: 1px solid #2c2c30; border-radius: 8px; padding: 9px 12px; color: #e4e4e6; margin-bottom: 22px; }
+  #search::placeholder { color: #6b6b71; }
+  .side-label { color: #7a7a80; font-size: 11px; font-weight: 600; letter-spacing: 1.5px; margin-bottom: 10px; }
+  .run { padding: 10px 14px; border-radius: 8px; border-left: 3px solid transparent; color: #a5a5ab; cursor: pointer; margin-bottom: 4px; }
+  .run:hover { background: #17171a; }
+  .run.active { background: #1b1b1f; border-left-color: #3b82f6; color: #f0f0f2; }
+  .run.dim { color: #6b6b71; }
+
+  #settings-btn { margin-top: auto; background: none; border: 1px solid #2c2c30; border-radius: 8px; color: #a5a5ab; padding: 9px 12px; cursor: pointer; text-align: left; font-size: 13px; }
+  #settings-btn:hover { background: #1a1a1d; color: #e4e4e6; }
+
+  /* ---- main chat ---- */
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #chat-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid #232326; }
+  #run-title { font-weight: 700; font-size: 16px; }
+  .chips { display: flex; gap: 10px; }
+  .chip { border: 1px solid rgba(103,232,249,.45); color: #67e8f9; border-radius: 999px; padding: 5px 14px; font-size: 13px; }
+  #chat { flex: 1; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 6px; }
+  .msg { max-width: 72%; padding: 13px 18px; border-radius: 10px; background: #1c1c1f; border: 1px solid #26262a; }
+  .msg.user { align-self: flex-end; background: #202024; }
+  .meta { font-size: 12.5px; color: #8a8a90; margin-bottom: 5px; }
+  .meta.agent { color: #67e8f9; }
+  .meta .t { color: #8a8a90; }
+  .msg.user + .meta-user, .pair { margin-bottom: 14px; }
+  .row-user { align-self: flex-end; text-align: right; }
+  .row-agent { align-self: flex-start; }
+
+  #composer { display: flex; gap: 12px; padding: 16px 24px 20px; border-top: 1px solid #232326; }
+  #input { flex: 1; background: #1a1a1d; border: 1px solid #2c2c30; border-radius: 8px; padding: 12px 14px; color: #e4e4e6; font: inherit; }
+  #input::placeholder { color: #6b6b71; }
+  #send { background: #f2f2f4; color: #111; border: 0; border-radius: 7px; padding: 10px 22px; font-weight: 600; cursor: pointer; }
+  #send:hover { background: #fff; }
+
+  /* ---- settings modal ---- */
+  #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; }
+  #overlay.open { display: flex; }
+  #settings { width: 680px; max-height: 80vh; background: #141416; border: 1px solid #2c2c30; border-radius: 14px; padding: 22px 24px; display: flex; flex-direction: column; }
+  #settings h2 { margin: 0 0 14px; font-size: 16px; }
+  .keyrow { display: flex; gap: 8px; margin-bottom: 8px; }
+  #key { flex: 1; background: #1c1c1f; color: #e4e4e6; border: 1px solid #2c2c30; border-radius: 7px; padding: 8px 11px; }
+  .btn { background: #2f6feb; color: #fff; border: 0; border-radius: 7px; padding: 8px 15px; cursor: pointer; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  #settings-status { color: #8a8a90; font-size: 12.5px; min-height: 1.2em; margin: 0 0 12px; }
+  #settings-status.err { color: #f66; }
+  .divider { border-top: 1px solid #26262a; margin: 6px 0 14px; }
+  .modelbar { display: flex; gap: 8px; margin-bottom: 10px; }
+  #filter { width: 200px; background: #1c1c1f; color: #e4e4e6; border: 1px solid #2c2c30; border-radius: 7px; padding: 8px 11px; }
   table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; position: sticky; top: -16px; background: #111; padding: 6px 8px; border-bottom: 1px solid #333; color: #999; font-weight: 500; }
-  td { padding: 5px 8px; border-bottom: 1px solid #222; }
+  .scroll { overflow-y: auto; min-height: 120px; }
+  th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #2c2c30; color: #8a8a90; font-weight: 500; font-size: 12.5px; position: sticky; top: 0; background: #141416; }
+  td { padding: 5px 8px; border-bottom: 1px solid #1f1f22; font-size: 13px; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .scroll { max-height: calc(100vh - 130px); overflow-y: auto; }
   .free { color: #6c6; }
+  #close-settings { background: none; border: 0; color: #8a8a90; font-size: 18px; cursor: pointer; }
 </style>
 </head>
 <body>
-<h1>Pulse — OpenRouter models</h1>
-<div class="bar">
-  <input id="key" type="password" placeholder="OpenRouter API key (sk-or-...)">
-  <button id="save">Save key</button>
-  <input id="filter" type="search" placeholder="Filter models…" style="width:180px">
-  <button id="load">List models</button>
+
+<aside id="side">
+  <header>
+    <div>
+      <div class="logo"><span class="bolt">⚡</span>PULSE</div>
+      <div class="tagline">Run light. Test fast.</div>
+    </div>
+    <button id="toggle" title="Collapse panel"></button>
+  </header>
+  <input id="search" type="search" placeholder="Search runs / tasks...">
+  <div class="side-label">ACTIVE HARNESS RUNS</div>
+  <div id="runs"></div>
+  <button id="settings-btn">⚙<span> Settings</span></button>
+</aside>
+
+<section id="main">
+  <div id="chat-head">
+    <div id="run-title"></div>
+    <div class="chips">
+      <span class="chip">@eval</span><span class="chip">@bench</span>
+      <span class="chip">@prompt-craft</span><span class="chip">@guard</span>
+    </div>
+  </div>
+  <div id="chat"></div>
+  <div id="composer">
+    <input id="input" placeholder="Type a message or use @agent...">
+    <button id="send">Send</button>
+  </div>
+</section>
+
+<div id="overlay">
+  <div id="settings">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2>Settings</h2>
+      <button id="close-settings">✕</button>
+    </div>
+    <div class="keyrow">
+      <input id="key" type="password" placeholder="OpenRouter API key (sk-or-...)">
+      <button class="btn" id="save">Save key</button>
+    </div>
+    <p id="settings-status"></p>
+    <div class="divider"></div>
+    <div class="modelbar">
+      <input id="filter" type="search" placeholder="Filter models…">
+      <button class="btn" id="load">List models</button>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Model ID</th><th>Name</th><th class="num">Context</th><th class="num">Input $/1M</th><th class="num">Output $/1M</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
-<p id="status"></p>
-<div class="scroll">
-  <table>
-    <thead><tr><th>Model ID</th><th>Name</th><th class="num">Context</th><th class="num">Input $/1M</th><th class="num">Output $/1M</th></tr></thead>
-    <tbody id="rows"></tbody>
-  </table>
-</div>
+
 <script>
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
-const status = (msg, err = false) => { $('status').textContent = msg; $('status').className = err ? 'err' : ''; };
+
+/* ---- sidebar runs (static shell data) ---- */
+const runs = [
+  { title: 'Eval Llama-3 8B', active: true },
+  { title: 'Benchmark Mistral Small' },
+  { title: 'Fine-tuning Checkpoint #4' },
+  { title: 'Dataset Validation', dim: true },
+];
+function renderRuns(q = '') {
+  $('runs').innerHTML = runs
+    .filter(r => r.title.toLowerCase().includes(q))
+    .map((r, i) => `<div class="run ${r.active ? 'active' : ''} ${r.dim ? 'dim' : ''}" data-i="${runs.indexOf(r)}">${r.title}</div>`)
+    .join('');
+}
+$('runs').onclick = (e) => {
+  const el = e.target.closest('.run');
+  if (!el) return;
+  runs.forEach(r => r.active = false);
+  runs[el.dataset.i].active = true;
+  renderRuns($('search').value.toLowerCase());
+  $('run-title').textContent = 'Run: ' + runs[el.dataset.i].title;
+};
+$('search').oninput = () => renderRuns($('search').value.toLowerCase());
+renderRuns();
+$('run-title').textContent = 'Run: ' + runs.find(r => r.active).title;
+
+/* ---- chat (static shell: seed messages from mockup, Send appends locally) ---- */
+const chat = $('chat');
+function addMsg({ who, time, text }) {
+  const wrap = document.createElement('div');
+  wrap.className = who === 'user' ? 'row-user' : 'row-agent';
+  if (who === 'user') {
+    wrap.innerHTML = `<div class="meta">User <span class="t">${time}</span></div><div class="msg user"></div>`;
+  } else {
+    wrap.innerHTML = `<div class="meta agent">${who} <span class="t">${time}</span></div><div class="msg"></div>`;
+  }
+  wrap.querySelector('.msg').textContent = text;
+  chat.appendChild(wrap);
+  chat.scrollTop = chat.scrollHeight;
+}
+addMsg({ who: 'user', time: '10:42 AM', text: '@eval Run benchmark check on Llama-3 8B' });
+addMsg({ who: '@eval', time: '10:42 AM', text: 'Eval Agent: Model Llama-3 8B scored 78.4% accuracy on GSM8K. Latency: 42ms/tok. Memory footprint: 16.2GB.' });
+addMsg({ who: 'user', time: '10:44 AM', text: '@guard Check safety bounds for fine-tuning pipeline' });
+addMsg({ who: '@guard', time: '10:44 AM', text: 'Guard Agent: Safety check passed. Toxicity: 0.001. PII Redaction: Active. Jailbreak score: 0.00.' });
+
+function send() {
+  const text = $('input').value.trim();
+  if (!text) return;
+  addMsg({ who: 'user', time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), text });
+  $('input').value = '';
+}
+$('send').onclick = send;
+$('input').onkeydown = (e) => { if (e.key === 'Enter') send(); };
+
+/* ---- collapse / expand sidebar ---- */
+$('toggle').onclick = () => $('side').classList.toggle('collapsed');
+
+/* ---- settings ---- */
+const status = (msg, err = false) => { $('settings-status').textContent = msg; $('settings-status').className = err ? 'err' : ''; };
+
+$('settings-btn').onclick = () => $('overlay').classList.add('open');
+$('close-settings').onclick = () => $('overlay').classList.remove('open');
+$('overlay').onclick = (e) => { if (e.target === $('overlay')) $('overlay').classList.remove('open'); };
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('overlay').classList.remove('open'); });
 
 let models = [];
 function price(x) {
@@ -57,14 +218,12 @@ function render() {
       <td class="num">${price(m.pricing.prompt)}</td><td class="num">${price(m.pricing.completion)}</td></tr>`)
     .join('');
 }
-
 $('save').onclick = async () => {
   try {
     await invoke('save_api_key', { key: $('key').value });
     status('API key saved.');
   } catch (e) { status(String(e), true); }
 };
-
 $('load').onclick = async () => {
   $('load').disabled = true;
   status('Loading models…');
