@@ -46,49 +46,6 @@ body {
     font-size: 13px;
     margin: 4px 0 22px;
 }
-#toggle {
-    background: none;
-    border: 0;
-    color: #8a8a90;
-    font-size: 16px;
-    cursor: pointer;
-    padding: 2px 6px;
-}
-#toggle:hover {
-    color: #fff;
-}
-#side.collapsed {
-    width: 48px;
-    min-width: 48px;
-    padding: 14px 8px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-#side.collapsed #search,
-#side.collapsed .side-label,
-#side.collapsed #runs,
-#side.collapsed .logo,
-#side.collapsed .tagline {
-    display: none;
-}
-#side.collapsed #toggle::before {
-    content: '»';
-}
-#side.collapsed #settings-btn {
-    margin-top: auto;
-    padding: 9px 0;
-    width: 32px;
-    font-size: 16px;
-    text-align: center;
-}
-#side.collapsed #settings-btn span {
-    display: none;
-}
-#toggle::before {
-    content: '«';
-}
-
 #search {
     width: 100%;
     background: #1a1a1d;

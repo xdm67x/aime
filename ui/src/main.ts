@@ -183,9 +183,6 @@ $('input').onkeydown = (e) => {
     if (e.key === 'Enter') send()
 }
 
-/* ---- collapse / expand sidebar ---- */
-$('toggle').onclick = () => $('side').classList.toggle('collapsed')
-
 /* ---- settings ---- */
 const setStatus = (msg: string, err = false) => {
     $('settings-status').textContent = msg
