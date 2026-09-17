@@ -111,7 +111,7 @@
         <div id="delete-overlay" class="overlay">
             <div class="modal">
                 <h2>Delete beat</h2>
-                <p style="color:#a5a5ab;margin:0 0 8px">
+                <p style="color:var(--muted);margin:0 0 8px">
                     Permanently delete <span id="confirm-delete-name"></span> and its usage history?
                     This cannot be undone.
                 </p>
@@ -146,29 +146,50 @@
                     <h2>Settings</h2>
                     <button id="close-settings">✕</button>
                 </div>
-                <div class="keyrow">
-                    <input id="key" type="password" placeholder="OpenRouter API key (sk-or-...)" />
-                    <button class="btn" id="save">Save key</button>
-                </div>
-                <p id="settings-status"></p>
-                <div class="divider"></div>
-                <div class="modelbar">
-                    <input id="filter" type="search" placeholder="Filter models…" />
-                    <button class="btn" id="load">List models</button>
-                </div>
-                <div class="scroll">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Model ID</th>
-                                <th>Name</th>
-                                <th class="num">Context</th>
-                                <th class="num">Input $/1M</th>
-                                <th class="num">Output $/1M</th>
-                            </tr>
-                        </thead>
-                        <tbody id="rows"></tbody>
-                    </table>
+                <div id="settings-body">
+                    <nav id="settings-tabs">
+                        <button data-tab="providers" class="active">Providers</button>
+                        <button data-tab="appearance">Appearance</button>
+                    </nav>
+                    <div id="settings-content">
+                        <div id="pane-providers" class="tab-pane">
+                            <div class="keyrow">
+                                <input
+                                    id="key"
+                                    type="password"
+                                    placeholder="OpenRouter API key (sk-or-...)"
+                                />
+                                <button class="btn" id="save">Save key</button>
+                            </div>
+                            <p id="settings-status"></p>
+                            <div class="divider"></div>
+                            <div class="modelbar">
+                                <input id="filter" type="search" placeholder="Filter models…" />
+                                <button class="btn" id="load">List models</button>
+                            </div>
+                            <div class="scroll">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Model ID</th>
+                                            <th>Name</th>
+                                            <th class="num">Context</th>
+                                            <th class="num">Input $/1M</th>
+                                            <th class="num">Output $/1M</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="rows"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div id="pane-appearance" class="tab-pane" style="display:none">
+                            <p class="pane-label">THEME</p>
+                            <div id="theme-seg">
+                                <button data-theme="light">☀ Light</button>
+                                <button data-theme="dark" class="active">🌙 Dark</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

@@ -242,6 +242,27 @@ $('load').onclick = async () => {
 }
 $('filter').oninput = render
 
+/* ---- settings tabs ---- */
+const showTab = (name: string) => {
+    for (const b of document.querySelectorAll<HTMLButtonElement>('#settings-tabs button'))
+        b.classList.toggle('active', b.dataset.tab === name)
+    for (const p of document.querySelectorAll('.tab-pane'))
+        (p as HTMLElement).style.display = p.id === `pane-${name}` ? '' : 'none'
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('#settings-tabs button'))
+    b.onclick = () => showTab(b.dataset.tab!)
+
+/* ---- appearance: theme ---- */
+const applyTheme = (t: string) => {
+    document.documentElement.dataset.theme = t
+    localStorage.setItem('theme', t)
+    for (const b of document.querySelectorAll<HTMLButtonElement>('#theme-seg button'))
+        b.classList.toggle('active', b.dataset.theme === t)
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('#theme-seg button'))
+    b.onclick = () => applyTheme(b.dataset.theme!)
+applyTheme(localStorage.getItem('theme') ?? 'dark')
+
 ;(async () => {
     const key = await invoke<string>('get_api_key')
     if (key)
