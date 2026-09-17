@@ -63,8 +63,10 @@
   #composer { display: flex; gap: 12px; padding: 16px 24px 20px; border-top: 1px solid #232326; }
   #input { flex: 1; background: #1a1a1d; border: 1px solid #2c2c30; border-radius: 8px; padding: 12px 14px; color: #e4e4e6; font: inherit; }
   #input::placeholder { color: #6b6b71; }
-  #send { background: #f2f2f4; color: #111; border: 0; border-radius: 7px; padding: 10px 22px; font-weight: 600; cursor: pointer; }
-  #send:hover { background: #fff; }
+  #main.fresh #chat { display: none; }
+  #main.fresh #composer { margin: auto auto 28px; width: 60%; padding: 0; border-top: 0; }
+  #main.fresh #input { background: none; border: 1px solid #2c2c30; outline: none; border-radius: 8px; padding: 12px 14px; font-size: 16px; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+  #main.fresh #input:focus { outline: none; }
 
   /* ---- settings modal ---- */
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; }
@@ -127,7 +129,6 @@
   <div id="chat"></div>
   <div id="composer">
     <input id="input" placeholder="Type a message or use @agent...">
-    <button id="send">Send</button>
   </div>
 </section>
 
@@ -235,6 +236,7 @@ $('runs').onclick = async (e) => {
   }
   selectedBeat = b.id;
   $('run-title').textContent = b.name;
+  $('main').classList.add('fresh');
   renderBeats();
 };
 $('delete-cancel').onclick = () => $('delete-overlay').classList.remove('open');
@@ -267,6 +269,7 @@ async function createBeat() {
     const b = await invoke('create_beat', { name, description: $('beat-desc').value });
     selectedBeat = b.id;
     $('run-title').textContent = b.name;
+    $('main').classList.add('fresh');
     closeBeatModal();
     await loadBeats();
   } catch (err) {
@@ -305,7 +308,6 @@ function send() {
   addMsg({ who: 'user', time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), text });
   $('input').value = '';
 }
-$('send').onclick = send;
 $('input').onkeydown = (e) => { if (e.key === 'Enter') send(); };
 
 /* ---- collapse / expand sidebar ---- */
