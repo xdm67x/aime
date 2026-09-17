@@ -370,10 +370,10 @@ body {
     background: none;
     border: 1px solid var(--border);
     outline: none;
-    border-radius: 8px;
-    padding: 12px 14px;
+    border-radius: 14px;
+    padding: 18px 20px;
     font-size: 16px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 #main.fresh #input:focus {
     outline: none;
