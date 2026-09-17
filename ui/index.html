@@ -64,6 +64,17 @@
   #input { flex: 1; background: #1a1a1d; border: 1px solid #2c2c30; border-radius: 8px; padding: 12px 14px; color: #e4e4e6; font: inherit; }
   #input::placeholder { color: #6b6b71; }
   #main.fresh #chat { display: none; }
+  #main.no-beat #chat, #main.no-beat #composer { display: none; }
+  #empty-state { flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; text-align: center; color: #8a8a90; }
+  #main.no-beat #empty-state { display: flex; }
+  #empty-state .es-hero { width: 72px; height: 72px; border-radius: 50%; background: #17171a; border: 1px solid #2c2c30; display: flex; align-items: center; justify-content: center; color: #ff9f0a; margin-bottom: 10px; }
+  #empty-state h3 { margin: 0; font-size: 17px; color: #e4e4e6; }
+  #empty-state .es-sub { font-size: 13.5px; margin: 0 0 22px; }
+  .es-steps { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+  .es-step { display: flex; align-items: center; gap: 12px; font-size: 13.5px; text-align: left; }
+  .es-step .es-ico { width: 32px; height: 32px; flex: none; border-radius: 8px; background: #17171a; border: 1px solid #2c2c30; display: flex; align-items: center; justify-content: center; color: #67e8f9; }
+  .es-step b { color: #e4e4e6; font-weight: 600; }
+  .es-step kbd { background: #1c1c1f; border: 1px solid #2c2c30; border-radius: 5px; padding: 1px 7px; font-size: 12px; font-family: inherit; color: #e4e4e6; }
   #main.fresh #composer { margin: auto auto 28px; width: 60%; padding: 0; border-top: 0; }
   #main.fresh #input { background: none; border: 1px solid #2c2c30; outline: none; border-radius: 8px; padding: 12px 14px; font-size: 16px; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
   #main.fresh #input:focus { outline: none; }
@@ -118,7 +129,7 @@
   <button id="settings-btn">⚙<span> Settings</span></button>
 </aside>
 
-<section id="main">
+<section id="main" class="no-beat">
   <div id="chat-head">
     <div id="run-title"></div>
     <div class="chips">
@@ -127,6 +138,16 @@
     </div>
   </div>
   <div id="chat"></div>
+  <div id="empty-state">
+    <div class="es-hero"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+    <h3>Click a beat to start</h3>
+    <p class="es-sub">Beats are your lightning-fast experiment sessions.</p>
+    <div class="es-steps">
+    <div class="es-step"><span class="es-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span><div>Create a beat with the <b>＋</b> button in the sidebar</div></div>
+    <div class="es-step"><span class="es-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg></span><div>Click a beat to open its session</div></div>
+    <div class="es-step"><span class="es-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg></span><div>Type a message and hit <kbd>Enter</kbd></div></div>
+    </div>
+  </div>
   <div id="composer">
     <input id="input" placeholder="Type a message or use @agent...">
   </div>
@@ -236,6 +257,7 @@ $('runs').onclick = async (e) => {
   }
   selectedBeat = b.id;
   $('run-title').textContent = b.name;
+  $('main').classList.remove('no-beat');
   $('main').classList.add('fresh');
   renderBeats();
 };
@@ -245,7 +267,7 @@ $('delete-confirm').onclick = async () => {
   const id = +$('delete-overlay').dataset.beatId;
   try {
     await invoke('delete_beat', { id });
-    if (selectedBeat === id) { selectedBeat = null; $('run-title').textContent = ''; }
+    if (selectedBeat === id) { selectedBeat = null; $('run-title').textContent = ''; $('main').classList.add('no-beat'); $('main').classList.remove('fresh'); }
   } catch (err) { console.error(err); }
   $('delete-overlay').classList.remove('open');
   loadBeats();
@@ -269,6 +291,7 @@ async function createBeat() {
     const b = await invoke('create_beat', { name, description: $('beat-desc').value });
     selectedBeat = b.id;
     $('run-title').textContent = b.name;
+    $('main').classList.remove('no-beat');
     $('main').classList.add('fresh');
     closeBeatModal();
     await loadBeats();
@@ -283,7 +306,7 @@ $('beat-desc').onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctr
 $('search').oninput = () => renderBeats();
 loadBeats();
 
-/* ---- chat (static shell: seed messages from mockup, Send appends locally) ---- */
+/* ---- chat (local only: sent messages append until beat is reloaded) ---- */
 const chat = $('chat');
 function addMsg({ who, time, text }) {
   const wrap = document.createElement('div');
@@ -297,10 +320,6 @@ function addMsg({ who, time, text }) {
   chat.appendChild(wrap);
   chat.scrollTop = chat.scrollHeight;
 }
-addMsg({ who: 'user', time: '10:42 AM', text: '@eval Run benchmark check on Llama-3 8B' });
-addMsg({ who: '@eval', time: '10:42 AM', text: 'Eval Agent: Model Llama-3 8B scored 78.4% accuracy on GSM8K. Latency: 42ms/tok. Memory footprint: 16.2GB.' });
-addMsg({ who: 'user', time: '10:44 AM', text: '@guard Check safety bounds for fine-tuning pipeline' });
-addMsg({ who: '@guard', time: '10:44 AM', text: 'Guard Agent: Safety check passed. Toxicity: 0.001. PII Redaction: Active. Jailbreak score: 0.00.' });
 
 function send() {
   const text = $('input').value.trim();
