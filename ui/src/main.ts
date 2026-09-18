@@ -178,6 +178,7 @@ async function send() {
     const text = input.value.trim()
     if (!text) return
     input.value = ''
+    paintMentions() // value assignment doesn't fire 'input'
     closeAt()
     $('main').classList.remove('fresh')
     addMsg({
