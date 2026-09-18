@@ -209,17 +209,6 @@ body {
     font-weight: 700;
     font-size: 16px;
 }
-.chips {
-    display: flex;
-    gap: 10px;
-}
-.chip {
-    border: 1px solid rgba(103, 232, 249, 0.45);
-    color: var(--accent);
-    border-radius: 999px;
-    padding: 5px 14px;
-    font-size: 13px;
-}
 #chat {
     flex: 1;
     overflow-y: auto;
