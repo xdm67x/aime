@@ -155,6 +155,9 @@ loadBeats()
 
 /* ---- chat (local only: sent messages append until beat is reloaded) ---- */
 const chat = $('chat')
+// shared with the input mirror below
+const withMentions = (t: string) =>
+    esc(t).replace(/@([\w./-]+)/g, '<span class="mention">@$1</span>')
 function addMsg({ who, time, text }: { who: string; time: string; text: string }) {
     const wrap = document.createElement('div')
     wrap.className = who === 'user' ? 'row-user' : 'row-agent'
@@ -163,7 +166,9 @@ function addMsg({ who, time, text }: { who: string; time: string; text: string }
     } else {
         wrap.innerHTML = `<div class="meta agent">${who} <span class="t">${time}</span></div><div class="msg"></div>`
     }
-    wrap.querySelector('.msg')!.textContent = text
+    const msg = wrap.querySelector('.msg')!
+    if (who === 'user') msg.innerHTML = withMentions(text)
+    else msg.textContent = text
     chat.appendChild(wrap)
     chat.scrollTop = chat.scrollHeight
     return wrap
@@ -209,6 +214,14 @@ async function send() {
     }
 }
 const input = $('input') as HTMLInputElement
+const mirror = $('mirror')
+const paintMentions = () => {
+    mirror.innerHTML = withMentions(input.value) + '\u00a0'
+    mirror.scrollLeft = input.scrollLeft
+}
+input.addEventListener('input', paintMentions)
+input.addEventListener('scroll', paintMentions)
+paintMentions()
 const popup = $('at-popup')
 let atItems: { el: HTMLElement; id: string }[] = []
 let atIdx = 0
@@ -247,6 +260,7 @@ const updateAtActive = () => {
 }
 function pickAt(id: string) {
     input.value = input.value.replace(/@[\w./-]*$/, `@${id} `)
+    paintMentions() // value assignment doesn't fire 'input'
     closeAt()
     input.focus()
 }

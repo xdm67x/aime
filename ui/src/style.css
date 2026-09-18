@@ -316,9 +316,29 @@ body {
     color: var(--faint);
     flex-shrink: 0;
 }
-#input {
+#input-wrap {
+    position: relative;
     flex: 1;
     max-width: 60%;
+}
+#mirror {
+    position: absolute;
+    inset: 0;
+    border: 1px solid transparent;
+    padding: 18px 20px;
+    font: inherit;
+    font-size: 16px;
+    color: var(--text);
+    white-space: pre;
+    overflow: hidden;
+    pointer-events: none;
+}
+.mention {
+    color: var(--blue);
+}
+#input {
+    position: relative;
+    width: 100%;
     background: none;
     border: 1px solid var(--border);
     outline: none;
@@ -326,8 +346,10 @@ body {
     padding: 18px 20px;
     font-size: 16px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-    color: var(--text);
+    color: transparent;
+    caret-color: var(--text);
     font: inherit;
+    font-size: 16px;
 }
 #input:focus {
     outline: none;
