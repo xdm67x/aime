@@ -65,6 +65,30 @@ pub async fn list_models() -> Result<Vec<Model>, String> {
     fetch_models().await
 }
 
+#[tauri::command]
+pub async fn send_message(model: String, content: String) -> Result<String, String> {
+    let key = config::openrouter_key()?.ok_or("No OpenRouter API key configured")?;
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{"role": "user", "content": content}],
+    });
+    let resp: serde_json::Value = reqwest::Client::new()
+        .post("https://openrouter.ai/api/v1/chat/completions")
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&body)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("OpenRouter request failed: {e}"))?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+    resp["choices"][0]["message"]["content"]
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| format!("Unexpected OpenRouter response: {resp}"))
+}
+
 /// Refresh the models cache in the background every 15 minutes.
 pub fn spawn_refresh_loop() {
     tauri::async_runtime::spawn(async {

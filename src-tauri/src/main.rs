@@ -13,6 +13,7 @@ fn main() {
             config::save_api_key,
             config::get_api_key,
             openrouter::list_models,
+            openrouter::send_message,
             beats::list_beats,
             beats::create_beat,
             beats::set_beat_archived,

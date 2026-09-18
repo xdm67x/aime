@@ -168,16 +168,33 @@ function addMsg({ who, time, text }: { who: string; time: string; text: string }
     chat.scrollTop = chat.scrollHeight
 }
 
-function send() {
-    const input = $('input') as HTMLInputElement
+async function send() {
     const text = input.value.trim()
     if (!text) return
+    input.value = ''
+    closeAt()
     addMsg({
         who: 'user',
         time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
         text,
     })
-    input.value = ''
+    // each @model segment (until the next @ or end) goes to that model
+    const matches = [...text.matchAll(/@([\w./-]+)/g)]
+    for (const [i, m] of matches.entries()) {
+        const start = m.index + m[0].length
+        const stop = i + 1 < matches.length ? matches[i + 1].index : text.length
+        const body = text.slice(start, stop).trim()
+        if (!body) continue
+        try {
+            const reply = await invoke<string>('send_message', {
+                model: m[1],
+                content: body,
+            })
+            addMsg({ who: m[1], time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), text: reply })
+        } catch (e) {
+            addMsg({ who: m[1], time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), text: String(e) })
+        }
+    }
 }
 const input = $('input') as HTMLInputElement
 const popup = $('at-popup')
