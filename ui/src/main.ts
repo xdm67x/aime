@@ -179,9 +179,86 @@ function send() {
     })
     input.value = ''
 }
+const input = $('input') as HTMLInputElement
+const popup = $('at-popup')
+let atItems: { el: HTMLElement; id: string }[] = []
+let atIdx = 0
+
+const atToken = () => {
+    const m = /@([\w./-]*)$/.exec(input.value)
+    return m ? m[1] : null
+}
+const closeAt = () => {
+    popup.hidden = true
+    atItems = []
+}
+function renderAt(q: string) {
+    const matches = models
+        .filter(
+            (m) =>
+                m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q),
+        )
+        .slice(0, 8)
+    if (!matches.length) return closeAt()
+    atIdx = Math.min(atIdx, matches.length - 1)
+    atItems = matches.map((m) => {
+        const el = document.createElement('div')
+        el.className = 'at-item'
+        el.innerHTML = `<span class="at-id">@${esc(m.id)}</span><span class="at-cost">${price(m.pricing.prompt)}/M in</span>`
+        el.onclick = () => pickAt(m.id)
+        return { el, id: m.id }
+    })
+    popup.replaceChildren(...atItems.map((x) => x.el))
+    updateAtActive()
+    popup.hidden = false
+}
+const updateAtActive = () => {
+    atItems.forEach((x, i) => x.el.classList.toggle('active', i === atIdx))
+    atItems[atIdx]?.el.scrollIntoView({ block: 'nearest' })
+}
+function pickAt(id: string) {
+    input.value = input.value.replace(/@[\w./-]*$/, `@${id} `)
+    closeAt()
+    input.focus()
+}
+let atLoading = false
+input.addEventListener('input', () => {
+    const tok = atToken()
+    if (tok === null) return closeAt()
+    if (!models.length && !atLoading) {
+        atLoading = true
+        invoke('list_models')
+            .then((m) => {
+                models = m
+                if (atToken() !== null) renderAt(atToken()!)
+            })
+            .catch((e) => console.error(e))
+            .finally(() => (atLoading = false))
+    }
+    atIdx = 0
+    renderAt(tok.toLowerCase())
+})
+
 $('input').onkeydown = (e) => {
+    if (!popup.hidden) {
+        if (e.key === 'ArrowDown') {
+            atIdx = (atIdx + 1) % atItems.length
+            updateAtActive()
+            return e.preventDefault()
+        }
+        if (e.key === 'ArrowUp') {
+            atIdx = (atIdx - 1 + atItems.length) % atItems.length
+            updateAtActive()
+            return e.preventDefault()
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+            return e.preventDefault(), pickAt(atItems[atIdx].id)
+        }
+        if (e.key === 'Escape') return closeAt()
+    }
     if (e.key === 'Enter') send()
 }
+input.addEventListener('blur', () => setTimeout(closeAt, 150))
 
 /* ---- settings ---- */
 const setStatus = (msg: string, err = false) => {

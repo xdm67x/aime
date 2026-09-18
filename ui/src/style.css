@@ -263,10 +263,42 @@ body {
 }
 
 #composer {
+    position: relative;
     display: flex;
     gap: 12px;
     padding: 16px 24px 20px;
     border-top: 1px solid var(--border-soft);
+}
+#at-popup {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 24px;
+    right: 24px;
+    max-height: 280px;
+    overflow-y: auto;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
+}
+.at-item {
+    padding: 8px 14px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+.at-item.active {
+    background: var(--border-soft);
+}
+.at-item .at-id {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.at-item .at-cost {
+    color: var(--faint);
+    flex-shrink: 0;
 }
 #input {
     flex: 1;
