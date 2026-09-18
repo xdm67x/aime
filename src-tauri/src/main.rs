@@ -15,6 +15,7 @@ fn main() {
             openrouter::list_models,
             openrouter::send_message,
             beats::list_beats,
+            beats::get_beat_messages,
             beats::create_beat,
             beats::set_beat_archived,
             beats::delete_beat,

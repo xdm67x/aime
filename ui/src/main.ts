@@ -87,7 +87,20 @@ $('runs').onclick = async (e) => {
     selectedBeat = b.id
     $('run-title').textContent = b.name
     $('main').classList.remove('no-beat')
-    $('main').classList.add('fresh')
+    chat.replaceChildren()
+    try {
+        const msgs = await invoke<{ role: string; content: string; model?: string; ts?: string }[]>(
+            'get_beat_messages',
+            { id: b.id },
+        )
+        for (const m of msgs) {
+            const t = m.ts ? m.ts.slice(11, 16) : ''
+            addMsg({ who: m.role === 'user' ? 'user' : m.model ?? 'assistant', time: t, text: m.content })
+        }
+    } catch (err) {
+        console.error(err)
+    }
+    $('main').classList.toggle('fresh', !chat.children.length)
     renderBeats()
 }
 $('delete-cancel').onclick = () => $('delete-overlay').classList.remove('open')

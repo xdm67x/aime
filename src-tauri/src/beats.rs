@@ -1,5 +1,5 @@
 use crate::{db, openrouter};
-use rusqlite::{params, Row};
+use rusqlite::{params, OptionalExtension, Row};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -74,6 +74,18 @@ pub fn set_beat_archived(id: i64, archived: bool) -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// All persisted messages of a beat, oldest first.
+#[tauri::command]
+pub fn get_beat_messages(id: i64) -> Result<Vec<serde_json::Value>, String> {
+    let conn = db::open()?;
+    let current: String = conn
+        .query_row("SELECT messages FROM beats WHERE id = ?1", params![id], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?
+        .ok_or("Beat not found")?;
+    serde_json::from_str(&current).map_err(|e| e.to_string())
 }
 
 /// Permanently delete an archived beat and its usage rows.
