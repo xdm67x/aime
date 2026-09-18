@@ -150,6 +150,7 @@ async function createBeat() {
         })
         selectedBeat = b.id
         $('run-title').textContent = b.name
+        chat.replaceChildren()
         $('main').classList.remove('no-beat')
         $('main').classList.add('fresh')
         closeBeatModal()
