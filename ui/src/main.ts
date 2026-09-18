@@ -205,6 +205,44 @@ async function send() {
     })
     // each @model segment (until the next @ or end) goes to that model
     const matches = [...text.matchAll(/@([\w./-]+)/g)]
+    if (matches.length >= 2) {
+        // council: all mentioned models deliberate together in a sub-context,
+        // seeded with a summary of this beat's prior context
+        if (!selectedBeat) {
+            addMsg({ who: 'council', time: '', text: 'Select a beat first — the council needs its context.' })
+            return
+        }
+        const prompt = matches
+            .map((m, i) =>
+                text
+                    .slice(m.index + m[0].length, i + 1 < matches.length ? matches[i + 1].index : text.length)
+                    .trim(),
+            )
+            .filter(Boolean)
+            .join(' ')
+        if (!prompt) return
+        const convening = addMsg({
+            who: 'council',
+            time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+            text: 'Convening…',
+        })
+        convening.querySelector('.msg')!.classList.add('thinking')
+        try {
+            const r = await invoke<{ transcript: { agent_id: string; content: string }[]; artifact: string }>(
+                'run_council',
+                { beatId: selectedBeat, prompt, models: matches.map((m) => m[1]) },
+            )
+            convening.remove()
+            const t = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+            for (const turn of r.transcript)
+                if (turn.agent_id !== 'user') addMsg({ who: turn.agent_id, time: t, text: turn.content })
+            addMsg({ who: 'council', time: t, text: r.artifact })
+        } catch (e) {
+            convening.querySelector('.msg')!.textContent = String(e)
+            convening.querySelector('.msg')!.classList.remove('thinking')
+        }
+        return
+    }
     for (const [i, m] of matches.entries()) {
         const start = m.index + m[0].length
         const stop = i + 1 < matches.length ? matches[i + 1].index : text.length
