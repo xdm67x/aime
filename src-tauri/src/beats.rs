@@ -117,14 +117,13 @@ async fn usage_cost(model_id: &str, prompt: i64, completion: i64) -> f64 {
 
 /// Record one model call against a beat; cost is computed from the cached
 /// OpenRouter pricing at call time. Returns the recorded cost in USD.
-#[tauri::command]
-pub async fn record_beat_usage(
+pub async fn record_usage(
     beat_id: i64,
-    model: String,
+    model: &str,
     prompt_tokens: i64,
     completion_tokens: i64,
 ) -> Result<f64, String> {
-    let cost = usage_cost(&model, prompt_tokens, completion_tokens).await;
+    let cost = usage_cost(model, prompt_tokens, completion_tokens).await;
     db::open()?
         .execute(
             "INSERT INTO beat_usage (beat_id, model, prompt_tokens, completion_tokens, cost_usd) \
@@ -133,4 +132,14 @@ pub async fn record_beat_usage(
         )
         .map_err(|e| e.to_string())?;
     Ok(cost)
+}
+
+#[tauri::command]
+pub async fn record_beat_usage(
+    beat_id: i64,
+    model: String,
+    prompt_tokens: i64,
+    completion_tokens: i64,
+) -> Result<f64, String> {
+    record_usage(beat_id, &model, prompt_tokens, completion_tokens).await
 }

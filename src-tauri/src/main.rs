@@ -4,6 +4,7 @@
 mod beats;
 mod config;
 mod db;
+mod harness;
 mod openrouter;
 
 fn main() {
@@ -14,6 +15,7 @@ fn main() {
             config::get_api_key,
             openrouter::list_models,
             openrouter::send_message,
+            harness::run_council,
             beats::list_beats,
             beats::get_beat_messages,
             beats::create_beat,
