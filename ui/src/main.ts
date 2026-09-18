@@ -1,3 +1,6 @@
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+
 const invoke = (window as any).__TAURI__.core.invoke as <T = any>(
     cmd: string,
     args?: Record<string, unknown>,
@@ -181,7 +184,8 @@ function addMsg({ who, time, text }: { who: string; time: string; text: string }
     }
     const msg = wrap.querySelector('.msg')!
     if (who === 'user') msg.innerHTML = withMentions(text)
-    else msg.textContent = text
+    // model output is untrusted → sanitize before injecting
+    else msg.innerHTML = DOMPurify.sanitize(marked.parse(text, { async: false }))
     chat.appendChild(wrap)
     chat.scrollTop = chat.scrollHeight
     return wrap
@@ -219,7 +223,7 @@ async function send() {
                 model: m[1],
                 content: body,
             })
-            bubble.textContent = reply
+            bubble.innerHTML = DOMPurify.sanitize(marked.parse(reply, { async: false }))
             bubble.classList.remove('thinking')
         } catch (e) {
             bubble.textContent = String(e)
