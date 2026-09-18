@@ -173,6 +173,7 @@ async function send() {
     if (!text) return
     input.value = ''
     closeAt()
+    $('main').classList.remove('fresh')
     addMsg({
         who: 'user',
         time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
