@@ -1,4 +1,4 @@
-use crate::config;
+use crate::{config, db};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -66,8 +66,19 @@ pub async fn list_models() -> Result<Vec<Model>, String> {
 }
 
 #[tauri::command]
-pub async fn send_message(model: String, content: String) -> Result<String, String> {
+pub async fn send_message(
+    beat_id: Option<i64>,
+    model: String,
+    content: String,
+) -> Result<String, String> {
     let key = config::openrouter_key()?.ok_or("No OpenRouter API key configured")?;
+    // persist the user message even if the call fails — it was sent
+    if let Some(beat_id) = beat_id {
+        db::append_messages(
+            beat_id,
+            vec![serde_json::json!({"role": "user", "content": content})],
+        )?;
+    }
     let body = serde_json::json!({
         "model": model,
         "messages": [{"role": "user", "content": content}],
@@ -83,10 +94,17 @@ pub async fn send_message(model: String, content: String) -> Result<String, Stri
         .json()
         .await
         .map_err(|e| e.to_string())?;
-    resp["choices"][0]["message"]["content"]
+    let reply = resp["choices"][0]["message"]["content"]
         .as_str()
         .map(str::to_string)
-        .ok_or_else(|| format!("Unexpected OpenRouter response: {resp}"))
+        .ok_or_else(|| format!("Unexpected OpenRouter response: {resp}"))?;
+    if let Some(beat_id) = beat_id {
+        db::append_messages(
+            beat_id,
+            vec![serde_json::json!({"role": "assistant", "model": model, "content": reply})],
+        )?;
+    }
+    Ok(reply)
 }
 
 /// Refresh the models cache in the background every 15 minutes.

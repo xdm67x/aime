@@ -166,6 +166,7 @@ function addMsg({ who, time, text }: { who: string; time: string; text: string }
     wrap.querySelector('.msg')!.textContent = text
     chat.appendChild(wrap)
     chat.scrollTop = chat.scrollHeight
+    return wrap
 }
 
 async function send() {
@@ -186,14 +187,24 @@ async function send() {
         const stop = i + 1 < matches.length ? matches[i + 1].index : text.length
         const body = text.slice(start, stop).trim()
         if (!body) continue
+        const wrap = addMsg({
+            who: m[1],
+            time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+            text: 'Thinking…',
+        })
+        const bubble = wrap.querySelector('.msg')!
+        bubble.classList.add('thinking')
         try {
             const reply = await invoke<string>('send_message', {
+                beatId: selectedBeat,
                 model: m[1],
                 content: body,
             })
-            addMsg({ who: m[1], time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), text: reply })
+            bubble.textContent = reply
+            bubble.classList.remove('thinking')
         } catch (e) {
-            addMsg({ who: m[1], time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), text: String(e) })
+            bubble.textContent = String(e)
+            bubble.classList.remove('thinking')
         }
     }
 }

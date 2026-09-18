@@ -17,6 +17,7 @@ pub fn open() -> Result<Connection, String> {
             name TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
             archived INTEGER NOT NULL DEFAULT 0,
+            messages TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS beat_usage (
@@ -32,6 +33,7 @@ pub fn open() -> Result<Connection, String> {
     .map_err(|e| e.to_string())?;
     // migrate pre-description databases
     let _ = conn.execute("ALTER TABLE beats ADD COLUMN description TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE beats ADD COLUMN messages TEXT NOT NULL DEFAULT '[]'", []);
     conn.pragma_update(None, "foreign_keys", "ON").map_err(|e| e.to_string())?;
     Ok(conn)
 }
@@ -53,6 +55,31 @@ pub fn set_setting(key: &str, value: &str) -> Result<(), String> {
             params![key, value],
         )
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Append message entries to a beat's messages JSON array (stored as JSON text,
+/// SQLite's JSONB storage). Each entry gets a `ts` timestamp.
+pub fn append_messages(beat_id: i64, entries: Vec<serde_json::Value>) -> Result<(), String> {
+    let conn = open()?;
+    let current: String = conn
+        .query_row("SELECT messages FROM beats WHERE id = ?1", params![beat_id], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?
+        .ok_or("Beat not found")?;
+    let ts: String = conn
+        .query_row("SELECT datetime('now')", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    let mut arr: Vec<serde_json::Value> = serde_json::from_str(&current).unwrap_or_default();
+    for mut e in entries {
+        e["ts"] = serde_json::json!(ts);
+        arr.push(e);
+    }
+    conn.execute(
+        "UPDATE beats SET messages = ?1 WHERE id = ?2",
+        params![serde_json::to_string(&arr).map_err(|e| e.to_string())?, beat_id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -86,6 +113,16 @@ mod tests {
         let (name, description): (String, String) = conn.query_row(
             "SELECT name, description FROM beats WHERE id = ?1", params![id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
         assert_eq!((name.as_str(), description.as_str()), ("b1", "d1"));
+        // messages JSON array roundtrip
+        append_messages(id, vec![serde_json::json!({"role": "user", "content": "hi"})]).unwrap();
+        append_messages(id, vec![serde_json::json!({"role": "assistant", "content": "yo"})]).unwrap();
+        let msgs: String = conn.query_row("SELECT messages FROM beats WHERE id = ?1", params![id], |r| r.get(0)).unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&msgs).unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["content"], "hi");
+        assert!(arr[1]["ts"].as_str().unwrap().len() == 19); // datetime('now') format
+        // appending to a nonexistent beat fails
+        assert!(append_messages(9999, vec![serde_json::json!({"a": 1})]).is_err());
         // delete only works on archived beats
         conn.execute("DELETE FROM beat_usage WHERE beat_id = ?1", params![id]).unwrap();
         assert_eq!(conn.execute("DELETE FROM beats WHERE id = ?1 AND archived = 1", params![id]).unwrap(), 1);
