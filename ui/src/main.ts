@@ -612,6 +612,7 @@ async function startRun(s: SessionState, first: string) {
         return text
     }
     s.busy = true
+    addMsg(s, { who: 'user', time: now(), text: first })
     refreshMain()
     let text: string | null = first
     try {
