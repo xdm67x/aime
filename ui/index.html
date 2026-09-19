@@ -99,11 +99,10 @@
                 </div>
             </div>
             <div id="composer">
-                <div id="at-popup" hidden></div>
-                <div id="input-wrap">
-                    <div id="mirror" aria-hidden="true"></div>
-                    <input id="input" placeholder="Type a message or use @model..." />
-                </div>
+                <input
+                    id="input"
+                    placeholder="Type a message — Pulse routes it to the right model…"
+                />
             </div>
         </section>
 
@@ -148,6 +147,7 @@
                 <div id="settings-body">
                     <nav id="settings-tabs">
                         <button data-tab="providers" class="active">Providers</button>
+                        <button data-tab="models">Models</button>
                         <button data-tab="appearance">Appearance</button>
                     </nav>
                     <div id="settings-content">
@@ -158,8 +158,59 @@
                                 <button class="btn" id="save">Save</button>
                             </div>
                             <p id="settings-status"></p>
+                        </div>
+                        <div id="pane-models" class="tab-pane" style="display:none">
+                            <p class="field-label">Model routing</p>
+                            <p class="field-hint">
+                                Pulse classifies each message and routes it to one of these tiers.
+                                Pick a free or low-cost model as the classifier.
+                            </p>
+                            <div class="slot">
+                                <label
+                                    >Classifier
+                                    <span class="slot-hint"
+                                        >routes each message · use a free/cheap model</span
+                                    ></label
+                                >
+                                <select class="model-slot" data-slot="classifier">
+                                    <option value="">— select —</option>
+                                </select>
+                            </div>
+                            <div class="slot">
+                                <label
+                                    >High — reflexion
+                                    <span class="slot-hint"
+                                        >most capable model · hard, high-stakes work</span
+                                    ></label
+                                >
+                                <select class="model-slot" data-slot="high">
+                                    <option value="">— select —</option>
+                                </select>
+                            </div>
+                            <div class="slot">
+                                <label
+                                    >Base — implementation
+                                    <span class="slot-hint">typical coding / analysis</span></label
+                                >
+                                <select class="model-slot" data-slot="base">
+                                    <option value="">— select —</option>
+                                </select>
+                            </div>
+                            <div class="slot">
+                                <label
+                                    >Low — basic
+                                    <span class="slot-hint">simple tasks, no reflexion</span></label
+                                >
+                                <select class="model-slot" data-slot="low">
+                                    <option value="">— select —</option>
+                                </select>
+                            </div>
+                            <div class="keyrow" style="margin-top: 10px">
+                                <button class="btn" id="save-models">Save models</button>
+                            </div>
+                            <p id="models-status"></p>
                             <div class="divider"></div>
-                            <p class="field-label">Models</p>
+                            <p class="field-label">Models from OpenRouter</p>
                             <div class="modelbar">
                                 <input id="filter" type="search" placeholder="Filter models…" />
                                 <button class="btn" id="load">List models</button>

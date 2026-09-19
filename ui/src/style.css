@@ -310,74 +310,22 @@ body {
     margin-top: auto;
     padding: 0 24px 28px;
 }
-#at-popup {
-    position: absolute;
-    bottom: calc(100% + 4px);
-    left: 24px;
-    right: 24px;
-    max-height: 280px;
-    overflow-y: auto;
-    background: var(--input);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
-}
-.at-item {
-    padding: 8px 14px;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-}
-.at-item.active {
-    background: var(--border-soft);
-}
-.at-item .at-id {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.at-item .at-cost {
-    color: var(--faint);
-    flex-shrink: 0;
-}
-#input-wrap {
-    position: relative;
-    flex: 1;
-    max-width: 60%;
-}
-#mirror {
-    position: absolute;
-    inset: 0;
-    border: 1px solid transparent;
-    padding: 18px 20px;
-    font: inherit;
-    font-size: 16px;
-    color: var(--text);
-    white-space: pre;
-    overflow: hidden;
-    pointer-events: none;
-}
-.mention {
-    color: var(--blue);
-}
 #input {
-    position: relative;
     width: 100%;
-    background: none;
+    max-width: 60%;
+    background: var(--input);
     border: 1px solid var(--border);
     outline: none;
     border-radius: 14px;
     padding: 18px 20px;
-    font-size: 16px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-    color: transparent;
-    caret-color: var(--text);
     font: inherit;
     font-size: 16px;
+    color: var(--text);
+    caret-color: var(--text);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 #input:focus {
-    outline: none;
+    border-color: var(--blue);
 }
 #input::placeholder {
     color: var(--faint);
@@ -759,4 +707,49 @@ td.num {
 }
 .swatch-dark {
     background: #0b0b0c;
+}
+
+/* ---- model routing slots ---- */
+.field-hint {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin: 0 0 14px;
+    line-height: 1.5;
+}
+.slot {
+    margin-bottom: 12px;
+}
+.slot label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 5px;
+}
+.slot-hint {
+    color: var(--faint);
+    font-size: 11.5px;
+}
+.model-slot {
+    width: 100%;
+    background: var(--raised);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+.model-slot:focus {
+    outline: none;
+    border-color: var(--blue);
+}
+#models-status {
+    color: var(--muted);
+    font-size: 12.5px;
+    min-height: 1.2em;
+    margin: 8px 0 0;
+}
+#models-status.err {
+    color: var(--red);
 }

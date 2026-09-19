@@ -172,19 +172,16 @@ loadBeats()
 
 /* ---- chat (local only: sent messages append until beat is reloaded) ---- */
 const chat = $('chat')
-// shared with the input mirror below
-const withMentions = (t: string) =>
-    esc(t).replace(/@([\w./-]+)/g, '<span class="mention">@$1</span>')
 function addMsg({ who, time, text }: { who: string; time: string; text: string }) {
     const wrap = document.createElement('div')
     wrap.className = who === 'user' ? 'row-user' : 'row-agent'
     if (who === 'user') {
         wrap.innerHTML = `<div class="meta">User <span class="t">${time}</span></div><div class="msg user"></div>`
     } else {
-        wrap.innerHTML = `<div class="meta agent">${who} <span class="t">${time}</span></div><div class="msg"></div>`
+        wrap.innerHTML = `<div class="meta agent">${esc(who)} <span class="t">${time}</span></div><div class="msg"></div>`
     }
     const msg = wrap.querySelector('.msg')!
-    if (who === 'user') msg.innerHTML = withMentions(text)
+    if (who === 'user') msg.textContent = text
     // model output is untrusted → sanitize before injecting
     else msg.innerHTML = DOMPurify.sanitize(marked.parse(text, { async: false }))
     chat.appendChild(wrap)
@@ -195,170 +192,37 @@ function addMsg({ who, time, text }: { who: string; time: string; text: string }
 async function send() {
     const text = input.value.trim()
     if (!text) return
-    input.value = ''
-    paintMentions() // value assignment doesn't fire 'input'
-    closeAt()
-    $('main').classList.remove('fresh')
-    addMsg({
-        who: 'user',
-        time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-        text,
-    })
-    // each @model segment (until the next @ or end) goes to that model
-    const matches = [...text.matchAll(/@([\w./-]+)/g)]
-    if (matches.length >= 2) {
-        // council: all mentioned models deliberate together in a sub-context,
-        // seeded with a summary of this beat's prior context
-        if (!selectedBeat) {
-            addMsg({ who: 'council', time: '', text: 'Select a beat first — the council needs its context.' })
-            return
-        }
-        const prompt = matches
-            .map((m, i) =>
-                text
-                    .slice(m.index + m[0].length, i + 1 < matches.length ? matches[i + 1].index : text.length)
-                    .trim(),
-            )
-            .filter(Boolean)
-            .join(' ')
-        if (!prompt) return
-        const convening = addMsg({
-            who: 'council',
-            time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-            text: 'Convening…',
-        })
-        convening.querySelector('.msg')!.classList.add('thinking')
-        try {
-            const r = await invoke<{ transcript: { agent_id: string; content: string }[]; artifact: string }>(
-                'run_council',
-                { beatId: selectedBeat, prompt, models: matches.map((m) => m[1]) },
-            )
-            convening.remove()
-            const t = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-            for (const turn of r.transcript)
-                if (turn.agent_id !== 'user') addMsg({ who: turn.agent_id, time: t, text: turn.content })
-            addMsg({ who: 'council', time: t, text: r.artifact })
-        } catch (e) {
-            convening.querySelector('.msg')!.textContent = String(e)
-            convening.querySelector('.msg')!.classList.remove('thinking')
-        }
+    if (!selectedBeat) {
+        addMsg({ who: 'Pulse', time: '', text: 'Select a beat first.' })
         return
     }
-    for (const [i, m] of matches.entries()) {
-        const start = m.index + m[0].length
-        const stop = i + 1 < matches.length ? matches[i + 1].index : text.length
-        const body = text.slice(start, stop).trim()
-        if (!body) continue
-        const wrap = addMsg({
-            who: m[1],
-            time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-            text: 'Thinking…',
-        })
-        const bubble = wrap.querySelector('.msg')!
-        bubble.classList.add('thinking')
-        try {
-            const reply = await invoke<string>('send_message', {
-                beatId: selectedBeat,
-                model: m[1],
-                content: body,
-            })
-            bubble.innerHTML = DOMPurify.sanitize(marked.parse(reply, { async: false }))
-            bubble.classList.remove('thinking')
-        } catch (e) {
-            bubble.textContent = String(e)
-            bubble.classList.remove('thinking')
-        }
+    input.value = ''
+    const now = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    $('main').classList.remove('fresh')
+    addMsg({ who: 'user', time: now(), text })
+    const thinking = addMsg({ who: 'Pulse', time: now(), text: 'Thinking…' })
+    thinking.querySelector('.msg')!.classList.add('thinking')
+    try {
+        const r = await invoke<{
+            tier: string
+            model: string
+            steps: string[]
+            answer: string
+        }>('run_task', { beatId: selectedBeat, prompt: text })
+        thinking.remove()
+        const label = `${r.model} · ${r.tier}`
+        for (const s of r.steps) addMsg({ who: label, time: now(), text: s })
+        addMsg({ who: label, time: now(), text: r.answer })
+    } catch (e) {
+        const bubble = thinking.querySelector('.msg')!
+        bubble.textContent = String(e)
+        bubble.classList.remove('thinking')
     }
 }
 const input = $('input') as HTMLInputElement
-const mirror = $('mirror')
-const paintMentions = () => {
-    mirror.innerHTML = withMentions(input.value) + '\u00a0'
-    mirror.scrollLeft = input.scrollLeft
-}
-input.addEventListener('input', paintMentions)
-input.addEventListener('scroll', paintMentions)
-paintMentions()
-const popup = $('at-popup')
-let atItems: { el: HTMLElement; id: string }[] = []
-let atIdx = 0
-
-const atToken = () => {
-    const m = /@([\w./-]*)$/.exec(input.value)
-    return m ? m[1] : null
-}
-const closeAt = () => {
-    popup.hidden = true
-    atItems = []
-}
-function renderAt(q: string) {
-    const matches = models
-        .filter(
-            (m) =>
-                m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q),
-        )
-        .slice(0, 8)
-    if (!matches.length) return closeAt()
-    atIdx = Math.min(atIdx, matches.length - 1)
-    atItems = matches.map((m) => {
-        const el = document.createElement('div')
-        el.className = 'at-item'
-        el.innerHTML = `<span class="at-id">@${esc(m.id)}</span><span class="at-cost">${price(m.pricing.prompt)}/M in</span>`
-        el.onclick = () => pickAt(m.id)
-        return { el, id: m.id }
-    })
-    popup.replaceChildren(...atItems.map((x) => x.el))
-    updateAtActive()
-    popup.hidden = false
-}
-const updateAtActive = () => {
-    atItems.forEach((x, i) => x.el.classList.toggle('active', i === atIdx))
-    atItems[atIdx]?.el.scrollIntoView({ block: 'nearest' })
-}
-function pickAt(id: string) {
-    input.value = input.value.replace(/@[\w./-]*$/, `@${id} `)
-    paintMentions() // value assignment doesn't fire 'input'
-    closeAt()
-    input.focus()
-}
-let atLoading = false
-input.addEventListener('input', () => {
-    const tok = atToken()
-    if (tok === null) return closeAt()
-    if (!models.length && !atLoading) {
-        atLoading = true
-        invoke('list_models')
-            .then((m) => {
-                models = m
-                if (atToken() !== null) renderAt(atToken()!)
-            })
-            .catch((e) => console.error(e))
-            .finally(() => (atLoading = false))
-    }
-    atIdx = 0
-    renderAt(tok.toLowerCase())
-})
-
-$('input').onkeydown = (e) => {
-    if (!popup.hidden) {
-        if (e.key === 'ArrowDown') {
-            atIdx = (atIdx + 1) % atItems.length
-            updateAtActive()
-            return e.preventDefault()
-        }
-        if (e.key === 'ArrowUp') {
-            atIdx = (atIdx - 1 + atItems.length) % atItems.length
-            updateAtActive()
-            return e.preventDefault()
-        }
-        if (e.key === 'Enter' || e.key === 'Tab') {
-            return e.preventDefault(), pickAt(atItems[atIdx].id)
-        }
-        if (e.key === 'Escape') return closeAt()
-    }
+input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') send()
-}
-input.addEventListener('blur', () => setTimeout(closeAt, 150))
+})
 
 /* ---- settings ---- */
 const setStatus = (msg: string, err = false) => {
@@ -404,20 +268,53 @@ $('save').onclick = async () => {
         setStatus(String(e), true)
     }
 }
+function populateSlots() {
+    for (const sel of document.querySelectorAll<HTMLSelectElement>('select.model-slot')) {
+        const saved = sel.value // preserve the currently chosen model
+        sel.innerHTML =
+            '<option value="">— select —</option>' +
+            models.map((m) => `<option value="${esc(m.id)}">${esc(m.id)}</option>`).join('')
+        sel.value = saved
+    }
+}
 $('load').onclick = async () => {
     const load = $('load') as HTMLButtonElement
     load.disabled = true
-    setStatus('Loading models…')
+    setModelsStatus('Loading models…')
     try {
         models = await invoke('list_models')
-        setStatus(`${models.length} models from OpenRouter.`)
+        populateSlots()
+        setModelsStatus(`${models.length} models from OpenRouter.`)
         render()
     } catch (e) {
-        setStatus(String(e), true)
+        setModelsStatus(String(e), true)
     }
     load.disabled = false
 }
 $('filter').oninput = render
+
+/* ---- model routing config ---- */
+const setModelsStatus = (msg: string, err = false) => {
+    const el = $('models-status')
+    el.textContent = msg
+    el.className = err ? 'err' : ''
+}
+const slotSelect = (slot: string) =>
+    document.querySelector<HTMLSelectElement>(`select.model-slot[data-slot="${slot}"]`)!
+$('save-models').onclick = async () => {
+    const config = {
+        classifier: slotSelect('classifier').value,
+        high: slotSelect('high').value,
+        base: slotSelect('base').value,
+        low: slotSelect('low').value,
+    }
+    try {
+        await invoke('save_model_config', { config })
+        setModelsStatus('Models saved.')
+    } catch (e) {
+        setModelsStatus(String(e), true)
+    }
+}
 
 /* ---- settings tabs ---- */
 const showTab = (name: string) => {
@@ -445,4 +342,23 @@ applyTheme(localStorage.getItem('theme') ?? 'dark')
     if (key)
         ($('key') as HTMLInputElement).placeholder =
             `Saved: ••••${key.slice(-4)} (enter to replace)`
+    try {
+        const cfg = await invoke<{
+            classifier: string
+            high: string
+            base: string
+            low: string
+        }>('get_model_config')
+        for (const s of ['classifier', 'high', 'base', 'low'] as const)
+            slotSelect(s).value = cfg[s] ?? ''
+    } catch (e) {
+        console.error(e)
+    }
+    try {
+        models = await invoke('list_models')
+        populateSlots()
+        render()
+    } catch (e) {
+        console.error(e)
+    }
 })()

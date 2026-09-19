@@ -13,9 +13,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             config::save_api_key,
             config::get_api_key,
+            config::get_model_config,
+            config::save_model_config,
             openrouter::list_models,
-            openrouter::send_message,
-            harness::run_council,
+            harness::run_task,
             beats::list_beats,
             beats::get_beat_messages,
             beats::create_beat,

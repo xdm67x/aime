@@ -1,4 +1,4 @@
-use crate::{beats, config, db};
+use crate::config;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -145,60 +145,6 @@ pub async fn list_models() -> Result<Vec<Model>, String> {
     fetch_models().await
 }
 
-/// ponytail: send only the last ~6000 chars of prior turns — enough context,
-/// bounded tokens; raise if truncation bites. Index of the first message in
-/// the tail that fits within `cap` chars of content.
-const HISTORY_CHARS: usize = 6000;
-fn tail_start(history: &[serde_json::Value], cap: usize) -> usize {
-    let (mut used, mut start) = (0usize, history.len());
-    for (i, m) in history.iter().enumerate().rev() {
-        used += m["content"].as_str().unwrap_or("").chars().count();
-        if used > cap {
-            break;
-        }
-        start = i;
-    }
-    start
-}
-
-#[tauri::command]
-pub async fn send_message(
-    beat_id: Option<i64>,
-    model: String,
-    content: String,
-) -> Result<String, String> {
-    // prior turns from the beat give the agent context; capped tail like the
-    // council's brief — raise if long beats get truncated too aggressively
-    let history: Vec<serde_json::Value> = match beat_id {
-        Some(id) => beats::get_beat_messages(id)?
-            .iter()
-            .filter_map(|m| {
-                let role = m["role"].as_str()?;
-                let content = m["content"].as_str()?;
-                Some(serde_json::json!({"role": role, "content": content}))
-            })
-            .collect(),
-        None => vec![],
-    };
-    // persist the user message even if the call fails — it was sent
-    if let Some(beat_id) = beat_id {
-        db::append_messages(
-            beat_id,
-            vec![serde_json::json!({"role": "user", "content": content})],
-        )?;
-    }
-    let mut msgs = history[tail_start(&history, HISTORY_CHARS)..].to_vec();
-    msgs.push(serde_json::json!({"role": "user", "content": content}));
-    let (reply, _usage) = chat_completion(&model, &msgs, &[], None, None, false).await?;
-    if let Some(beat_id) = beat_id {
-        db::append_messages(
-            beat_id,
-            vec![serde_json::json!({"role": "assistant", "model": model, "content": reply})],
-        )?;
-    }
-    Ok(reply)
-}
-
 /// Refresh the models cache in the background every 15 minutes.
 pub fn spawn_refresh_loop() {
     tauri::async_runtime::spawn(async {
@@ -211,27 +157,3 @@ pub fn spawn_refresh_loop() {
     });
 }
 
-#[cfg(test)]
-mod tests {
-    use super::tail_start;
-
-    fn msg(content: &str) -> serde_json::Value {
-        serde_json::json!({"role": "user", "content": content})
-    }
-
-    #[test]
-    fn test_tail_start() {
-        // short history: everything fits
-        let h = vec![msg("a"), msg("bb"), msg("ccc")];
-        assert_eq!(tail_start(&h, 100), 0);
-        // cap 3: last message only ("ccc" alone fits, "bb ccc" = 5 > 3)
-        assert_eq!(tail_start(&h, 3), 2);
-        // cap 0: nothing fits, empty tail
-        assert_eq!(tail_start(&h, 0), 3);
-        // empty history
-        assert_eq!(tail_start(&[], 100), 0);
-        // non-string content doesn't crash
-        let odd = vec![serde_json::json!({"role": "user"}), msg("x")];
-        assert_eq!(tail_start(&odd, 100), 0);
-    }
-}
