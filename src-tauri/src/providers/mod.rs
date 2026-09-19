@@ -187,15 +187,33 @@ pub(crate) async fn send_chat(
     body: &serde_json::Value,
     name: &str,
 ) -> Result<ChatResult, String> {
-    let resp: serde_json::Value = req
+    eprintln!(
+        "[{name}] chat request: model={} messages={} json_mode={} tools={}",
+        body["model"],
+        body["messages"].as_array().map_or(0, Vec::len),
+        body.get("response_format").is_some(),
+        body.get("tools").is_some(),
+    );
+    let resp = req
         .json(body)
         .send()
         .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("{name} request failed: {e}"))?
-        .json()
+        .map_err(|e| format!("{name} request failed: {e}"))?;
+    let status = resp.status();
+    // Read the body before checking status: an error body carries the
+    // server's actual reason ("invalid model", "unknown field", …).
+    let text = resp
+        .text()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("{name}: reading response failed: {e}"))?;
+    if !status.is_success() {
+        let snippet = text.get(..2000).unwrap_or(&text);
+        eprintln!("[{name}] HTTP {status}: {snippet}");
+        return Err(format!("{name} request failed: HTTP {status}: {snippet}"));
+    }
+    eprintln!("[{name}] HTTP {status}");
+    let resp: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Unexpected {name} response: {text} ({e})"))?;
     let message = &resp["choices"][0]["message"];
     if message.is_null() {
         return Err(format!("Unexpected {name} response: {resp}"));
@@ -240,14 +258,22 @@ pub(crate) async fn fetch_model_list(
     for (k, v) in headers {
         req = req.header(k, v);
     }
-    let resp: ModelsResp = req
+    let resp = req
         .send()
         .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("{name} request failed: {e}"))?
-        .json()
+        .map_err(|e| format!("{name} request failed: {e}"))?;
+    let status = resp.status();
+    let text = resp
+        .text()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("{name}: reading response failed: {e}"))?;
+    if !status.is_success() {
+        let snippet = text.get(..2000).unwrap_or(&text);
+        eprintln!("[{name} models] HTTP {status}: {snippet}");
+        return Err(format!("{name} request failed: HTTP {status}: {snippet}"));
+    }
+    let resp: ModelsResp = serde_json::from_str(&text)
+        .map_err(|e| format!("Unexpected {name} models response: {text} ({e})"))?;
     Ok(resp
         .data
         .into_iter()
