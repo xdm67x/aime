@@ -256,16 +256,11 @@ const chat = $('chat')
 
 type SessionStatus = 'idle' | 'running' | 'done' | 'stopped' | 'error'
 
-interface QueueItem {
-    text: string
-    el: HTMLElement
-}
-
 interface SessionState {
     id: number
     el: HTMLElement
     busy: boolean
-    queue: QueueItem[]
+    queue: string[]
     status: SessionStatus
     statusText: string
     loaded: boolean
@@ -376,36 +371,9 @@ function addTool(s: SessionState, ev: ToolRowMsg) {
     return w
 }
 
-/* ---- pending queue: queued prompts show as dimmed rows in the chat and
-   are only promoted to real user messages once the session takes them ---- */
-function renderQueueRow(s: SessionState, text: string): HTMLElement {
-    const wrap = document.createElement('div')
-    wrap.className = 'row-queued'
-    wrap.innerHTML = `<div class="meta">Queued <span class="q-x" title="Remove from queue">✕</span></div><div class="msg user queued"></div>`
-    wrap.querySelector('.msg')!.textContent = text
-    wrap.querySelector('.q-x')!.addEventListener('click', () => {
-        s.queue = s.queue.filter((q) => q.el !== wrap)
-        wrap.remove()
-        renderChips()
-        refreshMain()
-    })
-    s.el.appendChild(wrap)
-    scrollView(s)
-    return wrap
-}
-// promote a queued row into a real user message (called when the run starts)
-function promoteQueued(s: SessionState, item: QueueItem) {
-    const now = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    const wrap = item.el
-    if (!wrap.isConnected) {
-        addMsg(s, { who: 'user', time: now(), text: item.text })
-        return
-    }
-    wrap.className = 'row-user'
-    wrap.innerHTML = `<div class="meta">User <span class="t">${now()}</span></div><div class="msg user"></div>`
-    wrap.querySelector('.msg')!.textContent = item.text
-    scrollView(s)
-}
+/* ---- queued prompts never appear in the chat — they show as removable
+   pills above the prompt input and become messages only once picked up ---- */
+const now = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
 /* ---- streaming: live bubble fed by backend task-events, per session ---- */
 function ensureLive(s: SessionState): HTMLElement {
@@ -496,6 +464,34 @@ function renderChips() {
         })
         .join('')
     box.style.display = items.length ? '' : 'none'
+    renderQueuePills()
+}
+
+// pills for the focused session's queued prompts, sitting right on top of the
+// prompt input; each removable via its ✕
+function renderQueuePills() {
+    const s = currentSess()
+    const box = $('queue-pills')
+    if (!s || !s.queue.length) {
+        box.innerHTML = ''
+        box.style.display = 'none'
+        return
+    }
+    box.innerHTML = s.queue
+        .map(
+            (text, i) => `<span class="pill" title="${esc(text)}">
+        <span class="pill-text">${esc(text)}</span>
+        <button class="pill-x" data-i="${i}" title="Remove from queue">✕</button>
+      </span>`
+        )
+        .join('')
+    box.querySelectorAll('.pill-x').forEach((b) =>
+        b.addEventListener('click', () => {
+            s.queue.splice(Number((b as HTMLElement).dataset.i), 1)
+            renderChips()
+        })
+    )
+    box.style.display = ''
 }
 $('chips').onclick = (e) => {
     const chip = (e.target as Element).closest<HTMLElement>('.chip')
@@ -583,9 +579,9 @@ async function send() {
     if (!s) return
     input.value = ''
     if (s.busy) {
-        // this session's agent is still working — queue behind it; the prompt
-        // shows as a dimmed row until the run actually picks it up
-        s.queue.push({ text, el: renderQueueRow(s, text) })
+        // this session's agent is still working — queue behind it; other
+        // sessions run independently and are unaffected
+        s.queue.push(text)
         renderChips()
         return
     }
@@ -596,10 +592,11 @@ async function send() {
 // is drained and the session goes back to idle
 async function startRun(s: SessionState, first: string) {
     const next = () => {
-        const item = s.queue.shift()
-        if (!item) return null
-        promoteQueued(s, item)
-        return item.text
+        const text = s.queue.shift()
+        if (text === undefined) return null
+        // the queued prompt becomes a visible message only once the run starts
+        addMsg(s, { who: 'user', time: now(), text })
+        return text
     }
     s.busy = true
     refreshMain()
@@ -672,8 +669,6 @@ window.addEventListener('keydown', (e) => {
     // Escape stops the focused session only — background sessions keep running
     const s = currentSess()
     if (s && (s.busy || s.queue.length)) {
-        // drop queued rows from the chat too, then stop the run
-        for (const q of s.queue) q.el.remove()
         s.queue.length = 0
         invoke('cancel_task', { beatId: s.id }).catch(() => {})
         return

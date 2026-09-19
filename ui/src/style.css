@@ -353,23 +353,43 @@ body {
 .row-agent {
     align-items: flex-start;
 }
-/* queued prompts: dimmed user-style rows with a remove button */
-.row-queued {
+/* queued prompts: pills stacked right above the prompt input, removable via ✕ */
+#queue-pills {
+    width: 100%;
+    max-width: 60%;
     display: flex;
-    flex-direction: column;
-    align-self: stretch;
-    align-items: flex-end;
-    opacity: 0.55;
+    flex-wrap: wrap;
+    gap: 6px;
 }
-.row-queued .q-x {
+.pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+    max-width: 260px;
+    min-width: 0;
+}
+.pill-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.pill-x {
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
     padding: 0;
-    font-size: 12.5px;
+    font: inherit;
+    font-size: 11px;
+    flex: none;
 }
-.row-queued .q-x:hover {
+.pill-x:hover {
     color: var(--red);
 }
 .msg.error {
