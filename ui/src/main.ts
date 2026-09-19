@@ -60,18 +60,9 @@ $('projects').onclick = async (e) => {
     const p = projects.find((x) => x.id === +el.dataset.id!)
     if (!p) return
     if ((e.target as Element).closest('.beat-play')) {
-        // sessions spawned from a project run inside its directory
-        try {
-            const b = await invoke<Beat>('create_beat', {
-                name: p.name,
-                description: '',
-                projectId: p.id,
-            })
-            await loadBeats()
-            ;(document.querySelector(`.run[data-id="${b.id}"]`) as HTMLElement | null)?.click()
-        } catch (err) {
-            console.error(err)
-        }
+        // sessions spawned from a project run inside its directory —
+        // reuse the beat modal so the task name/description can be set
+        openBeatModal(p)
         return
     }
     if ((e.target as Element).closest('.beat-x')) {
@@ -243,13 +234,17 @@ $('delete-confirm').onclick = async () => {
     loadBeats()
 }
 
-$('new-beat-btn').onclick = () => {
+// project whose play button opened the modal (null for plain "new beat")
+let modalProject: Project | null = null
+function openBeatModal(p: Project | null) {
+    modalProject = p
     $('beat-modal-status').textContent = ''
     $('beat-overlay').classList.add('open')
-    ;($('beat-name') as HTMLInputElement).value = ''
+    ;($('beat-name') as HTMLInputElement).value = p?.name ?? ''
     ;($('beat-desc') as HTMLTextAreaElement).value = ''
-    $('beat-name').focus()
+    ;(p ? ($('beat-desc') as HTMLTextAreaElement) : ($('beat-name') as HTMLInputElement)).focus()
 }
+$('new-beat-btn').onclick = () => openBeatModal(null)
 const closeBeatModal = () => $('beat-overlay').classList.remove('open')
 $('close-beat-modal').onclick = closeBeatModal
 $('beat-cancel').onclick = closeBeatModal
@@ -263,8 +258,9 @@ async function createBeat() {
         const b = await invoke<Beat>('create_beat', {
             name,
             description: ($('beat-desc') as HTMLTextAreaElement).value,
-            projectId: null,
+            projectId: modalProject?.id ?? null,
         })
+        modalProject = null
         selectedBeat = b.id
         $('run-title').textContent = b.name
         chat.replaceChildren()
