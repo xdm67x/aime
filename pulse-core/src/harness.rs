@@ -224,6 +224,7 @@ async fn agentic_loop(
 ) -> Result<(String, Vec<tools::ToolStep>, Usage), String> {
     let mut steps: Vec<tools::ToolStep> = vec![];
     let mut usage = Usage::default();
+    let mut nudged = false;
     for _ in 0..MAX_TOOL_ITERATIONS {
         if cancelled() {
             return Err(STOPPED.into());
@@ -244,13 +245,15 @@ async fn agentic_loop(
         usage.completion_tokens += r.usage.completion_tokens;
         if r.tool_calls.is_empty() {
             // A text-only reply is normally the final answer — but not when
-            // it was cut off (`length`) or the provider said `tool_calls`
-            // while we parsed none (fragment loss). Continue the loop instead
-            // of persisting a half-answer. ponytail: no "looks unfinished"
-            // heuristics; if narration-without-action persists, add one
-            // continuation nudge here before falling through.
-            if matches!(r.finish_reason.as_deref(), Some("length" | "tool_calls")) {
-                if !r.content.trim().is_empty() {
+            // it was cut off (`length`), the provider said `tool_calls`
+            // while we parsed none (fragment loss), or it came back EMPTY
+            // (reasoning models can burn a turn on reasoning and emit no
+            // content). Ending on any of those finishes the session with no
+            // visible message right after the tool calls — continue instead,
+            // with a one-time nudge so a blank turn can't repeat itself.
+            let blank = r.content.trim().is_empty();
+            if blank || matches!(r.finish_reason.as_deref(), Some("length" | "tool_calls")) {
+                if !blank {
                     on_event(TaskEvent::Step {
                         text: r.content.clone(),
                     });
@@ -258,6 +261,9 @@ async fn agentic_loop(
                         "role": "assistant", "model": model, "content": r.content,
                     }));
                     messages.push(json!({"role": "assistant", "content": r.content}));
+                } else if !nudged {
+                    nudged = true;
+                    messages.push(json!({"role": "user", "content": "Continue."}));
                 }
                 continue;
             }
@@ -543,8 +549,32 @@ async fn run_task_inner(
     };
     record_usage(beat_id, model, &usage).await;
 
+    // a blank answer must not end the run silently — fall back to the last
+    // real assistant message (e.g. the truncated turn the loop continued
+    // from), and don't persist it twice when that's already the last entry
+    let answer = if answer.trim().is_empty() {
+        entries
+            .iter()
+            .rev()
+            .find(|e| {
+                e["role"] == "assistant"
+                    && !e["content"].as_str().unwrap_or("").trim().is_empty()
+            })
+            .and_then(|e| e["content"].as_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        answer
+    };
+    let dup = entries
+        .last()
+        .map(|e| e["role"] == "assistant" && e["content"] == answer)
+        .unwrap_or(false);
+
     // everything already landed in `entries` in order; just close with the answer
-    entries.push(json!({"role": "assistant", "model": model, "content": &answer}));
+    if !dup {
+        entries.push(json!({"role": "assistant", "model": model, "content": &answer}));
+    }
     db::append_messages(beat_id, entries)?;
 
     Ok(TaskResult {

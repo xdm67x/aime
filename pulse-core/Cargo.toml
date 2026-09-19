@@ -10,3 +10,6 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 async-trait = "0.1"
 tokio = { version = "1", features = ["time", "process", "macros", "rt"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
