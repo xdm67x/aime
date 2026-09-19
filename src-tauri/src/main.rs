@@ -54,6 +54,13 @@ async fn run_task(
     .await
 }
 
+/// Ask the in-flight task to stop (the Escape key); the running harness
+/// checks the flag between rounds and inside every stream.
+#[tauri::command]
+fn cancel_task() {
+    harness::cancel_current()
+}
+
 #[tauri::command]
 fn list_beats() -> Result<Vec<beats::Beat>, String> {
     beats::list_beats()
@@ -132,6 +139,7 @@ fn main() {
             save_model_config,
             list_models,
             run_task,
+            cancel_task,
             list_beats,
             get_beat_messages,
             create_beat,

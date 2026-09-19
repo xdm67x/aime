@@ -19,6 +19,23 @@ use crate::providers::{chat_completion, chat_completion_stream, Usage};
 use crate::{beats, config, db, projects, prompts, skills, tools};
 use serde::Serialize;
 use serde_json::json;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Escape hatch: the UI sets this to abort the in-flight task; every stream
+/// and loop round checks it. Global is fine — the frontend serializes runs
+/// (one task at a time, further sends queue up). // ponytail: upgrade to a
+/// per-beat token if concurrent runs ever land
+static CANCELLED: AtomicBool = AtomicBool::new(false);
+
+pub fn cancel_current() {
+    CANCELLED.store(true, Ordering::Relaxed);
+}
+
+pub fn cancelled() -> bool {
+    CANCELLED.load(Ordering::Relaxed)
+}
+
+pub const STOPPED: &str = "stopped";
 
 /* ---- live events pushed to the UI while a task runs ---- */
 
@@ -177,6 +194,9 @@ async fn agentic_loop(
     let mut steps: Vec<tools::ToolStep> = vec![];
     let mut usage = Usage::default();
     for _ in 0..MAX_TOOL_ITERATIONS {
+        if cancelled() {
+            return Err(STOPPED.into());
+        }
         let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
         let r = chat_completion_stream(
             model,
@@ -222,6 +242,9 @@ async fn agentic_loop(
             "tool_calls": tool_calls_json,
         }));
         for tc in &calls {
+            if cancelled() {
+                return Err(STOPPED.into());
+            }
             let (output, error) = match tools::execute(&tc.name, &tc.arguments, cwd).await {
                 Ok(out) => (out, false),
                 Err(e) => (e, true),
@@ -356,6 +379,7 @@ pub async fn run_task(
     prompt: String,
     on_event: OnEvent<'_>,
 ) -> Result<TaskResult, String> {
+    CANCELLED.store(false, Ordering::Relaxed);
     let cfg = config::ModelConfig::load()?;
     let classifier = cfg.classifier.trim();
     if classifier.is_empty() {
@@ -474,6 +498,15 @@ pub async fn run_task(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_cancel_flag() {
+        CANCELLED.store(false, Ordering::Relaxed);
+        assert!(!cancelled());
+        cancel_current();
+        assert!(cancelled());
+        CANCELLED.store(false, Ordering::Relaxed);
+    }
 
     #[test]
     fn test_extract_json() {

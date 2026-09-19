@@ -274,7 +274,9 @@ pub async fn chat_completion_stream(
         on_delta(t);
     };
     let res = send_chat_stream(p, &req, &key, &mut wrapped).await;
-    if res.is_err() && deltas == 0 {
+    // a cancelled stream must not fall back to the (slower, whole-request)
+    // non-streaming retry — that would undo the stop
+    if res.is_err() && deltas == 0 && !crate::harness::cancelled() {
         return chat_completion(
             model,
             messages,
@@ -337,6 +339,9 @@ async fn send_chat_stream(
     let mut usage = Usage::default();
     let mut buf: Vec<u8> = vec![];
     loop {
+        if crate::harness::cancelled() {
+            return Err(crate::harness::STOPPED.into());
+        }
         let chunk = resp
             .chunk()
             .await

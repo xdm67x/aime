@@ -452,8 +452,10 @@ async function runOne(beatId: number, text: string) {
         else sealLive(r.answer)
     } catch (e) {
         clearLive()
-        const row = addMsg({ who: 'Pulse', time: now(), text: String(e) })
-        row.querySelector('.msg')!.classList.add('error')
+        // a cancelled run (Escape) isn't an error — show it as a plain note
+        const stopped = String(e).includes('stopped')
+        const row = addMsg({ who: 'Pulse', time: now(), text: stopped ? 'Stopped.' : String(e) })
+        if (!stopped) row.querySelector('.msg')!.classList.add('error')
     }
 }
 const input = $('input') as HTMLInputElement
@@ -469,6 +471,12 @@ $('overlay').onclick = (e) => {
 }
 window.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return
+    // while a task runs, Escape stops it (queued sends are dropped too)
+    if (busy) {
+        queue.length = 0
+        invoke('cancel_task').catch(() => {})
+        return
+    }
     $('overlay').classList.remove('open')
     closeBeatModal()
     closeProjectModal()
