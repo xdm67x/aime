@@ -22,7 +22,7 @@ jobs:
           cache-dependency-path: ui/pnpm-lock.yaml
 
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.2
 
       # tauri compiles against webkit2gtk on Linux
       - run: |
