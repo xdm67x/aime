@@ -428,17 +428,19 @@ pub async fn run_task(
             )
             .await?;
             // the agentic draft is one more assistant message (the loop's own
-            // narrations and tool results are already in `entries`)
+            // narrations and tool results are already in `entries`); for base
+            // the draft IS the final answer, so don't store it twice — the
+            // answer push below persists it
             emit(
                 &app,
                 TaskEvent::Step {
                     text: draft.clone(),
                 },
             );
-            entries.push(json!({
-                "role": "assistant", "model": model, "content": draft,
-            }));
             if tier == Tier::High {
+                entries.push(json!({
+                    "role": "assistant", "model": model, "content": draft,
+                }));
                 let (final_, u2) =
                     reflexion(model, &app, &prompt, &draft, &tool_steps, &brief, &session).await?;
                 let usage = Usage {

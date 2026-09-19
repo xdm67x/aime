@@ -54,7 +54,43 @@ pub fn open() -> Result<Connection, String> {
     );
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(|e| e.to_string())?;
+    dedupe_messages(&conn);
     Ok(conn)
+}
+
+/// Older builds double-persisted base-tier answers (the agentic draft was
+/// pushed as its own entry and again as the final answer, identical and
+/// adjacent). Drop adjacent duplicate messages once per open.
+fn dedupe_messages(conn: &Connection) {
+    let Ok(mut stmt) = conn.prepare("SELECT id, messages FROM beats") else {
+        return;
+    };
+    let Ok(rows) = stmt.query_map([], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+    }) else {
+        return;
+    };
+    let beats: Vec<(i64, Vec<serde_json::Value>)> = rows
+        .filter_map(|r| r.ok())
+        .filter_map(|(id, msgs)| serde_json::from_str(&msgs).ok().map(|a| (id, a)))
+        .collect();
+    for (id, arr) in beats {
+        let mut cleaned: Vec<serde_json::Value> = Vec::with_capacity(arr.len());
+        for m in &arr {
+            let dup = cleaned.last().is_some_and(|p| {
+                p["role"] == m["role"] && p["model"] == m["model"] && p["content"] == m["content"]
+            });
+            if !dup {
+                cleaned.push(m.clone());
+            }
+        }
+        if cleaned.len() < arr.len() {
+            let _ = conn.execute(
+                "UPDATE beats SET messages = ?1 WHERE id = ?2",
+                params![serde_json::to_string(&cleaned).unwrap_or_default(), id],
+            );
+        }
+    }
 }
 
 pub fn get_setting(key: &str) -> Result<Option<String>, String> {
@@ -178,6 +214,22 @@ mod tests {
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0]["content"], "hi");
         assert!(arr[1]["ts"].as_str().unwrap().len() == 19); // datetime('now') format
+        // adjacent duplicate cleanup: append an identical reply, reopen, dedupe
+        append_messages(
+            id,
+            vec![serde_json::json!({"role": "assistant", "content": "yo"})],
+        )
+        .unwrap();
+        open().unwrap();
+        let msgs: String = conn
+            .query_row(
+                "SELECT messages FROM beats WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&msgs).unwrap();
+        assert_eq!(arr.len(), 2); // identical adjacent reply removed
                                                              // appending to a nonexistent beat fails
         assert!(append_messages(9999, vec![serde_json::json!({"a": 1})]).is_err());
         // delete only works on archived beats
