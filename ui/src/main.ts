@@ -193,6 +193,8 @@ $('runs').onclick = async (e) => {
     $('run-project').textContent = b.project_name ? `⌂ ${b.project_name}` : ''
     $('main').classList.remove('no-beat')
     chat.replaceChildren()
+    liveRow = null
+    liveText = ''
     try {
         const msgs = await invoke<
             { role: string; content: string; model?: string; ts?: string; arguments?: string; error?: boolean }[]
@@ -200,15 +202,11 @@ $('runs').onclick = async (e) => {
         for (const m of msgs) {
             const t = m.ts ? m.ts.slice(11, 16) : ''
             if (m.role === 'tool') {
-                addMsg({
-                    who: `${m.model} · tool`,
-                    time: t,
-                    text: toolMarkdown({
-                        tool: m.model ?? 'tool',
-                        arguments: m.arguments ?? '',
-                        result: m.content,
-                        error: !!m.error,
-                    }),
+                addTool({
+                    tool: m.model ?? 'tool',
+                    arguments: m.arguments ?? '',
+                    result: m.content,
+                    error: !!m.error,
                 })
             } else {
                 addMsg({
@@ -298,7 +296,7 @@ function addMsg({ who, time, text }: { who: string; time: string; text: string }
     if (who === 'user') {
         wrap.innerHTML = `<div class="meta">User <span class="t">${time}</span></div><div class="msg user"></div>`
     } else {
-        wrap.innerHTML = `<div class="meta agent">${esc(who)} <span class="t">${time}</span></div><div class="msg"></div>`
+        wrap.innerHTML = `<div class="meta agent"><span class="who">${esc(who)}</span> <span class="t">${time}</span></div><div class="msg"></div>`
     }
     const msg = wrap.querySelector('.msg')!
     if (who === 'user') msg.textContent = text
@@ -309,18 +307,103 @@ function addMsg({ who, time, text }: { who: string; time: string; text: string }
     return wrap
 }
 
-interface ToolStepMsg {
+interface ToolRowMsg {
     tool: string
     arguments: string
     result: string
     error: boolean
 }
 
-// compact transcript line for one executed tool call
-function toolMarkdown(s: ToolStepMsg) {
-    const clip = (t: string) => (t.length > 1200 ? t.slice(0, 1200) + '\n… (truncated)' : t)
-    return `**${s.tool}** ${s.error ? '❌ failed' : '✅'}\n\n\`\`\`json\n${clip(s.arguments)}\n\`\`\`\n\n\`\`\`\n${clip(s.result)}\n\`\`\``
+// tool calls render as light, collapsible full-width rows — not bubbles
+function addTool(s: ToolRowMsg) {
+    const wrap = document.createElement('div')
+    wrap.className = 'row-tool' + (s.error ? ' err' : '')
+    wrap.innerHTML = `<button class="tool-head">
+        <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        <span class="tool-name">${esc(s.tool)}</span>
+        <span class="tool-status">${s.error ? 'failed' : 'done'}</span>
+      </button>
+      <div class="tool-body" hidden>
+        <pre>${esc(s.arguments)}</pre>
+        <pre>${esc(s.result)}</pre>
+      </div>`
+    const body = wrap.querySelector<HTMLElement>('.tool-body')!
+    wrap.querySelector('.tool-head')!.addEventListener('click', () => {
+        body.hidden = !body.hidden
+        wrap.classList.toggle('open', !body.hidden)
+    })
+    chat.appendChild(wrap)
+    chat.scrollTop = chat.scrollHeight
+    return wrap
 }
+
+/* ---- streaming: live bubble fed by backend task-events ---- */
+let liveRow: HTMLElement | null = null
+let liveText = ''
+let liveLabel = ''
+// a run in flight; further sends queue up until it finishes
+let busy = false
+const queue: { beatId: number; text: string }[] = []
+
+function ensureLive(): HTMLElement {
+    if (liveRow?.isConnected) return liveRow
+    liveRow = document.createElement('div')
+    liveRow.className = 'row-agent'
+    liveRow.innerHTML = `<div class="meta agent"><span class="who"></span> <span class="t"></span></div><div class="msg"></div>`
+    chat.appendChild(liveRow)
+    chat.scrollTop = chat.scrollHeight
+    return liveRow
+}
+function appendDelta(t: string) {
+    liveText += t
+    const msg = ensureLive().querySelector('.msg')!
+    msg.classList.add('streaming')
+    // model output is untrusted → sanitize before injecting
+    msg.innerHTML = DOMPurify.sanitize(marked.parse(liveText, { async: false }))
+    chat.scrollTop = chat.scrollHeight
+}
+function clearLive() {
+    liveRow?.remove()
+    liveRow = null
+    liveText = ''
+}
+// promote the streaming bubble into a finished message (create one when no
+// bubble is live, e.g. the provider fell back to non-streaming)
+function sealLive(text?: string) {
+    const t = text ?? liveText
+    if (!t.trim()) {
+        clearLive()
+        return
+    }
+    const row = ensureLive()
+    const msg = row.querySelector('.msg')!
+    msg.classList.remove('streaming')
+    msg.innerHTML = DOMPurify.sanitize(marked.parse(t, { async: false }))
+    row.querySelector('.who')!.textContent = liveLabel || 'assistant'
+    row.querySelector('.t')!.textContent = new Date().toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+    })
+    liveRow = null
+    liveText = ''
+    chat.scrollTop = chat.scrollHeight
+}
+
+;(window as any).__TAURI__.event.listen('task-event', (e: any) => {
+    const ev = e.payload
+    if (ev.type === 'start') {
+        // no placeholder bubble — the input's progress border signals activity
+        liveLabel = `${ev.model} · ${ev.tier}`
+    } else if (ev.type === 'delta') {
+        appendDelta(ev.text)
+    } else if (ev.type === 'step') {
+        sealLive(ev.text)
+    } else if (ev.type === 'tool') {
+        // narration streamed before a tool call isn't persisted — drop it
+        clearLive()
+        addTool(ev)
+    }
+})
 
 async function send() {
     const text = input.value.trim()
@@ -331,27 +414,44 @@ async function send() {
     }
     input.value = ''
     const now = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    $('main').classList.remove('fresh')
     addMsg({ who: 'user', time: now(), text })
-    const thinking = addMsg({ who: 'Pulse', time: now(), text: 'Thinking…' })
-    thinking.querySelector('.msg')!.classList.add('thinking')
+    // while the agent works, messages queue up and run after it finishes
+    if (busy) {
+        queue.push({ beatId: selectedBeat, text })
+        return
+    }
+    busy = true
+    document.querySelector('.input-wrap')!.classList.add('busy')
     try {
+        await runOne(selectedBeat, text)
+        while (queue.length) {
+            const next = queue.shift()!
+            await runOne(next.beatId, next.text)
+        }
+    } finally {
+        busy = false
+        document.querySelector('.input-wrap')!.classList.remove('busy')
+        clearLive()
+    }
+}
+
+async function runOne(beatId: number, text: string) {
+    const now = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    $('main').classList.remove('fresh')
+    clearLive()
+    try {
+        // work streams in live via task-events; this just finalizes the answer
         const r = await invoke<{
             tier: string
             model: string
-            steps: string[]
-            tool_steps: ToolStepMsg[]
             answer: string
-        }>('run_task', { beatId: selectedBeat, prompt: text })
-        thinking.remove()
-        const label = `${r.model} · ${r.tier}`
-        for (const s of r.tool_steps) addMsg({ who: label, time: now(), text: toolMarkdown(s) })
-        for (const s of r.steps) addMsg({ who: label, time: now(), text: s })
-        addMsg({ who: label, time: now(), text: r.answer })
+        }>('run_task', { beatId, prompt: text })
+        liveLabel = `${r.model} · ${r.tier}`
+        sealLive(r.answer)
     } catch (e) {
-        const bubble = thinking.querySelector('.msg')!
-        bubble.textContent = String(e)
-        bubble.classList.remove('thinking')
+        clearLive()
+        const row = addMsg({ who: 'Pulse', time: now(), text: String(e) })
+        row.querySelector('.msg')!.classList.add('error')
     }
 }
 const input = $('input') as HTMLInputElement

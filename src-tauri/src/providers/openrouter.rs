@@ -1,6 +1,6 @@
 //! OpenRouter provider (OpenAI-compatible, https://openrouter.ai).
 
-use super::{base_body, fetch_model_list, send_chat, ChatRequest, ChatResult, Model, Provider};
+use super::{base_body, fetch_model_list, ChatRequest, Model, Provider};
 use crate::config;
 use async_trait::async_trait;
 use serde_json::json;
@@ -21,18 +21,25 @@ impl Provider for OpenRouter {
         "openrouter"
     }
 
-    async fn chat(&self, req: &ChatRequest, key: &str) -> Result<ChatResult, String> {
+    fn chat_setup(
+        &self,
+        req: &ChatRequest,
+        key: &str,
+    ) -> (String, Vec<(&'static str, String)>, serde_json::Value) {
         let mut body = base_body(req);
         if !req.fallbacks.is_empty() {
             // OpenRouter fallback routing: tried in order if the primary fails
             body["models"] = json!(req.fallbacks);
         }
-        let r = reqwest::Client::new()
-            .post(format!("{BASE_URL}/chat/completions"))
-            .header("Authorization", format!("Bearer {key}"))
-            .header("HTTP-Referer", "https://pulse.dev")
-            .header("X-Title", "Pulse");
-        send_chat(r, &body, self.name()).await
+        (
+            format!("{BASE_URL}/chat/completions"),
+            vec![
+                ("Authorization", format!("Bearer {key}")),
+                ("HTTP-Referer", "https://pulse.dev".into()),
+                ("X-Title", "Pulse".into()),
+            ],
+            body,
+        )
     }
 
     async fn models(&self) -> Result<Vec<Model>, String> {

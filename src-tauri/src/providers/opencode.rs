@@ -2,7 +2,7 @@
 //! exposing open coding models behind an OpenAI-compatible API at
 //! https://opencode.ai/zen/go/v1.
 
-use super::{base_body, fetch_model_list, send_chat, ChatRequest, ChatResult, Model, Provider};
+use super::{base_body, fetch_model_list, ChatRequest, Model, Provider};
 use async_trait::async_trait;
 
 const BASE_URL: &str = "https://opencode.ai/zen/go/v1";
@@ -21,18 +21,24 @@ impl Provider for OpenCode {
         "opencode"
     }
 
-    async fn chat(&self, req: &ChatRequest, key: &str) -> Result<ChatResult, String> {
-        let body = base_body(req);
-        let r = reqwest::Client::new()
-            .post(format!("{BASE_URL}/chat/completions"))
-            .header("Authorization", format!("Bearer {key}"))
-            // Go asks clients to identify themselves and send a stable session
-            // id per conversation for routing/prompt caching.
-            // ponytail: session id is per-app-run; per-beat ids if routing
-            // quality matters
-            .header("User-Agent", "Pulse/1.0")
-            .header("x-opencode-session", "pulse-default");
-        send_chat(r, &body, self.name()).await
+    fn chat_setup(
+        &self,
+        req: &ChatRequest,
+        key: &str,
+    ) -> (String, Vec<(&'static str, String)>, serde_json::Value) {
+        (
+            format!("{BASE_URL}/chat/completions"),
+            vec![
+                ("Authorization", format!("Bearer {key}")),
+                // Go asks clients to identify themselves and send a stable
+                // session id per conversation for routing/prompt caching.
+                // ponytail: session id is per-app-run; per-beat ids if routing
+                // quality matters
+                ("User-Agent", "Pulse/1.0".into()),
+                ("x-opencode-session", "pulse-default".into()),
+            ],
+            base_body(req),
+        )
     }
 
     async fn models(&self) -> Result<Vec<Model>, String> {
