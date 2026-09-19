@@ -16,7 +16,7 @@
 //! model tier, drives `agentic_loop`, and persists the result onto the beat.
 
 use crate::openrouter::{chat_completion, Usage};
-use crate::{beats, config, db, skills, tools};
+use crate::{beats, config, db, prompts, skills, tools};
 use serde::Serialize;
 use serde_json::json;
 
@@ -47,21 +47,13 @@ impl Tier {
     }
 }
 
-const CLASSIFIER_PROMPT: &str = "You route a user task to one of three model tiers by difficulty.\n\
-- \"high\": deep reasoning, multi-step planning, architecture, hard debugging, or high-stakes \
-problems that benefit from reflection.\n\
-- \"base\": typical implementation work — writing or modifying code, explaining, straightforward \
-but non-trivial tasks.\n\
-- \"low\": simple, basic tasks — quick facts, greetings, formatting, trivial questions.\n\
-Reply with only JSON: {\"tier\":\"high\"|\"base\"|\"low\"}.";
-
 /// Ask the classifier model which tier this prompt belongs to. Falls back to
 /// `base` (a safe middle ground) if the reply can't be parsed.
 async fn classify(classifier: &str, prompt: &str) -> Result<Tier, String> {
     let r = chat_completion(
         classifier,
         &[
-            json!({"role": "system", "content": CLASSIFIER_PROMPT}),
+            json!({"role": "system", "content": prompts::CLASSIFIER}),
             json!({"role": "user", "content": prompt}),
         ],
         &[],
@@ -99,9 +91,10 @@ async fn summarize_history(beat_id: i64, model: &str) -> Result<String, String> 
     let tail: String = chars[chars.len().saturating_sub(6000)..].iter().collect();
     let r = chat_completion(
         model,
-        &[json!({"role": "user", "content": format!(
-            "Summarize this conversation so far into a compact context brief. \
-             Keep facts, decisions and open questions.\n\n{tail}")})],
+        &[json!({
+            "role": "user",
+            "content": prompts::fill(prompts::SUMMARIZE, &[("history", tail.as_str())])
+        })],
         &[],
         Some(0.2),
         Some(512),
@@ -112,14 +105,10 @@ async fn summarize_history(beat_id: i64, model: &str) -> Result<String, String> 
     Ok(format!("Conversation context so far:\n{}", r.content))
 }
 
-/// Optional session-level system prompt. Read from SYSTEM_PROMPT.md in the
-/// working directory each time a run starts, so edits apply on the next run.
-/// ponytail: cwd-relative — fine for `pnpm tauri dev`; if the packaged app
-/// can't find it, switch to an explicit path from settings.
+/// Built-in session instructions, embedded from `prompts/system.md` at
+/// compile time so the packaged app doesn't depend on a cwd file.
 fn session_prompt() -> String {
-    std::fs::read_to_string("SYSTEM_PROMPT.md")
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default()
+    prompts::SYSTEM.trim().to_string()
 }
 
 fn system_message(brief: &str, session: &str, note: &str) -> serde_json::Value {
@@ -129,7 +118,7 @@ fn system_message(brief: &str, session: &str, note: &str) -> serde_json::Value {
         content.push_str("\n\n");
     }
     if !session.is_empty() {
-        content.push_str("Session instructions (SYSTEM_PROMPT.md):\n");
+        content.push_str("Session instructions:\n");
         content.push_str(session);
         content.push_str("\n\n");
     }
@@ -142,11 +131,6 @@ fn system_message(brief: &str, session: &str, note: &str) -> serde_json::Value {
 /* ---- agentic loop: model + tools until a plain-text answer ---- */
 
 const MAX_TOOL_ITERATIONS: u32 = 12;
-
-const AGENT_NOTE: &str = "Tools are available (read_file, write_file, edit_file, grep, bash, and \
-skill_* loaders). Use them when they help: read before editing, search before assuming, verify \
-by running. skill_* tools load the full instructions of a specialized skill on demand. When the \
-work is done, reply with the final answer as plain text (no tool call).";
 
 /// Drive the model against `messages` (already seeded with system + user
 /// turns): each round's tool calls are executed and fed back as `tool`
@@ -233,10 +217,14 @@ async fn reflexion(
         model,
         &[
             system_message(brief, session, ""),
-            json!({"role": "user", "content": format!(
-                "Task:\n{prompt}\n\nDraft answer:\n{draft}\n\nTool evidence:\n{evidence}\n\n\
-                 Critique the draft for correctness, gaps and clarity, then give the final, \
-                 improved answer.\n\nFinal answer:")}),
+            json!({"role": "user", "content": prompts::fill(
+                prompts::REFLEXION,
+                &[
+                    ("prompt", prompt),
+                    ("draft", draft),
+                    ("evidence", evidence.as_str()),
+                ],
+            )}),
         ],
         &[],
         Some(0.5),
@@ -315,7 +303,7 @@ pub async fn run_task(beat_id: i64, prompt: String) -> Result<TaskResult, String
 
     let (answer, steps, tool_steps, usage) = match tier {
         Tier::High | Tier::Base => {
-            let sys = system_message(&brief, &session, AGENT_NOTE);
+            let sys = system_message(&brief, &session, prompts::AGENT_NOTE);
             let mut msgs = vec![sys, json!({"role": "user", "content": &prompt})];
             let (draft, tool_steps, u1) = agentic_loop(model, &mut msgs, &tool_defs).await?;
             if tier == Tier::High {

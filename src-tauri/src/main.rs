@@ -6,6 +6,7 @@ mod config;
 mod db;
 mod harness;
 mod openrouter;
+mod prompts;
 mod skills;
 mod tools;
 
