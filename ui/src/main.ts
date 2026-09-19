@@ -341,6 +341,7 @@ function addTool(s: ToolRowMsg) {
 let liveRow: HTMLElement | null = null
 let liveText = ''
 let liveLabel = ''
+let lastSealed = ''
 // a run in flight; further sends queue up until it finishes
 let busy = false
 const queue: { beatId: number; text: string }[] = []
@@ -366,6 +367,7 @@ function clearLive() {
     liveRow?.remove()
     liveRow = null
     liveText = ''
+    lastSealed = ''
 }
 // promote the streaming bubble into a finished message (create one when no
 // bubble is live, e.g. the provider fell back to non-streaming)
@@ -386,6 +388,7 @@ function sealLive(text?: string) {
     })
     liveRow = null
     liveText = ''
+    lastSealed = t
     chat.scrollTop = chat.scrollHeight
 }
 
@@ -447,7 +450,10 @@ async function runOne(beatId: number, text: string) {
             answer: string
         }>('run_task', { beatId, prompt: text })
         liveLabel = `${r.model} · ${r.tier}`
-        sealLive(r.answer)
+        // the step event already sealed this text (base tier) — only seal
+        // when the answer hasn't been rendered live yet (low tier, fallback)
+        if (lastSealed === r.answer) clearLive()
+        else sealLive(r.answer)
     } catch (e) {
         clearLive()
         const row = addMsg({ who: 'Pulse', time: now(), text: String(e) })
