@@ -83,7 +83,7 @@ fn set_beat_archived(id: i64, archived: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn delete_beat(id: i64) -> Result<(), String> {
+fn delete_beat(id: i64) -> Result<String, String> {
     beats::delete_beat(id)
 }
 

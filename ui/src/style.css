@@ -521,6 +521,11 @@ body {
     flex-wrap: wrap;
     gap: 6px;
 }
+#wt-status {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 4px;
+}
 .chip {
     display: inline-flex;
     align-items: center;

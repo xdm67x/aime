@@ -1,4 +1,4 @@
-use crate::{db, providers};
+use crate::{db, projects, providers};
 use rusqlite::{params, OptionalExtension, Row};
 use serde::Serialize;
 
@@ -11,6 +11,9 @@ pub struct Beat {
     pub created_at: String,
     pub cost_usd: f64,
     /// Project the beat runs in (its directory is the working directory).
+    /// Set right after creation (create_beat only): worktree status shown in
+    /// the UI, success or failure.
+    pub worktree_status: Option<String>,
     pub project_id: Option<i64>,
     pub project_name: Option<String>,
 }
@@ -28,6 +31,7 @@ fn row_to_beat(row: &Row) -> rusqlite::Result<Beat> {
         archived: row.get::<_, i64>(3)? != 0,
         created_at: row.get(4)?,
         cost_usd: row.get(5)?,
+        worktree_status: None,
         project_id: row.get(6)?,
         project_name: row.get(7)?,
     })
@@ -70,7 +74,7 @@ pub fn create_beat(
     let project_name: Option<String> = match project_id {
         Some(pid) => conn
             .query_row(
-                "SELECT name FROM projects WHERE id = ?1",
+                "SELECT path FROM projects WHERE id = ?1",
                 params![pid],
                 |r| r.get(0),
             )
@@ -78,6 +82,12 @@ pub fn create_beat(
             .map_err(|e| e.to_string())?,
         None => None,
     };
+    // a beat born from a project gets its own git worktree under
+    // ~/.pulse/worktrees; status is always reported (UI shows it) and a
+    // failure never blocks the beat — it then just runs in the project dir
+    let worktree_status = project_name
+        .as_deref()
+        .map(|path| projects::create_worktree(id, name, path));
     Ok(Beat {
         id,
         name: name.into(),
@@ -85,6 +95,7 @@ pub fn create_beat(
         archived: false,
         created_at,
         cost_usd: 0.0,
+        worktree_status,
         project_id,
         project_name,
     })
@@ -115,9 +126,21 @@ pub fn get_beat_messages(id: i64) -> Result<Vec<serde_json::Value>, String> {
     serde_json::from_str(&current).map_err(|e| e.to_string())
 }
 
-/// Permanently delete an archived beat and its usage rows.
-pub fn delete_beat(id: i64) -> Result<(), String> {
+/// Permanently delete an archived beat and its usage rows. Its worktree, if
+/// any, is dropped from disk.
+pub fn delete_beat(id: i64) -> Result<String, String> {
     let conn = db::open()?;
+    // fetch the worktree + parent repo before the row is gone
+    let (worktree, project): (Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT b.worktree, p.path FROM beats b \
+             LEFT JOIN projects p ON p.id = b.project_id WHERE b.id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .unwrap_or((None, None));
     conn.execute("DELETE FROM beat_usage WHERE beat_id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     let n = conn
@@ -129,7 +152,10 @@ pub fn delete_beat(id: i64) -> Result<(), String> {
     if n == 0 {
         return Err("Beat not found or not archived".into());
     }
-    Ok(())
+    Ok(match worktree {
+        Some(wt) => projects::remove_worktree(&wt, project.as_deref()),
+        None => "No worktree attached".into(),
+    })
 }
 
 async fn usage_cost(model_id: &str, prompt: i64, completion: i64) -> f64 {

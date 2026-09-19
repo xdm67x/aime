@@ -13,6 +13,7 @@ interface Beat {
     description?: string
     archived?: boolean
     cost_usd?: number
+    worktree_status?: string | null
     project_id?: number | null
     project_name?: string | null
 }
@@ -123,6 +124,16 @@ const esc = (s: string) =>
     )
 const fmtCost = (c?: number) => (c && c > 0 ? '$' + (c < 0.01 ? c.toFixed(4) : c.toFixed(2)) : '')
 
+// transient line above the prompt: worktree create/drop status
+let wtStatusTimer: ReturnType<typeof setTimeout> | null = null
+function showWtStatus(msg: string) {
+    const el = $('wt-status')
+    el.textContent = msg
+    el.style.display = ''
+    if (wtStatusTimer) clearTimeout(wtStatusTimer)
+    wtStatusTimer = setTimeout(() => (el.style.display = 'none'), 10_000)
+}
+
 async function loadBeats() {
     try {
         beats = await invoke('list_beats')
@@ -190,13 +201,14 @@ $('delete-overlay').onclick = (e) => {
 $('delete-confirm').onclick = async () => {
     const id = +$('delete-overlay').dataset.beatId!
     try {
-        await invoke('delete_beat', { id })
+        const st = await invoke<string>('delete_beat', { id })
         if (selectedBeat === id) {
             selectedBeat = null
             $('run-title').textContent = ''
         }
         dropSession(id)
         refreshMain()
+        showWtStatus(st)
     } catch (err) {
         console.error(err)
     }
@@ -234,6 +246,7 @@ async function createBeat() {
         closeBeatModal()
         await loadBeats()
         openBeat(b)
+        if (b.worktree_status) showWtStatus(b.worktree_status)
     } catch (err) {
         $('beat-modal-status').textContent = String(err)
         $('beat-modal-status').classList.add('err')

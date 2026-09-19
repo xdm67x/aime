@@ -7,7 +7,8 @@
 use crate::{db, tools};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[derive(Serialize)]
 pub struct Project {
@@ -166,9 +167,11 @@ pub fn remove_project(id: i64) -> Result<(), String> {
 /// project was deleted or its directory no longer exists.
 pub fn working_dir(beat_id: i64) -> Result<Option<String>, String> {
     let c = conn()?;
+    // a beat with a worktree runs in the worktree, not the project checkout
     let path: Option<String> = c
         .query_row(
-            "SELECT p.path FROM beats b JOIN projects p ON p.id = b.project_id WHERE b.id = ?1",
+            "SELECT COALESCE(b.worktree, p.path) FROM beats b \
+             LEFT JOIN projects p ON p.id = b.project_id WHERE b.id = ?1",
             params![beat_id],
             |r| r.get(0),
         )
@@ -182,6 +185,153 @@ pub fn working_dir(beat_id: i64) -> Result<Option<String>, String> {
             Ok(Some(p))
         }
         None => Ok(None),
+    }
+}
+
+/* ---- git worktrees: a beat spawned from a project works in a dedicated
+   worktree under ~/.pulse/worktrees so its edits never touch the main repo
+   checkout. Created with the beat, dropped when the archived beat is deleted. ---- */
+
+fn worktrees_base() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let base = Path::new(&home).join(".pulse").join("worktrees");
+    std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    Ok(base)
+}
+
+/// Branch/worktree name from a task name: whitespace and `/` → hyphens, then
+/// only branch-safe characters survive (alnum, `-`, `_`, `.`); repeats
+/// collapse, `..` (illegal in git refs) flattens, and edges are trimmed so no
+/// awkward characters can slip into the branch name.
+pub fn slug(name: &str) -> String {
+    let s: String = name
+        .trim()
+        .chars()
+        .map(|c| if c.is_whitespace() || c == '/' { '-' } else { c })
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .collect();
+    let mut s = s
+        .trim_matches(|c: char| c == '-' || c == '.')
+        .replace("..", "-")
+        .replace("--", "-");
+    while s.contains("--") {
+        s = s.replace("--", "-");
+    }
+    if s.is_empty() {
+        "beat".into()
+    } else {
+        s
+    }
+}
+
+fn branch_exists(project: &str, branch: &str) -> bool {
+    Command::new("git")
+        .args([
+            "-C",
+            project,
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Create a git worktree for a freshly created beat, branching off the
+/// project's current HEAD. Returns a status message either way (the UI shows
+/// it); a failure never blocks beat creation — the beat then just runs in the
+/// project directory itself.
+pub fn create_worktree(beat_id: i64, name: &str, project_path: &str) -> String {
+    match worktrees_base() {
+        Ok(b) => create_worktree_in(b, beat_id, name, project_path),
+        Err(e) => format!("Worktree failed: {e}"),
+    }
+}
+
+fn create_worktree_in(base: PathBuf, beat_id: i64, name: &str, project_path: &str) -> String {
+    match create_worktree_git(base, beat_id, name, project_path) {
+        Ok((branch, path)) => {
+            if let Err(e) = db::open().and_then(|c| {
+                c.execute("UPDATE beats SET worktree = ?1 WHERE id = ?2", params![path, beat_id])
+                    .map_err(|e| e.to_string())
+            }) {
+                let _ = std::fs::remove_dir_all(&path);
+                return format!("Worktree failed: {e}");
+            }
+            format!("Worktree ready: {path} (branch {branch})")
+        }
+        Err(e) => e,
+    }
+}
+
+/// The git side only: returns (branch, worktree path). No db touched.
+fn create_worktree_git(
+    base: PathBuf,
+    beat_id: i64,
+    name: &str,
+    project_path: &str,
+) -> Result<(String, String), String> {
+    if !Path::new(project_path).join(".git").exists() {
+        return Err(format!("Worktree skipped: {project_path} is not a git repo"));
+    }
+    let mut branch = slug(name);
+    let mut dest = base.join(&branch);
+    if branch_exists(project_path, &branch) || dest.exists() {
+        branch = format!("{}-{beat_id}", slug(name));
+        dest = base.join(&branch);
+    }
+    let out = Command::new("git")
+        .args([
+            "-C",
+            project_path,
+            "worktree",
+            "add",
+            "-b",
+            &branch,
+            &dest.to_string_lossy(),
+        ])
+        .output();
+    let out = match out {
+        Ok(o) => o,
+        Err(e) => return Err(format!("Worktree failed: git: {e}")),
+    };
+    if !out.status.success() {
+        return Err(format!(
+            "Worktree failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok((branch, dest.to_string_lossy().to_string()))
+}
+
+/// Remove a beat's worktree directory from disk, cleanly unregistered from the
+/// parent repo when possible. Returns a status message for the UI.
+pub fn remove_worktree(path: &str, project: Option<&str>) -> String {
+    if !Path::new(path).exists() {
+        return format!("Worktree {path} already gone");
+    }
+    let repo = project.filter(|p| Path::new(p).join(".git").exists());
+    if let Some(p) = repo {
+        if let Ok(o) = Command::new("git")
+            .args(["-C", p, "worktree", "remove", "--force", path])
+            .output()
+        {
+            if o.status.success() {
+                return format!("Worktree dropped: {path}");
+            }
+        }
+    }
+    // parent repo gone or `git worktree remove` refused — delete + prune
+    match std::fs::remove_dir_all(path) {
+        Ok(_) => {
+            if let Some(p) = repo {
+                let _ = Command::new("git").args(["-C", p, "worktree", "prune"]).output();
+            }
+            format!("Worktree dropped: {path}")
+        }
+        Err(e) => format!("Worktree drop failed: {e}"),
     }
 }
 
@@ -221,5 +371,54 @@ mod tests {
         assert_eq!(name_of("vercel/next.js"), "next.js");
         assert_eq!(name_of("https://github.com/foo/bar.git"), "bar");
         assert_eq!(name_of("foo/bar/"), "bar");
+    }
+
+    #[test]
+    fn test_slug() {
+        assert_eq!(slug("Fix Login Flow"), "Fix-Login-Flow");
+        assert_eq!(slug("  weird  name!! @# "), "weird-name");
+        assert_eq!(slug("--leading and trailing--"), "leading-and-trailing");
+        assert_eq!(slug("a/b..c"), "a-b-c");
+        assert_eq!(slug("   "), "beat");
+    }
+
+    #[test]
+    fn test_worktree_lifecycle() {
+        let tmp = std::env::temp_dir().join(format!("pulse-wt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let proj = tmp.join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        let git = |args: &[&str]| {
+            let out = Command::new("git")
+                .arg("-C")
+                .arg(&proj)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {:?}: {}", args, String::from_utf8_lossy(&out.stderr));
+        };
+        git(&["init", "-q"]);
+        git(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"]);
+
+        let base = tmp.join("wts");
+        let msg = create_worktree_in(base.clone(), 1, "Fix Login Flow", &proj.to_string_lossy());
+        assert!(msg.contains("Worktree ready"), "{msg}");
+        assert!(msg.contains("branch Fix-Login-Flow"), "{msg}");
+        assert!(base.join("Fix-Login-Flow").is_dir());
+        assert!(branch_exists(&proj.to_string_lossy(), "Fix-Login-Flow"));
+
+        // drop it: dir gone, git no longer lists the worktree
+        let msg = remove_worktree(&base.join("Fix-Login-Flow").to_string_lossy(), Some(&proj.to_string_lossy()));
+        assert!(msg.contains("Worktree dropped"), "{msg}");
+        assert!(!base.join("Fix-Login-Flow").exists());
+        let listed = Command::new("git").arg("-C").arg(&proj).args(["worktree", "list"]).output().unwrap();
+        let listed = String::from_utf8_lossy(&listed.stdout);
+        assert!(!listed.contains("Fix-Login-Flow"));
+
+        // non-git project → skipped, no panic
+        let msg = create_worktree_in(base, 2, "x", "/");
+        assert!(msg.contains("skipped"), "{msg}");
+
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 }
