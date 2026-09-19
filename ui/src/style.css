@@ -522,7 +522,8 @@ body {
     display: flex;
     gap: 8px;
 }
-#key {
+#key,
+#key-opencode {
     flex: 1;
     background: var(--raised);
     color: var(--text);
@@ -562,19 +563,6 @@ body {
 .divider {
     border-top: 1px solid var(--border-soft);
     margin: 18px 0;
-}
-.modelbar {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-}
-#filter {
-    width: 220px;
-    background: var(--raised);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 12px;
 }
 table {
     width: 100%;

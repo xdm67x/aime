@@ -1,4 +1,4 @@
-use crate::{db, openrouter};
+use crate::{db, providers};
 use rusqlite::{params, OptionalExtension, Row};
 use serde::Serialize;
 
@@ -32,10 +32,9 @@ pub fn list_beats() -> Result<Vec<Beat>, String> {
     let mut stmt = conn
         .prepare(&format!("{SELECT} ORDER BY b.archived, b.id DESC"))
         .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([], row_to_beat)
-        .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    let rows = stmt.query_map([], row_to_beat).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -53,7 +52,11 @@ pub fn create_beat(name: String, description: String) -> Result<Beat, String> {
     .map_err(|e| e.to_string())?;
     let id = conn.last_insert_rowid();
     let created_at: String = conn
-        .query_row("SELECT created_at FROM beats WHERE id = ?1", params![id], |r| r.get(0))
+        .query_row(
+            "SELECT created_at FROM beats WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
         .map_err(|e| e.to_string())?;
     Ok(Beat {
         id,
@@ -81,7 +84,11 @@ pub fn set_beat_archived(id: i64, archived: bool) -> Result<(), String> {
 pub fn get_beat_messages(id: i64) -> Result<Vec<serde_json::Value>, String> {
     let conn = db::open()?;
     let current: String = conn
-        .query_row("SELECT messages FROM beats WHERE id = ?1", params![id], |r| r.get(0))
+        .query_row(
+            "SELECT messages FROM beats WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
         .optional()
         .map_err(|e| e.to_string())?
         .ok_or("Beat not found")?;
@@ -95,7 +102,10 @@ pub fn delete_beat(id: i64) -> Result<(), String> {
     conn.execute("DELETE FROM beat_usage WHERE beat_id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     let n = conn
-        .execute("DELETE FROM beats WHERE id = ?1 AND archived = 1", params![id])
+        .execute(
+            "DELETE FROM beats WHERE id = ?1 AND archived = 1",
+            params![id],
+        )
         .map_err(|e| e.to_string())?;
     if n == 0 {
         return Err("Beat not found or not archived".into());
@@ -104,15 +114,15 @@ pub fn delete_beat(id: i64) -> Result<(), String> {
 }
 
 async fn usage_cost(model_id: &str, prompt: i64, completion: i64) -> f64 {
-    let models = openrouter::list_models().await.unwrap_or_default();
-    models
-        .iter()
-        .find(|m| m.id == model_id)
-        .map_or(0.0, |m| {
-            let p: f64 = m.pricing.prompt.parse().unwrap_or(0.0);
-            let c: f64 = m.pricing.completion.parse().unwrap_or(0.0);
-            p * prompt as f64 + c * completion as f64
-        })
+    let models = providers::list_models().await.unwrap_or_default();
+    models.iter().find(|m| m.id == model_id).map_or(0.0, |m| {
+        let p: f64 = m.pricing.prompt.parse().unwrap_or(0.0);
+        let c: f64 = m.pricing.completion.parse().unwrap_or(0.0);
+        // ponytail: Go prices differ per model but its /models list carries
+        // no pricing, so usage against go/ models is recorded at $0 until
+        // OpenCode exposes pricing; limits are per-subscription anyway
+        p * prompt as f64 + c * completion as f64
+    })
 }
 
 /// Record one model call against a beat; cost is computed from the cached

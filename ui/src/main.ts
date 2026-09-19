@@ -256,11 +256,6 @@ input.addEventListener('keydown', (e) => {
 })
 
 /* ---- settings ---- */
-const setStatus = (msg: string, err = false) => {
-    $('settings-status').textContent = msg
-    $('settings-status').className = err ? 'err' : ''
-}
-
 $('settings-btn').onclick = () => $('overlay').classList.add('open')
 $('close-settings').onclick = () => $('overlay').classList.remove('open')
 $('overlay').onclick = (e) => {
@@ -274,29 +269,29 @@ window.addEventListener('keydown', (e) => {
 })
 
 let models: Model[] = []
-function price(x: string) {
-    const p = parseFloat(x)
-    if (!p) return '<span class="free">Free</span>'
-    return '$' + (p * 1e6).toFixed(p * 1e6 < 10 ? 3 : 2)
-}
-function render() {
-    const q = ($('filter') as HTMLInputElement).value.toLowerCase()
-    $('rows').innerHTML = models
-        .filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))
-        .map(
-            (
-                m,
-            ) => `<tr><td>${m.id}</td><td>${m.name}</td><td class="num">${m.context_length ?? '—'}</td>
-      <td class="num">${price(m.pricing.prompt)}</td><td class="num">${price(m.pricing.completion)}</td></tr>`,
-        )
-        .join('')
-}
-$('save').onclick = async () => {
+$('save').onclick = () => saveKey('openrouter', 'key', 'settings-status')
+$('save-opencode').onclick = () => saveKey('opencode', 'key-opencode', 'settings-status-opencode')
+function saveKey(provider: string, inputId: string, statusId: string) {
+    const status = $(statusId)
     try {
-        await invoke('save_api_key', { key: ($('key') as HTMLInputElement).value })
-        setStatus('API key saved.')
+        invoke('save_api_key', { provider, key: ($(inputId) as HTMLInputElement).value })
+        status.textContent = 'API key saved.'
+        status.className = ''
+        keyPlaceholder(provider)
     } catch (e) {
-        setStatus(String(e), true)
+        status.textContent = String(e)
+        status.className = 'err'
+    }
+}
+async function keyPlaceholder(provider: string) {
+    const inputId = provider === 'openrouter' ? 'key' : 'key-opencode'
+    try {
+        const key = await invoke<string>('get_api_key', { provider })
+        if (key)
+            ($(inputId) as HTMLInputElement).placeholder =
+                `Saved: ••••${key.slice(-4)} (enter to replace)`
+    } catch {
+        /* first run: no key yet */
     }
 }
 function populateSlots() {
@@ -308,21 +303,6 @@ function populateSlots() {
         sel.value = saved
     }
 }
-$('load').onclick = async () => {
-    const load = $('load') as HTMLButtonElement
-    load.disabled = true
-    setModelsStatus('Loading models…')
-    try {
-        models = await invoke('list_models')
-        populateSlots()
-        setModelsStatus(`${models.length} models from OpenRouter.`)
-        render()
-    } catch (e) {
-        setModelsStatus(String(e), true)
-    }
-    load.disabled = false
-}
-$('filter').oninput = render
 
 /* ---- model routing config ---- */
 const setModelsStatus = (msg: string, err = false) => {
@@ -369,10 +349,8 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('#theme-seg button'
 applyTheme(localStorage.getItem('theme') ?? 'dark')
 
 ;(async () => {
-    const key = await invoke<string>('get_api_key')
-    if (key)
-        ($('key') as HTMLInputElement).placeholder =
-            `Saved: ••••${key.slice(-4)} (enter to replace)`
+    await keyPlaceholder('openrouter')
+    await keyPlaceholder('opencode')
     try {
         const cfg = await invoke<{
             classifier: string
@@ -388,7 +366,6 @@ applyTheme(localStorage.getItem('theme') ?? 'dark')
     try {
         models = await invoke('list_models')
         populateSlots()
-        render()
     } catch (e) {
         console.error(e)
     }

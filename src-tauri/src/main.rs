@@ -5,20 +5,20 @@ mod beats;
 mod config;
 mod db;
 mod harness;
-mod openrouter;
 mod prompts;
+mod providers;
 mod skills;
 mod tools;
 
 fn main() {
-    openrouter::spawn_refresh_loop();
+    providers::spawn_refresh_loop();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             config::save_api_key,
             config::get_api_key,
             config::get_model_config,
             config::save_model_config,
-            openrouter::list_models,
+            providers::list_models,
             harness::run_task,
             beats::list_beats,
             beats::get_beat_messages,

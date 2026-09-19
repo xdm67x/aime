@@ -1,4 +1,4 @@
-//! Task harness on OpenRouter, driven from beats (sessions).
+//! Task harness on OpenRouter / OpenCode Go, driven from beats (sessions).
 //!
 //! The user no longer picks a model per message. A cheap **classifier** model
 //! routes each prompt to one of three tiers the user configures in Settings:
@@ -15,7 +15,7 @@
 //! New patterns: add a `pub async fn run_*` command that classifies, picks a
 //! model tier, drives `agentic_loop`, and persists the result onto the beat.
 
-use crate::openrouter::{chat_completion, Usage};
+use crate::providers::{chat_completion, Usage};
 use crate::{beats, config, db, prompts, skills, tools};
 use serde::Serialize;
 use serde_json::json;
@@ -375,7 +375,10 @@ mod tests {
         assert!(extract_json("no json here").is_none());
         assert!(extract_json("broken {json").is_none());
         // picks the outer object of nested ones
-        assert_eq!(extract_json("x {\"a\": {\"b\": 1}} y").unwrap()["a"]["b"], 1);
+        assert_eq!(
+            extract_json("x {\"a\": {\"b\": 1}} y").unwrap()["a"]["b"],
+            1
+        );
     }
 
     #[test]

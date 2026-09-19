@@ -158,6 +158,12 @@
                                 <button class="btn" id="save">Save</button>
                             </div>
                             <p id="settings-status"></p>
+                            <p class="field-label" style="margin-top: 16px">OpenCode Go API key</p>
+                            <div class="keyrow">
+                                <input id="key-opencode" type="password" placeholder="sk-..." />
+                                <button class="btn" id="save-opencode">Save</button>
+                            </div>
+                            <p id="settings-status-opencode"></p>
                         </div>
                         <div id="pane-models" class="tab-pane" style="display:none">
                             <p class="field-label">Model routing</p>
@@ -209,26 +215,6 @@
                                 <button class="btn" id="save-models">Save models</button>
                             </div>
                             <p id="models-status"></p>
-                            <div class="divider"></div>
-                            <p class="field-label">Models from OpenRouter</p>
-                            <div class="modelbar">
-                                <input id="filter" type="search" placeholder="Filter models…" />
-                                <button class="btn" id="load">List models</button>
-                            </div>
-                            <div class="scroll">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Model ID</th>
-                                            <th>Name</th>
-                                            <th class="num">Context</th>
-                                            <th class="num">Input $/1M</th>
-                                            <th class="num">Output $/1M</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="rows"></tbody>
-                                </table>
-                            </div>
                         </div>
                         <div id="pane-appearance" class="tab-pane" style="display:none">
                             <p class="field-label">Theme</p>

@@ -1,20 +1,21 @@
 use crate::db;
 use serde::{Deserialize, Serialize};
 
-const OPENROUTER_API_KEY: &str = "openrouter_api_key";
-
-pub fn openrouter_key() -> Result<Option<String>, String> {
-    db::get_setting(OPENROUTER_API_KEY)
+pub fn api_key(provider: &str) -> Result<Option<String>, String> {
+    db::get_setting(&format!("{provider}_api_key"))
 }
 
 #[tauri::command]
-pub fn save_api_key(key: String) -> Result<(), String> {
-    db::set_setting(OPENROUTER_API_KEY, key.trim())
+pub fn save_api_key(provider: String, key: String) -> Result<(), String> {
+    if !matches!(provider.as_str(), "openrouter" | "opencode") {
+        return Err(format!("Unknown provider: {provider}"));
+    }
+    db::set_setting(&format!("{}_api_key", provider), key.trim())
 }
 
 #[tauri::command]
-pub fn get_api_key() -> Result<Option<String>, String> {
-    openrouter_key()
+pub fn get_api_key(provider: String) -> Result<Option<String>, String> {
+    api_key(&provider)
 }
 
 /// The four model slots the harness routes between. Each is an OpenRouter

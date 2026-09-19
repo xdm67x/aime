@@ -32,17 +32,26 @@ pub fn open() -> Result<Connection, String> {
     )
     .map_err(|e| e.to_string())?;
     // migrate pre-description databases
-    let _ = conn.execute("ALTER TABLE beats ADD COLUMN description TEXT NOT NULL DEFAULT ''", []);
-    let _ = conn.execute("ALTER TABLE beats ADD COLUMN messages TEXT NOT NULL DEFAULT '[]'", []);
-    conn.pragma_update(None, "foreign_keys", "ON").map_err(|e| e.to_string())?;
+    let _ = conn.execute(
+        "ALTER TABLE beats ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE beats ADD COLUMN messages TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    conn.pragma_update(None, "foreign_keys", "ON")
+        .map_err(|e| e.to_string())?;
     Ok(conn)
 }
 
 pub fn get_setting(key: &str) -> Result<Option<String>, String> {
     open()?
-        .query_row("SELECT value FROM config WHERE key = ?1", params![key], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT value FROM config WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        )
         .optional()
         .map_err(|e| e.to_string())
 }
@@ -63,7 +72,11 @@ pub fn set_setting(key: &str, value: &str) -> Result<(), String> {
 pub fn append_messages(beat_id: i64, entries: Vec<serde_json::Value>) -> Result<(), String> {
     let conn = open()?;
     let current: String = conn
-        .query_row("SELECT messages FROM beats WHERE id = ?1", params![beat_id], |r| r.get(0))
+        .query_row(
+            "SELECT messages FROM beats WHERE id = ?1",
+            params![beat_id],
+            |r| r.get(0),
+        )
         .optional()
         .map_err(|e| e.to_string())?
         .ok_or("Beat not found")?;
@@ -77,7 +90,10 @@ pub fn append_messages(beat_id: i64, entries: Vec<serde_json::Value>) -> Result<
     }
     conn.execute(
         "UPDATE beats SET messages = ?1 WHERE id = ?2",
-        params![serde_json::to_string(&arr).map_err(|e| e.to_string())?, beat_id],
+        params![
+            serde_json::to_string(&arr).map_err(|e| e.to_string())?,
+            beat_id
+        ],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -100,33 +116,77 @@ mod tests {
         assert_eq!(get_setting(k).unwrap().as_deref(), Some("v2"));
 
         let conn = open().unwrap();
-        conn.execute("INSERT INTO beats (name, description) VALUES ('b1', 'd1')", []).unwrap();
+        conn.execute(
+            "INSERT INTO beats (name, description) VALUES ('b1', 'd1')",
+            [],
+        )
+        .unwrap();
         let id = conn.last_insert_rowid();
         conn.execute("INSERT INTO beat_usage (beat_id, model, prompt_tokens, completion_tokens, cost_usd) VALUES (?1, 'm', 10, 5, 0.5)", params![id]).unwrap();
         // FK: usage without a beat is rejected
-        assert!(conn.execute("INSERT INTO beat_usage (beat_id, model) VALUES (9999, 'm')", []).is_err());
-        conn.execute("UPDATE beats SET archived = 1 WHERE id = ?1", params![id]).unwrap();
+        assert!(conn
+            .execute(
+                "INSERT INTO beat_usage (beat_id, model) VALUES (9999, 'm')",
+                []
+            )
+            .is_err());
+        conn.execute("UPDATE beats SET archived = 1 WHERE id = ?1", params![id])
+            .unwrap();
         let (archived, cost): (i64, f64) = conn.query_row(
             "SELECT b.archived, COALESCE(SUM(u.cost_usd), 0) FROM beats b LEFT JOIN beat_usage u ON u.beat_id = b.id WHERE b.id = ?1",
             params![id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
         assert_eq!((archived, cost), (1, 0.5));
-        let (name, description): (String, String) = conn.query_row(
-            "SELECT name, description FROM beats WHERE id = ?1", params![id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        let (name, description): (String, String) = conn
+            .query_row(
+                "SELECT name, description FROM beats WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
         assert_eq!((name.as_str(), description.as_str()), ("b1", "d1"));
         // messages JSON array roundtrip
-        append_messages(id, vec![serde_json::json!({"role": "user", "content": "hi"})]).unwrap();
-        append_messages(id, vec![serde_json::json!({"role": "assistant", "content": "yo"})]).unwrap();
-        let msgs: String = conn.query_row("SELECT messages FROM beats WHERE id = ?1", params![id], |r| r.get(0)).unwrap();
+        append_messages(
+            id,
+            vec![serde_json::json!({"role": "user", "content": "hi"})],
+        )
+        .unwrap();
+        append_messages(
+            id,
+            vec![serde_json::json!({"role": "assistant", "content": "yo"})],
+        )
+        .unwrap();
+        let msgs: String = conn
+            .query_row(
+                "SELECT messages FROM beats WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&msgs).unwrap();
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0]["content"], "hi");
         assert!(arr[1]["ts"].as_str().unwrap().len() == 19); // datetime('now') format
-        // appending to a nonexistent beat fails
+                                                             // appending to a nonexistent beat fails
         assert!(append_messages(9999, vec![serde_json::json!({"a": 1})]).is_err());
         // delete only works on archived beats
-        conn.execute("DELETE FROM beat_usage WHERE beat_id = ?1", params![id]).unwrap();
-        assert_eq!(conn.execute("DELETE FROM beats WHERE id = ?1 AND archived = 1", params![id]).unwrap(), 1);
-        assert_eq!(conn.execute("DELETE FROM beats WHERE id = ?1 AND archived = 1", params![id]).unwrap(), 0);
+        conn.execute("DELETE FROM beat_usage WHERE beat_id = ?1", params![id])
+            .unwrap();
+        assert_eq!(
+            conn.execute(
+                "DELETE FROM beats WHERE id = ?1 AND archived = 1",
+                params![id]
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.execute(
+                "DELETE FROM beats WHERE id = ?1 AND archived = 1",
+                params![id]
+            )
+            .unwrap(),
+            0
+        );
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

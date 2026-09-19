@@ -177,7 +177,10 @@ fn run_grep(args: &serde_json::Value) -> Result<String, String> {
         .output();
     match rg {
         Ok(o) if !o.stdout.is_empty() => {
-            return Ok(truncate(String::from_utf8_lossy(&o.stdout).to_string(), 10_000));
+            return Ok(truncate(
+                String::from_utf8_lossy(&o.stdout).to_string(),
+                10_000,
+            ));
         }
         _ => {}
     }
@@ -190,7 +193,10 @@ fn run_grep(args: &serde_json::Value) -> Result<String, String> {
     cmd.arg(pattern).arg(path);
     let o = cmd.output().map_err(|e| e.to_string())?;
     if !o.stdout.is_empty() {
-        Ok(truncate(String::from_utf8_lossy(&o.stdout).to_string(), 10_000))
+        Ok(truncate(
+            String::from_utf8_lossy(&o.stdout).to_string(),
+            10_000,
+        ))
     } else if o.status.success() {
         Ok("(no matches)".into())
     } else {
@@ -200,7 +206,10 @@ fn run_grep(args: &serde_json::Value) -> Result<String, String> {
 
 /// Execute a shell command with a 30-second timeout.
 async fn run_bash(args: &serde_json::Value) -> Result<String, String> {
-    let command = args["command"].as_str().ok_or("missing 'command'")?.to_string();
+    let command = args["command"]
+        .as_str()
+        .ok_or("missing 'command'")?
+        .to_string();
     let child = tokio::process::Command::new("sh")
         .arg("-c")
         .arg(&command)
