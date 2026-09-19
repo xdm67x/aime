@@ -243,6 +243,24 @@ async fn agentic_loop(
         usage.prompt_tokens += r.usage.prompt_tokens;
         usage.completion_tokens += r.usage.completion_tokens;
         if r.tool_calls.is_empty() {
+            // A text-only reply is normally the final answer — but not when
+            // it was cut off (`length`) or the provider said `tool_calls`
+            // while we parsed none (fragment loss). Continue the loop instead
+            // of persisting a half-answer. ponytail: no "looks unfinished"
+            // heuristics; if narration-without-action persists, add one
+            // continuation nudge here before falling through.
+            if matches!(r.finish_reason.as_deref(), Some("length" | "tool_calls")) {
+                if !r.content.trim().is_empty() {
+                    on_event(TaskEvent::Step {
+                        text: r.content.clone(),
+                    });
+                    entries.push(json!({
+                        "role": "assistant", "model": model, "content": r.content,
+                    }));
+                    messages.push(json!({"role": "assistant", "content": r.content}));
+                }
+                continue;
+            }
             return Ok((r.content, steps, usage));
         }
         // the model's narration for this round is a message in its own right:

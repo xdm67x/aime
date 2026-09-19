@@ -38,11 +38,14 @@ pub struct ToolCall {
 }
 
 /// One chat completion result: reply text, any requested tool calls, and
-/// token usage.
+/// token usage. `finish_reason` is the provider's stop reason (`stop`,
+/// `tool_calls`, `length`, …) — the harness needs it to tell a real final
+/// answer from a truncated or dropped-tool-calls turn.
 pub struct ChatResult {
     pub content: String,
     pub tool_calls: Vec<ToolCall>,
     pub usage: Usage,
+    pub finish_reason: Option<String>,
 }
 
 /// One chat request, owned so the shared retry loop can mutate it.
@@ -234,10 +237,14 @@ async fn send_chat(
         .unwrap_or_default();
     let usage: Usage =
         serde_json::from_value(resp.get("usage").cloned().unwrap_or_default()).unwrap_or_default();
+    let finish_reason = resp["choices"][0]["finish_reason"]
+        .as_str()
+        .map(str::to_string);
     Ok(ChatResult {
         content,
         tool_calls,
         usage,
+        finish_reason,
     })
 }
 
@@ -337,6 +344,7 @@ async fn send_chat_stream(
     // streamed tool-call fragments arrive piecewise, keyed by index
     let mut calls: std::collections::BTreeMap<u64, ToolCall> = Default::default();
     let mut usage = Usage::default();
+    let mut finish_reason: Option<String> = None;
     let mut buf: Vec<u8> = vec![];
     loop {
         if crate::harness::cancelled() {
@@ -362,7 +370,7 @@ async fn send_chat_stream(
             let Ok(v) = serde_json::from_str::<serde_json::Value>(data) else {
                 continue;
             };
-            let (text, frags, u) = parse_chunk(&v);
+            let (text, frags, u, fr) = parse_chunk(&v);
             if !text.is_empty() {
                 content.push_str(&text);
                 on_delta(&text);
@@ -380,19 +388,25 @@ async fn send_chat_stream(
             if let Some(u) = u {
                 usage = u;
             }
+            // last non-null stop reason wins (earlier chunks may not carry one)
+            if fr.is_some() {
+                finish_reason = fr;
+            }
         }
     }
     let tool_calls: Vec<ToolCall> = calls.into_values().collect();
     eprintln!(
-        "[{}] stream done: {} chars, {} tool calls",
+        "[{}] stream done: {} chars, {} tool calls, finish_reason={:?}",
         p.name(),
         content.len(),
         tool_calls.len(),
+        finish_reason,
     );
     Ok(ChatResult {
         content,
         tool_calls,
         usage,
+        finish_reason,
     })
 }
 
@@ -417,8 +431,16 @@ pub(crate) fn base_body(req: &ChatRequest) -> serde_json::Value {
 }
 
 /// Parse one SSE `data:` JSON payload (OpenAI streaming shape) into a text
-/// delta, streamed tool-call fragments keyed by index, and optional usage.
-fn parse_chunk(v: &serde_json::Value) -> (String, Vec<(u64, ToolCall)>, Option<Usage>) {
+/// delta, streamed tool-call fragments keyed by index, optional usage, and
+/// the stop reason.
+fn parse_chunk(
+    v: &serde_json::Value,
+) -> (
+    String,
+    Vec<(u64, ToolCall)>,
+    Option<Usage>,
+    Option<String>,
+) {
     let mut text = String::new();
     if let Some(t) = v["choices"][0]["delta"]["content"].as_str() {
         text.push_str(t);
@@ -444,7 +466,10 @@ fn parse_chunk(v: &serde_json::Value) -> (String, Vec<(u64, ToolCall)>, Option<U
         .get("usage")
         .filter(|u| !u.is_null())
         .and_then(|u| serde_json::from_value(u.clone()).ok());
-    (text, frags, usage)
+    let finish_reason = v["choices"][0]["finish_reason"]
+        .as_str()
+        .map(str::to_string);
+    (text, frags, usage, finish_reason)
 }
 
 /// GET an OpenAI-compatible `/models` list. Each provider passes its own
@@ -549,23 +574,27 @@ mod tests {
     #[test]
     fn test_parse_chunk() {
         // text delta
-        let (t, f, u) = parse_chunk(&serde_json::json!(
+        let (t, f, u, fr) = parse_chunk(&serde_json::json!(
             {"choices":[{"delta":{"content":"he"}}]}));
         assert_eq!(t, "he");
-        assert!(f.is_empty() && u.is_none());
+        assert!(f.is_empty() && u.is_none() && fr.is_none());
+        // stop reason is surfaced
+        let (_, _, _, fr) = parse_chunk(&serde_json::json!(
+            {"choices":[{"delta":{},"finish_reason":"length"}]}));
+        assert_eq!(fr.as_deref(), Some("length"));
         // tool-call fragment: pieces arrive split across chunks
-        let (_, f, _) = parse_chunk(&serde_json::json!(
+        let (_, f, _, _) = parse_chunk(&serde_json::json!(
             {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1",
              "function":{"name":"grep","arguments":"{\"pa"}}]}}]}));
         assert_eq!(f[0].0, 0);
         assert_eq!(f[0].1.name, "grep");
         assert_eq!(f[0].1.arguments, "{\"pa");
         // final usage chunk (stream_options include_usage)
-        let (_, _, u) = parse_chunk(&serde_json::json!(
+        let (_, _, u, _) = parse_chunk(&serde_json::json!(
             {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":5}}));
         assert_eq!(u.unwrap().completion_tokens, 5);
         // chunk without usage must not clobber the accumulated one
-        let (_, _, u) = parse_chunk(&serde_json::json!({"choices":[{"delta":{}}]}));
+        let (_, _, u, _) = parse_chunk(&serde_json::json!({"choices":[{"delta":{}}]}));
         assert!(u.is_none());
     }
 
