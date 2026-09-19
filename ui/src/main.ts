@@ -266,6 +266,13 @@ loadBeats()
 /* ---- sessions: every beat keeps its own chat view + live state, so runs
    stream in parallel and switching sessions never loses messages ---- */
 const chat = $('chat')
+// links rendered from markdown must open in the default browser, not the webview
+chat.addEventListener('click', (e) => {
+    const a = (e.target as Element).closest('a[href^="http"]')
+    if (!a) return
+    e.preventDefault()
+    ;(window as any).__TAURI__.opener.openUrl(a.getAttribute('href')).catch(() => {})
+})
 
 type SessionStatus = 'idle' | 'running' | 'done' | 'stopped' | 'error'
 
@@ -495,14 +502,14 @@ function renderQueuePills() {
             (text, i) => `<span class="pill" title="${esc(text)}">
         <span class="pill-text">${esc(text)}</span>
         <button class="pill-x" data-i="${i}" title="Remove from queue">✕</button>
-      </span>`
+      </span>`,
         )
         .join('')
     box.querySelectorAll('.pill-x').forEach((b) =>
         b.addEventListener('click', () => {
             s.queue.splice(Number((b as HTMLElement).dataset.i), 1)
             renderChips()
-        })
+        }),
     )
     box.style.display = ''
 }

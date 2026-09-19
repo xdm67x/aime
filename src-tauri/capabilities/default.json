@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default window capabilities: core APIs (events) for the chat streaming UI.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "opener:default"]
 }
