@@ -131,6 +131,7 @@ fn main() {
     // this is safe before the builder runs
     tauri::async_runtime::spawn(providers::refresh_loop());
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             save_api_key,
             get_api_key,

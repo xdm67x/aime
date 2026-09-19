@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default window capabilities: core APIs (events) for the chat streaming UI.","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"default":{"identifier":"default","description":"Default window capabilities: core APIs (events) for the chat streaming UI.","local":true,"windows":["main"],"permissions":["core:default","opener:default"]}}
