@@ -54,6 +54,9 @@ pub fn open() -> Result<Connection, String> {
     );
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(|e| e.to_string())?;
+    // concurrent runs persist to the same db — wait instead of erroring "locked"
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| e.to_string())?;
     dedupe_messages(&conn);
     Ok(conn)
 }

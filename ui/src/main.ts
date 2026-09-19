@@ -180,37 +180,7 @@ $('runs').onclick = async (e) => {
         return
     }
     selectedBeat = b.id
-    $('run-title').textContent = b.name
-    $('run-project').textContent = b.project_name ? `⌂ ${b.project_name}` : ''
-    $('main').classList.remove('no-beat')
-    chat.replaceChildren()
-    liveRow = null
-    liveText = ''
-    try {
-        const msgs = await invoke<
-            { role: string; content: string; model?: string; ts?: string; arguments?: string; error?: boolean }[]
-        >('get_beat_messages', { id: b.id })
-        for (const m of msgs) {
-            const t = m.ts ? m.ts.slice(11, 16) : ''
-            if (m.role === 'tool') {
-                addTool({
-                    tool: m.model ?? 'tool',
-                    arguments: m.arguments ?? '',
-                    result: m.content,
-                    error: !!m.error,
-                })
-            } else {
-                addMsg({
-                    who: m.role === 'user' ? 'user' : m.model ?? 'assistant',
-                    time: t,
-                    text: m.content,
-                })
-            }
-        }
-    } catch (err) {
-        console.error(err)
-    }
-    $('main').classList.toggle('fresh', !chat.children.length)
+    openBeat(b)
     renderBeats()
 }
 $('delete-cancel').onclick = () => $('delete-overlay').classList.remove('open')
@@ -224,9 +194,9 @@ $('delete-confirm').onclick = async () => {
         if (selectedBeat === id) {
             selectedBeat = null
             $('run-title').textContent = ''
-            $('main').classList.add('no-beat')
-            $('main').classList.remove('fresh')
         }
+        dropSession(id)
+        refreshMain()
     } catch (err) {
         console.error(err)
     }
@@ -261,13 +231,9 @@ async function createBeat() {
             projectId: modalProject?.id ?? null,
         })
         modalProject = null
-        selectedBeat = b.id
-        $('run-title').textContent = b.name
-        chat.replaceChildren()
-        $('main').classList.remove('no-beat')
-        $('main').classList.add('fresh')
         closeBeatModal()
         await loadBeats()
+        openBeat(b)
     } catch (err) {
         $('beat-modal-status').textContent = String(err)
         $('beat-modal-status').classList.add('err')
@@ -284,9 +250,72 @@ $('search').oninput = () => renderBeats()
 loadProjects()
 loadBeats()
 
-/* ---- chat (local only: sent messages append until beat is reloaded) ---- */
+/* ---- sessions: every beat keeps its own chat view + live state, so runs
+   stream in parallel and switching sessions never loses messages ---- */
 const chat = $('chat')
-function addMsg({ who, time, text }: { who: string; time: string; text: string }) {
+
+type SessionStatus = 'idle' | 'running' | 'done' | 'stopped' | 'error'
+
+interface SessionState {
+    id: number
+    el: HTMLElement
+    busy: boolean
+    queue: string[]
+    status: SessionStatus
+    statusText: string
+    loaded: boolean
+    follow: boolean
+    liveRow: HTMLElement | null
+    liveText: string
+    liveLabel: string
+    lastSealed: string
+    doneTimer: ReturnType<typeof setTimeout> | null
+}
+
+const sessions = new Map<number, SessionState>()
+
+function sessFor(id: number): SessionState {
+    let s = sessions.get(id)
+    if (!s) {
+        const el = document.createElement('div')
+        el.className = 'session-view'
+        chat.appendChild(el)
+        const sess: SessionState = {
+            id,
+            el,
+            busy: false,
+            queue: [],
+            status: 'idle',
+            statusText: '',
+            loaded: false,
+            follow: true,
+            liveRow: null,
+            liveText: '',
+            liveLabel: '',
+            lastSealed: '',
+            doneTimer: null,
+        }
+        el.addEventListener('scroll', () => {
+            sess.follow = el.scrollTop + el.clientHeight >= el.scrollHeight - 60
+        })
+        sessions.set(id, sess)
+        s = sess
+    }
+    return s
+}
+const currentSess = () => (selectedBeat ? sessFor(selectedBeat) : null)
+const dropSession = (id: number) => {
+    sessions.get(id)?.el.remove()
+    sessions.delete(id)
+}
+function scrollView(s: SessionState) {
+    if (currentSess() === s && s.follow) s.el.scrollTop = s.el.scrollHeight
+}
+
+function renderMsg(
+    view: HTMLElement,
+    { who, time, text }: { who: string; time: string; text: string },
+) {
     const wrap = document.createElement('div')
     wrap.className = who === 'user' ? 'row-user' : 'row-agent'
     if (who === 'user') {
@@ -298,8 +327,7 @@ function addMsg({ who, time, text }: { who: string; time: string; text: string }
     if (who === 'user') msg.textContent = text
     // model output is untrusted → sanitize before injecting
     else msg.innerHTML = DOMPurify.sanitize(marked.parse(text, { async: false }))
-    chat.appendChild(wrap)
-    chat.scrollTop = chat.scrollHeight
+    view.appendChild(wrap)
     return wrap
 }
 
@@ -311,152 +339,272 @@ interface ToolRowMsg {
 }
 
 // tool calls render as light, collapsible full-width rows — not bubbles
-function addTool(s: ToolRowMsg) {
+function renderTool(view: HTMLElement, t: ToolRowMsg) {
     const wrap = document.createElement('div')
-    wrap.className = 'row-tool' + (s.error ? ' err' : '')
+    wrap.className = 'row-tool' + (t.error ? ' err' : '')
     wrap.innerHTML = `<button class="tool-head">
         <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-        <span class="tool-name">${esc(s.tool)}</span>
-        <span class="tool-status">${s.error ? 'failed' : 'done'}</span>
+        <span class="tool-name">${esc(t.tool)}</span>
+        <span class="tool-status">${t.error ? 'failed' : 'done'}</span>
       </button>
       <div class="tool-body" hidden>
-        <pre>${esc(s.arguments)}</pre>
-        <pre>${esc(s.result)}</pre>
+        <pre>${esc(t.arguments)}</pre>
+        <pre>${esc(t.result)}</pre>
       </div>`
     const body = wrap.querySelector<HTMLElement>('.tool-body')!
     wrap.querySelector('.tool-head')!.addEventListener('click', () => {
         body.hidden = !body.hidden
         wrap.classList.toggle('open', !body.hidden)
     })
-    chat.appendChild(wrap)
-    chat.scrollTop = chat.scrollHeight
+    view.appendChild(wrap)
     return wrap
 }
 
-/* ---- streaming: live bubble fed by backend task-events ---- */
-let liveRow: HTMLElement | null = null
-let liveText = ''
-let liveLabel = ''
-let lastSealed = ''
-// a run in flight; further sends queue up until it finishes
-let busy = false
-const queue: { beatId: number; text: string }[] = []
-
-function ensureLive(): HTMLElement {
-    if (liveRow?.isConnected) return liveRow
-    liveRow = document.createElement('div')
-    liveRow.className = 'row-agent'
-    liveRow.innerHTML = `<div class="meta agent"><span class="who"></span> <span class="t"></span></div><div class="msg"></div>`
-    chat.appendChild(liveRow)
-    chat.scrollTop = chat.scrollHeight
-    return liveRow
+function addMsg(s: SessionState, d: { who: string; time: string; text: string }) {
+    const w = renderMsg(s.el, d)
+    scrollView(s)
+    return w
 }
-function appendDelta(t: string) {
-    liveText += t
-    const msg = ensureLive().querySelector('.msg')!
+function addTool(s: SessionState, ev: ToolRowMsg) {
+    const w = renderTool(s.el, ev)
+    scrollView(s)
+    return w
+}
+
+/* ---- streaming: live bubble fed by backend task-events, per session ---- */
+function ensureLive(s: SessionState): HTMLElement {
+    if (s.liveRow?.isConnected) return s.liveRow
+    s.liveRow = document.createElement('div')
+    s.liveRow.className = 'row-agent'
+    s.liveRow.innerHTML = `<div class="meta agent"><span class="who"></span> <span class="t"></span></div><div class="msg"></div>`
+    s.el.appendChild(s.liveRow)
+    scrollView(s)
+    return s.liveRow
+}
+function appendDelta(s: SessionState, t: string) {
+    s.liveText += t
+    const msg = ensureLive(s).querySelector('.msg')!
     msg.classList.add('streaming')
     // model output is untrusted → sanitize before injecting
-    msg.innerHTML = DOMPurify.sanitize(marked.parse(liveText, { async: false }))
-    chat.scrollTop = chat.scrollHeight
+    msg.innerHTML = DOMPurify.sanitize(marked.parse(s.liveText, { async: false }))
+    scrollView(s)
 }
-function clearLive() {
-    liveRow?.remove()
-    liveRow = null
-    liveText = ''
-    lastSealed = ''
+function clearLive(s: SessionState) {
+    s.liveRow?.remove()
+    s.liveRow = null
+    s.liveText = ''
+    s.lastSealed = ''
 }
 // promote the streaming bubble into a finished message (create one when no
 // bubble is live, e.g. the provider fell back to non-streaming)
-function sealLive(text?: string) {
-    const t = text ?? liveText
+function sealLive(s: SessionState, text?: string) {
+    const t = text ?? s.liveText
     if (!t.trim()) {
-        clearLive()
+        clearLive(s)
         return
     }
-    const row = ensureLive()
+    const row = ensureLive(s)
     const msg = row.querySelector('.msg')!
     msg.classList.remove('streaming')
     msg.innerHTML = DOMPurify.sanitize(marked.parse(t, { async: false }))
-    row.querySelector('.who')!.textContent = liveLabel || 'assistant'
+    row.querySelector('.who')!.textContent = s.liveLabel || 'assistant'
     row.querySelector('.t')!.textContent = new Date().toLocaleTimeString([], {
         hour: 'numeric',
         minute: '2-digit',
     })
-    liveRow = null
-    liveText = ''
-    lastSealed = t
-    chat.scrollTop = chat.scrollHeight
+    s.liveRow = null
+    s.liveText = ''
+    s.lastSealed = t
+    scrollView(s)
 }
 
+// task-events carry their beat id — route each one into that session's view
 ;(window as any).__TAURI__.event.listen('task-event', (e: any) => {
     const ev = e.payload
+    const s = sessions.get(ev.beat_id)
+    if (!s) return
     if (ev.type === 'start') {
         // no placeholder bubble — the input's progress border signals activity
-        liveLabel = `${ev.model} · ${ev.tier}`
+        s.liveLabel = `${ev.model} · ${ev.tier}`
+        s.statusText = `${ev.model} · ${ev.tier}`
+        renderChips()
     } else if (ev.type === 'delta') {
-        appendDelta(ev.text)
+        appendDelta(s, ev.text)
     } else if (ev.type === 'step') {
-        sealLive(ev.text)
+        sealLive(s, ev.text)
     } else if (ev.type === 'tool') {
         // narration streamed before a tool call isn't persisted — drop it
-        clearLive()
-        addTool(ev)
+        clearLive(s)
+        addTool(s, ev)
     }
 })
+
+/* ---- status chips above the input: one per session with activity ---- */
+function renderChips() {
+    const box = $('chips')
+    const items = [...sessions.values()].filter((s) => s.status !== 'idle')
+    box.innerHTML = items
+        .map((s) => {
+            const beat = beats.find((x) => x.id === s.id)
+            const status =
+                s.busy || s.queue.length
+                    ? s.queue.length
+                        ? `${s.queue.length} queued`
+                        : s.statusText || 'running'
+                    : s.status
+            return `<button class="chip ${s.status}${currentSess() === s ? ' current' : ''}" data-id="${s.id}" title="${esc(s.statusText || s.status)}">
+        <span class="dot"></span><span class="chip-name">${esc(beat?.name ?? 'beat')}</span>
+        <span class="chip-status">${esc(status)}</span>
+        ${s.busy ? '<span class="chip-x" title="Stop this session">✕</span>' : ''}
+      </button>`
+        })
+        .join('')
+    box.style.display = items.length ? '' : 'none'
+}
+$('chips').onclick = (e) => {
+    const chip = (e.target as Element).closest<HTMLElement>('.chip')
+    if (!chip) return
+    const id = +chip.dataset.id!
+    if ((e.target as Element).closest('.chip-x')) {
+        invoke('cancel_task', { beatId: id }).catch(() => {})
+        return
+    }
+    const b = beats.find((x) => x.id === id)
+    if (b) openBeat(b)
+}
+
+/* ---- main classes + composer state follow the focused session ---- */
+function refreshMain() {
+    const s = currentSess()
+    const main = $('main')
+    main.classList.toggle('no-beat', !s)
+    if (s) {
+        main.classList.toggle('fresh', !s.el.children.length)
+        document.querySelector('.input-wrap')!.classList.toggle('busy', s.busy)
+    }
+    renderChips()
+}
+
+// open a beat's session: its view is created once and kept alive afterwards,
+// so switching back restores messages, streaming state and scroll position
+async function openBeat(b: Beat) {
+    selectedBeat = b.id
+    const s = sessFor(b.id)
+    $('run-title').textContent = b.name
+    $('run-project').textContent = b.project_name ? `⌂ ${b.project_name}` : ''
+    for (const el of Array.from(chat.children) as HTMLElement[])
+        el.classList.toggle('active', el === s.el)
+    if (!s.loaded) {
+        s.loaded = true
+        // load persisted history into a detached node first, then splice it in
+        // ahead of any live rows (a run may already be streaming)
+        const temp = document.createElement('div')
+        try {
+            const msgs = await invoke<
+                {
+                    role: string
+                    content: string
+                    model?: string
+                    ts?: string
+                    arguments?: string
+                    error?: boolean
+                }[]
+            >('get_beat_messages', { id: b.id })
+            for (const m of msgs) {
+                const t = m.ts ? m.ts.slice(11, 16) : ''
+                if (m.role === 'tool') {
+                    renderTool(temp, {
+                        tool: m.model ?? 'tool',
+                        arguments: m.arguments ?? '',
+                        result: m.content,
+                        error: !!m.error,
+                    })
+                } else {
+                    renderMsg(temp, {
+                        who: m.role === 'user' ? 'user' : (m.model ?? 'assistant'),
+                        time: t,
+                        text: m.content,
+                    })
+                }
+            }
+        } catch (err) {
+            console.error(err)
+        }
+        const kids = Array.from(temp.children)
+        for (let i = kids.length - 1; i >= 0; i--) s.el.insertBefore(kids[i]!, s.el.firstChild)
+        s.follow = true
+    }
+    s.el.scrollTop = s.el.scrollHeight
+    renderBeats()
+    refreshMain()
+    input.focus()
+}
 
 async function send() {
     const text = input.value.trim()
     if (!text) return
-    if (!selectedBeat) {
-        addMsg({ who: 'Pulse', time: '', text: 'Select a beat first.' })
-        return
-    }
+    const s = currentSess()
+    if (!s) return
     input.value = ''
     const now = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    addMsg({ who: 'user', time: now(), text })
-    // while the agent works, messages queue up and run after it finishes
-    if (busy) {
-        queue.push({ beatId: selectedBeat, text })
+    addMsg(s, { who: 'user', time: now(), text })
+    if (s.busy) {
+        // this session's agent is still working — queue behind it; other
+        // sessions run independently and are unaffected
+        s.queue.push(text)
+        renderChips()
         return
     }
-    busy = true
-    document.querySelector('.input-wrap')!.classList.add('busy')
+    s.busy = true
+    refreshMain()
     try {
-        await runOne(selectedBeat, text)
-        while (queue.length) {
-            const next = queue.shift()!
-            await runOne(next.beatId, next.text)
-        }
+        await runOne(s, text)
+        while (s.queue.length) await runOne(s, s.queue.shift()!)
     } finally {
-        busy = false
-        document.querySelector('.input-wrap')!.classList.remove('busy')
-        clearLive()
+        s.busy = false
+        if (s.status === 'running') s.status = 'done'
+        refreshMain()
     }
 }
 
-async function runOne(beatId: number, text: string) {
+async function runOne(s: SessionState, text: string) {
     const now = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    $('main').classList.remove('fresh')
-    clearLive()
+    clearLive(s)
+    s.status = 'running'
+    s.statusText = ''
+    refreshMain()
     try {
         // work streams in live via task-events; this just finalizes the answer
         const r = await invoke<{
             tier: string
             model: string
             answer: string
-        }>('run_task', { beatId, prompt: text })
-        liveLabel = `${r.model} · ${r.tier}`
+        }>('run_task', { beatId: s.id, prompt: text })
+        s.liveLabel = `${r.model} · ${r.tier}`
         // the step event already sealed this text (base tier) — only seal
         // when the answer hasn't been rendered live yet (low tier, fallback)
-        if (lastSealed === r.answer) clearLive()
-        else sealLive(r.answer)
+        if (s.lastSealed === r.answer) clearLive(s)
+        else sealLive(s, r.answer)
+        s.status = 'done'
+        s.statusText = ''
     } catch (e) {
-        clearLive()
+        clearLive(s)
         // a cancelled run (Escape) isn't an error — show it as a plain note
         const stopped = String(e).includes('stopped')
-        const row = addMsg({ who: 'Pulse', time: now(), text: stopped ? 'Stopped.' : String(e) })
+        s.status = stopped ? 'stopped' : 'error'
+        s.statusText = stopped ? 'stopped' : String(e)
+        const row = addMsg(s, { who: 'Pulse', time: now(), text: stopped ? 'Stopped.' : String(e) })
         if (!stopped) row.querySelector('.msg')!.classList.add('error')
     }
+    // done/stopped chips clean themselves up; errors stay until looked at
+    if (s.status === 'done' || s.status === 'stopped') {
+        clearTimeout(s.doneTimer!)
+        s.doneTimer = setTimeout(() => {
+            if (s.status === 'done' || s.status === 'stopped') s.status = 'idle'
+            renderChips()
+        }, 8000)
+    }
+    renderChips()
 }
 const input = $('input') as HTMLInputElement
 input.addEventListener('keydown', (e) => {
@@ -471,10 +619,11 @@ $('overlay').onclick = (e) => {
 }
 window.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return
-    // while a task runs, Escape stops it (queued sends are dropped too)
-    if (busy) {
-        queue.length = 0
-        invoke('cancel_task').catch(() => {})
+    // Escape stops the focused session only — background sessions keep running
+    const s = currentSess()
+    if (s && (s.busy || s.queue.length)) {
+        s.queue.length = 0
+        invoke('cancel_task', { beatId: s.id }).catch(() => {})
         return
     }
     $('overlay').classList.remove('open')
@@ -526,8 +675,14 @@ async function urlPlaceholder(provider: string) {
 async function saveLiteLlm() {
     const status = $('settings-status-litellm')
     try {
-        await invoke('save_base_url', { provider: 'litellm', url: ($('litellm-url') as HTMLInputElement).value })
-        await invoke('save_api_key', { provider: 'litellm', key: ($('key-litellm') as HTMLInputElement).value })
+        await invoke('save_base_url', {
+            provider: 'litellm',
+            url: ($('litellm-url') as HTMLInputElement).value,
+        })
+        await invoke('save_api_key', {
+            provider: 'litellm',
+            key: ($('key-litellm') as HTMLInputElement).value,
+        })
         status.textContent = 'Gateway URL and API key saved.'
         status.className = ''
         keyPlaceholder('litellm')

@@ -19,20 +19,40 @@ use crate::providers::{chat_completion, chat_completion_stream, Usage};
 use crate::{beats, config, db, projects, prompts, skills, tools};
 use serde::Serialize;
 use serde_json::json;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use tokio::task_local;
 
-/// Escape hatch: the UI sets this to abort the in-flight task; every stream
-/// and loop round checks it. Global is fine — the frontend serializes runs
-/// (one task at a time, further sends queue up). // ponytail: upgrade to a
-/// per-beat token if concurrent runs ever land
-static CANCELLED: AtomicBool = AtomicBool::new(false);
-
-pub fn cancel_current() {
-    CANCELLED.store(true, Ordering::Relaxed);
+// Per-beat cancellation: stopping one beat must not touch other sessions
+// running at the same time. Each run scopes its beat id into a task-local so
+// providers keep calling `cancelled()` unchanged, without threading a token
+// through every call. // ponytail: shared vec + task-local id — revisit only
+// if cancel checks show up in profiles
+task_local! {
+    static BEAT: i64;
 }
 
+static CANCELLED: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+
+/// Ask the given beat's in-flight task to stop (the UI's Escape / chip ✕).
+pub fn cancel_current(beat_id: i64) {
+    let mut flags = CANCELLED.lock().unwrap();
+    if !flags.contains(&beat_id) {
+        flags.push(beat_id);
+    }
+}
+
+/// Drop a stale cancel flag so a fresh run on the same beat can start.
+pub fn clear_cancel(beat_id: i64) {
+    CANCELLED.lock().unwrap().retain(|&b| b != beat_id);
+}
+
+fn is_cancelled(beat_id: i64) -> bool {
+    CANCELLED.lock().unwrap().contains(&beat_id)
+}
+
+/// True when the current task's beat was asked to stop.
 pub fn cancelled() -> bool {
-    CANCELLED.load(Ordering::Relaxed)
+    BEAT.try_with(|&id| is_cancelled(id)).unwrap_or(false)
 }
 
 pub const STOPPED: &str = "stopped";
@@ -60,8 +80,19 @@ pub enum TaskEvent {
 }
 
 /// Live-event sink for a running task: the UI layer (Tauri, a CLI) supplies
-/// one callback that receives every `TaskEvent` as the task progresses.
-pub type OnEvent<'a> = &'a mut (dyn FnMut(TaskEvent) + Send);
+/// one callback that receives every tagged `TaggedEvent` as the task
+/// progresses.
+pub type OnEvent<'a> = &'a mut (dyn FnMut(TaggedEvent) + Send);
+type RawEvent<'a> = &'a mut (dyn FnMut(TaskEvent) + Send);
+
+/// A task event tagged with the beat that produced it, so the UI can route
+/// live updates to the right session while several run at once.
+#[derive(Clone, Serialize)]
+pub struct TaggedEvent {
+    pub beat_id: i64,
+    #[serde(flatten)]
+    pub ev: TaskEvent,
+}
 
 /* ---- routing: the classifier picks a model tier ---- */
 
@@ -185,7 +216,7 @@ const MAX_TOOL_ITERATIONS: u32 = 12;
 #[allow(clippy::too_many_arguments)]
 async fn agentic_loop(
     model: &str,
-    on_event: OnEvent<'_>,
+    on_event: RawEvent<'_>,
     messages: &mut Vec<serde_json::Value>,
     entries: &mut Vec<serde_json::Value>,
     tools: &[serde_json::Value],
@@ -291,7 +322,7 @@ async fn agentic_loop(
 /// work summarized as evidence for the critique.
 async fn reflexion(
     model: &str,
-    on_event: OnEvent<'_>,
+    on_event: RawEvent<'_>,
     prompt: &str,
     draft: &str,
     tool_steps: &[tools::ToolStep],
@@ -374,12 +405,24 @@ async fn record_usage(beat_id: i64, model: &str, u: &Usage) {
 /// the task — agentic with tools for `high`/`base` (plus a reflexion pass for
 /// `high`), a single completion for `low` — and everything is persisted onto
 /// the beat so it survives reloads.
+/// Tag events with the beat, clear any stale cancel flag for it, and run with
+/// the beat id scoped so `cancelled()` knows which session asked.
 pub async fn run_task(
     beat_id: i64,
     prompt: String,
     on_event: OnEvent<'_>,
 ) -> Result<TaskResult, String> {
-    CANCELLED.store(false, Ordering::Relaxed);
+    clear_cancel(beat_id);
+    let mut sink = |ev: TaskEvent| {
+        let _ = on_event(TaggedEvent { beat_id, ev });
+    };
+    BEAT.scope(beat_id, run_task_inner(beat_id, prompt, &mut sink)).await
+}
+async fn run_task_inner(
+    beat_id: i64,
+    prompt: String,
+    on_event: RawEvent<'_>,
+) -> Result<TaskResult, String> {
     let cfg = config::ModelConfig::load()?;
     let classifier = cfg.classifier.trim();
     if classifier.is_empty() {
@@ -501,11 +544,14 @@ mod tests {
 
     #[test]
     fn test_cancel_flag() {
-        CANCELLED.store(false, Ordering::Relaxed);
-        assert!(!cancelled());
-        cancel_current();
-        assert!(cancelled());
-        CANCELLED.store(false, Ordering::Relaxed);
+        clear_cancel(1);
+        assert!(!is_cancelled(1));
+        cancel_current(1);
+        assert!(is_cancelled(1));
+        // other beats are untouched — that's the whole point
+        assert!(!is_cancelled(2));
+        clear_cancel(1);
+        assert!(!is_cancelled(1));
     }
 
     #[test]

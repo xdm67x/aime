@@ -54,11 +54,12 @@ async fn run_task(
     .await
 }
 
-/// Ask the in-flight task to stop (the Escape key); the running harness
-/// checks the flag between rounds and inside every stream.
+/// Ask the in-flight task of one beat to stop (the UI's Escape / chip ✕);
+/// other sessions keep running. The running harness checks the flag between
+/// rounds and inside every stream.
 #[tauri::command]
-fn cancel_task() {
-    harness::cancel_current()
+fn cancel_task(beat_id: i64) {
+    harness::cancel_current(beat_id)
 }
 
 #[tauri::command]

@@ -17,16 +17,16 @@
             <div class="side-label">
                 <span class="label-row"
                     >BEATS
-                        <button id="new-beat-btn" class="new-btn" title="New beat">＋</button></span
+                    <button id="new-beat-btn" class="new-btn" title="New beat">＋</button></span
                 >
             </div>
             <div id="runs"></div>
             <div class="side-label side-label-projects">
                 <span class="label-row"
                     >PROJECTS
-                        <button id="new-project-btn" class="new-btn" title="Add project"
-                            >＋</button
-                        ></span
+                    <button id="new-project-btn" class="new-btn" title="Add project">
+                        ＋
+                    </button></span
                 >
             </div>
             <div id="projects"></div>
@@ -110,6 +110,7 @@
                 </div>
             </div>
             <div id="composer">
+                <div id="chips" style="display:none"></div>
                 <div class="input-wrap">
                     <input
                         id="input"
@@ -164,11 +165,7 @@
                         </div>
                     </div>
                     <div class="keyrow">
-                        <input
-                            id="project-repo"
-                            type="text"
-                            placeholder="owner/name or repo URL"
-                        />
+                        <input id="project-repo" type="text" placeholder="owner/name or repo URL" />
                         <button class="btn" id="project-clone">Clone</button>
                     </div>
                 </div>
@@ -207,13 +204,18 @@
                                 stroke-linecap="round"
                                 stroke-linejoin="round"
                             >
-                                <path d="M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2" />
+                                <path
+                                    d="M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"
+                                />
                             </svg>
                             Choose folder…
                         </button>
                     </div>
                 </div>
-                <p id="project-modal-status" style="color:#8a8a90;font-size:12.5px;min-height:1.2em;margin:8px 0 0"></p>
+                <p
+                    id="project-modal-status"
+                    style="color:#8a8a90;font-size:12.5px;min-height:1.2em;margin:8px 0 0"
+                ></p>
             </div>
         </div>
 
@@ -235,7 +237,7 @@
             </div>
         </div>
 
-<div id="overlay" class="overlay">
+        <div id="overlay" class="overlay">
             <div id="settings">
                 <header id="settings-head">
                     <h2>Settings</h2>
@@ -263,7 +265,11 @@
                             <p id="settings-status-opencode"></p>
                             <p class="field-label" style="margin-top: 16px">LiteLLM gateway</p>
                             <div class="keyrow">
-                                <input id="litellm-url" type="text" placeholder="http://localhost:4000/v1" />
+                                <input
+                                    id="litellm-url"
+                                    type="text"
+                                    placeholder="http://localhost:4000/v1"
+                                />
                                 <input id="key-litellm" type="password" placeholder="sk-..." />
                                 <button class="btn" id="save-litellm">Save</button>
                             </div>
