@@ -714,6 +714,8 @@ body {
 }
 #key,
 #key-opencode,
+#key-litellm,
+#litellm-url,
 #project-repo {
     flex: 1;
     background: var(--raised);

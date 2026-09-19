@@ -17,6 +17,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             config::save_api_key,
             config::get_api_key,
+            config::save_base_url,
+            config::get_base_url,
             config::get_model_config,
             config::save_model_config,
             providers::list_models,

@@ -7,7 +7,7 @@ pub fn api_key(provider: &str) -> Result<Option<String>, String> {
 
 #[tauri::command]
 pub fn save_api_key(provider: String, key: String) -> Result<(), String> {
-    if !matches!(provider.as_str(), "openrouter" | "opencode") {
+    if !matches!(provider.as_str(), "openrouter" | "opencode" | "litellm") {
         return Err(format!("Unknown provider: {provider}"));
     }
     db::set_setting(&format!("{}_api_key", provider), key.trim())
@@ -16,6 +16,24 @@ pub fn save_api_key(provider: String, key: String) -> Result<(), String> {
 #[tauri::command]
 pub fn get_api_key(provider: String) -> Result<Option<String>, String> {
     api_key(&provider)
+}
+
+/// Base URL for a self-hosted provider gateway (e.g. LiteLLM proxy).
+fn base_url(provider: &str) -> Result<Option<String>, String> {
+    db::get_setting(&format!("{provider}_base_url"))
+}
+
+#[tauri::command]
+pub fn save_base_url(provider: String, url: String) -> Result<(), String> {
+    if !matches!(provider.as_str(), "litellm") {
+        return Err(format!("Unknown provider: {provider}"));
+    }
+    db::set_setting(&format!("{}_base_url", provider), url.trim())
+}
+
+#[tauri::command]
+pub fn get_base_url(provider: String) -> Result<Option<String>, String> {
+    base_url(&provider)
 }
 
 /// The four model slots the harness routes between. Each is an OpenRouter

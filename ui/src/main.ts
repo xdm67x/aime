@@ -478,6 +478,7 @@ window.addEventListener('keydown', (e) => {
 let models: Model[] = []
 $('save').onclick = () => saveKey('openrouter', 'key', 'settings-status')
 $('save-opencode').onclick = () => saveKey('opencode', 'key-opencode', 'settings-status-opencode')
+$('save-litellm').onclick = async () => saveLiteLlm()
 function saveKey(provider: string, inputId: string, statusId: string) {
     const status = $(statusId)
     try {
@@ -490,8 +491,13 @@ function saveKey(provider: string, inputId: string, statusId: string) {
         status.className = 'err'
     }
 }
+const KEY_INPUTS: Record<string, string> = {
+    openrouter: 'key',
+    opencode: 'key-opencode',
+    litellm: 'key-litellm',
+}
 async function keyPlaceholder(provider: string) {
-    const inputId = provider === 'openrouter' ? 'key' : 'key-opencode'
+    const inputId = KEY_INPUTS[provider]
     try {
         const key = await invoke<string>('get_api_key', { provider })
         if (key)
@@ -499,6 +505,27 @@ async function keyPlaceholder(provider: string) {
                 `Saved: ••••${key.slice(-4)} (enter to replace)`
     } catch {
         /* first run: no key yet */
+    }
+}
+async function urlPlaceholder(provider: string) {
+    try {
+        const url = await invoke<string | null>('get_base_url', { provider })
+        if (url) ($('litellm-url') as HTMLInputElement).value = url
+    } catch {
+        /* first run: no url yet */
+    }
+}
+async function saveLiteLlm() {
+    const status = $('settings-status-litellm')
+    try {
+        await invoke('save_base_url', { provider: 'litellm', url: ($('litellm-url') as HTMLInputElement).value })
+        await invoke('save_api_key', { provider: 'litellm', key: ($('key-litellm') as HTMLInputElement).value })
+        status.textContent = 'Gateway URL and API key saved.'
+        status.className = ''
+        keyPlaceholder('litellm')
+    } catch (e) {
+        status.textContent = String(e)
+        status.className = 'err'
     }
 }
 function populateSlots() {
@@ -558,6 +585,8 @@ applyTheme(localStorage.getItem('theme') ?? 'dark')
 ;(async () => {
     await keyPlaceholder('openrouter')
     await keyPlaceholder('opencode')
+    await keyPlaceholder('litellm')
+    await urlPlaceholder('litellm')
     try {
         const cfg = await invoke<{
             classifier: string

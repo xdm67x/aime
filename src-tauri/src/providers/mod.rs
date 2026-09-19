@@ -9,6 +9,7 @@
 //! and saved config always show which provider a model routes to. Bare legacy
 //! ids still route to OpenRouter.
 
+pub mod litellm;
 pub mod opencode;
 pub mod openrouter;
 
@@ -111,6 +112,7 @@ fn providers() -> &'static [Box<dyn Provider>] {
         vec![
             Box::new(openrouter::OpenRouter),
             Box::new(opencode::OpenCode),
+            Box::new(litellm::LiteLlm),
         ]
     })
 }
