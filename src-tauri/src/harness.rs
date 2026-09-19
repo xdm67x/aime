@@ -2,16 +2,21 @@
 //!
 //! The user no longer picks a model per message. A cheap **classifier** model
 //! routes each prompt to one of three tiers the user configures in Settings:
-//! - `high` — most capable model; the task runs a **reflexion** pass
-//!   (draft → critique → refined answer) for hard, high-stakes work.
-//! - `base` — implementation workhorse for typical coding/analysis.
-//! - `low`  — low-cost model for simple, basic tasks.
+//! - `high` — most capable model; agentic work with tools, then a **reflexion**
+//!   pass (critique the draft → refined answer) for hard, high-stakes tasks.
+//! - `base` — implementation workhorse; agentic work with tools.
+//! - `low`  — low-cost model, single completion, no tools.
+//!
+//! Tools (`read_file`, `write_file`, `edit_file`, `grep`, `bash`) plus one
+//! `skill_*` tool per discovered skill in `~/.agents/skills/` are offered to
+//! the high/base tiers; `skills.rs` holds skill discovery, `tools.rs` holds
+//! the tool schemas and execution.
 //!
 //! New patterns: add a `pub async fn run_*` command that classifies, picks a
-//! model tier, runs the work, and persists the result onto the beat.
+//! model tier, drives `agentic_loop`, and persists the result onto the beat.
 
 use crate::openrouter::{chat_completion, Usage};
-use crate::{beats, config, db};
+use crate::{beats, config, db, skills, tools};
 use serde::Serialize;
 use serde_json::json;
 
@@ -53,7 +58,7 @@ Reply with only JSON: {\"tier\":\"high\"|\"base\"|\"low\"}.";
 /// Ask the classifier model which tier this prompt belongs to. Falls back to
 /// `base` (a safe middle ground) if the reply can't be parsed.
 async fn classify(classifier: &str, prompt: &str) -> Result<Tier, String> {
-    let (reply, _) = chat_completion(
+    let r = chat_completion(
         classifier,
         &[
             json!({"role": "system", "content": CLASSIFIER_PROMPT}),
@@ -63,9 +68,10 @@ async fn classify(classifier: &str, prompt: &str) -> Result<Tier, String> {
         Some(0.0),
         Some(64),
         true,
+        None,
     )
     .await?;
-    Ok(extract_json(&reply)
+    Ok(extract_json(&r.content)
         .and_then(|v| v.get("tier").and_then(|t| t.as_str()).and_then(Tier::parse))
         .unwrap_or(Tier::Base))
 }
@@ -91,7 +97,7 @@ async fn summarize_history(beat_id: i64, model: &str) -> Result<String, String> 
     // ponytail: cap to the last ~6000 chars — enough context, bounded tokens
     let chars: Vec<char> = text.chars().collect();
     let tail: String = chars[chars.len().saturating_sub(6000)..].iter().collect();
-    let (summary, _) = chat_completion(
+    let r = chat_completion(
         model,
         &[json!({"role": "user", "content": format!(
             "Summarize this conversation so far into a compact context brief. \
@@ -100,9 +106,10 @@ async fn summarize_history(beat_id: i64, model: &str) -> Result<String, String> 
         Some(0.2),
         Some(512),
         false,
+        None,
     )
     .await?;
-    Ok(format!("Conversation context so far:\n{summary}"))
+    Ok(format!("Conversation context so far:\n{}", r.content))
 }
 
 /// Optional session-level system prompt. Read from SYSTEM_PROMPT.md in the
@@ -115,7 +122,7 @@ fn session_prompt() -> String {
         .unwrap_or_default()
 }
 
-fn system_message(brief: &str, session: &str) -> serde_json::Value {
+fn system_message(brief: &str, session: &str, note: &str) -> serde_json::Value {
     let mut content = String::new();
     if !brief.is_empty() {
         content.push_str(brief);
@@ -124,58 +131,121 @@ fn system_message(brief: &str, session: &str) -> serde_json::Value {
     if !session.is_empty() {
         content.push_str("Session instructions (SYSTEM_PROMPT.md):\n");
         content.push_str(session);
+        content.push_str("\n\n");
+    }
+    if !note.is_empty() {
+        content.push_str(note);
     }
     json!({"role": "system", "content": content})
 }
 
-/* ---- reflexion (high tier): draft → critique → refined answer ---- */
+/* ---- agentic loop: model + tools until a plain-text answer ---- */
 
-/// Two-pass reflexion: a draft answer, then a self-critique that produces the
-/// refined final answer. Returns (final_answer, intermediate_steps, usage).
+const MAX_TOOL_ITERATIONS: u32 = 12;
+
+const AGENT_NOTE: &str = "Tools are available (read_file, write_file, edit_file, grep, bash, and \
+skill_* loaders). Use them when they help: read before editing, search before assuming, verify \
+by running. skill_* tools load the full instructions of a specialized skill on demand. When the \
+work is done, reply with the final answer as plain text (no tool call).";
+
+/// Drive the model against `messages` (already seeded with system + user
+/// turns): each round's tool calls are executed and fed back as `tool`
+/// messages until the model replies with plain text — or after
+/// `MAX_TOOL_ITERATIONS` rounds, where one final call without tools forces a
+/// plain-text answer. Returns (final text, executed tool steps, total usage).
+async fn agentic_loop(
+    model: &str,
+    messages: &mut Vec<serde_json::Value>,
+    tools: &[serde_json::Value],
+) -> Result<(String, Vec<tools::ToolStep>, Usage), String> {
+    let mut steps: Vec<tools::ToolStep> = vec![];
+    let mut usage = Usage::default();
+    for _ in 0..MAX_TOOL_ITERATIONS {
+        let r = chat_completion(model, messages, &[], Some(0.7), None, false, Some(tools)).await?;
+        usage.prompt_tokens += r.usage.prompt_tokens;
+        usage.completion_tokens += r.usage.completion_tokens;
+        if r.tool_calls.is_empty() {
+            return Ok((r.content, steps, usage));
+        }
+        // keep the assistant's tool-call turn in the transcript so the
+        // follow-up `tool` messages stay valid
+        let calls = r.tool_calls;
+        let tool_calls_json: Vec<serde_json::Value> = calls
+            .iter()
+            .map(|tc| {
+                json!({
+                    "id": tc.id, "type": "function",
+                    "function": {"name": tc.name, "arguments": tc.arguments}
+                })
+            })
+            .collect();
+        messages.push(json!({
+            "role": "assistant",
+            "content": r.content,
+            "tool_calls": tool_calls_json,
+        }));
+        for tc in &calls {
+            let (output, error) = match tools::execute(&tc.name, &tc.arguments).await {
+                Ok(out) => (out, false),
+                Err(e) => (e, true),
+            };
+            steps.push(tools::ToolStep {
+                tool: tc.name.clone(),
+                arguments: tc.arguments.clone(),
+                result: output.clone(),
+                error,
+            });
+            messages.push(json!({"role": "tool", "tool_call_id": tc.id, "content": output}));
+        }
+    }
+    let r = chat_completion(model, messages, &[], Some(0.7), None, false, None).await?;
+    usage.prompt_tokens += r.usage.prompt_tokens;
+    usage.completion_tokens += r.usage.completion_tokens;
+    Ok((r.content, steps, usage))
+}
+
+/* ---- reflexion (high tier): critique the agentic draft → refined answer ---- */
+
+/// One reflexion pass over the draft the agentic loop produced, with the tool
+/// work summarized as evidence for the critique.
 async fn reflexion(
     model: &str,
     prompt: &str,
+    draft: &str,
+    tool_steps: &[tools::ToolStep],
     brief: &str,
     session: &str,
-) -> Result<(String, Vec<String>, Usage), String> {
-    let sys = system_message(brief, session);
-    // 1) draft
-    let (draft, u1) = chat_completion(
+) -> Result<(String, Usage), String> {
+    let evidence = tool_steps
+        .iter()
+        .map(|s| {
+            let status = if s.error { "FAILED" } else { "ok" };
+            format!("- {}({}) → {status}", s.tool, s.arguments)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let evidence = if evidence.is_empty() {
+        "none (no tools used)".to_string()
+    } else {
+        evidence
+    };
+    let r = chat_completion(
         model,
         &[
-            sys.clone(),
+            system_message(brief, session, ""),
             json!({"role": "user", "content": format!(
-                "Answer the following task. This is a draft — be thorough.\n\nTask:\n{prompt}")}),
-        ],
-        &[],
-        Some(0.7),
-        None,
-        false,
-    )
-    .await?;
-    // 2) refine: critique the draft and produce the final answer
-    let (final_, u2) = chat_completion(
-        model,
-        &[
-            sys,
-            json!({"role": "user", "content": format!(
-                "Here is your draft answer:\n\n{draft}\n\n\
-                 Critique it for correctness, gaps and clarity, then give the final, improved answer.\n\nFinal answer:")}),
+                "Task:\n{prompt}\n\nDraft answer:\n{draft}\n\nTool evidence:\n{evidence}\n\n\
+                 Critique the draft for correctness, gaps and clarity, then give the final, \
+                 improved answer.\n\nFinal answer:")}),
         ],
         &[],
         Some(0.5),
         None,
         false,
+        None,
     )
     .await?;
-    Ok((
-        final_,
-        vec![draft],
-        Usage {
-            prompt_tokens: u1.prompt_tokens + u2.prompt_tokens,
-            completion_tokens: u1.completion_tokens + u2.completion_tokens,
-        },
-    ))
+    Ok((r.content, r.usage))
 }
 
 /// Pull the first embedded JSON object out of a reply (prose tolerated).
@@ -193,6 +263,8 @@ pub struct TaskResult {
     pub model: String,
     /// Intermediate reflexion steps (e.g. the draft). Empty for base/low.
     pub steps: Vec<String>,
+    /// Tool calls the model made while working.
+    pub tool_steps: Vec<tools::ToolStep>,
     pub answer: String,
 }
 
@@ -211,8 +283,9 @@ async fn record_usage(beat_id: i64, model: &str, u: &Usage) {
 }
 
 /// Handle one user message: the classifier picks a tier, the tier's model runs
-/// the task (with a reflexion pass for `high`), and the result is persisted
-/// onto the beat so it survives reloads.
+/// the task — agentic with tools for `high`/`base` (plus a reflexion pass for
+/// `high`), a single completion for `low` — and everything is persisted onto
+/// the beat so it survives reloads.
 #[tauri::command]
 pub async fn run_task(beat_id: i64, prompt: String) -> Result<TaskResult, String> {
     let cfg = config::ModelConfig::load()?;
@@ -235,26 +308,56 @@ pub async fn run_task(beat_id: i64, prompt: String) -> Result<TaskResult, String
         ));
     }
 
-    let (answer, steps, usage) = match tier {
-        Tier::High => reflexion(model, &prompt, &brief, &session).await?,
-        Tier::Base | Tier::Low => {
-            let sys = system_message(&brief, &session);
-            let (reply, u) = chat_completion(
+    // skills only contribute their frontmatter up front; the full SKILL.md is
+    // loaded on demand when the model invokes a skill tool
+    let discovered = skills::discover();
+    let tool_defs = tools::definitions(&discovered);
+
+    let (answer, steps, tool_steps, usage) = match tier {
+        Tier::High | Tier::Base => {
+            let sys = system_message(&brief, &session, AGENT_NOTE);
+            let mut msgs = vec![sys, json!({"role": "user", "content": &prompt})];
+            let (draft, tool_steps, u1) = agentic_loop(model, &mut msgs, &tool_defs).await?;
+            if tier == Tier::High {
+                let (final_, u2) =
+                    reflexion(model, &prompt, &draft, &tool_steps, &brief, &session).await?;
+                let usage = Usage {
+                    prompt_tokens: u1.prompt_tokens + u2.prompt_tokens,
+                    completion_tokens: u1.completion_tokens + u2.completion_tokens,
+                };
+                (final_, vec![draft], tool_steps, usage)
+            } else {
+                (draft, vec![], tool_steps, u1)
+            }
+        }
+        Tier::Low => {
+            let sys = system_message(&brief, &session, "");
+            let r = chat_completion(
                 model,
                 &[sys, json!({"role": "user", "content": &prompt})],
                 &[],
                 Some(0.7),
                 None,
                 false,
+                None,
             )
             .await?;
-            (reply, vec![], u)
+            (r.content, vec![], vec![], r.usage)
         }
     };
     record_usage(beat_id, model, &usage).await;
 
     // persist onto the beat so it survives reloads
     let mut entries = vec![json!({"role": "user", "content": &prompt})];
+    for s in &tool_steps {
+        entries.push(json!({
+            "role": "tool",
+            "model": s.tool,
+            "arguments": s.arguments,
+            "content": s.result,
+            "error": s.error,
+        }));
+    }
     for s in &steps {
         entries.push(json!({"role": "assistant", "model": model, "content": s}));
     }
@@ -265,6 +368,7 @@ pub async fn run_task(beat_id: i64, prompt: String) -> Result<TaskResult, String
         tier: tier.as_str().to_string(),
         model: model.to_string(),
         steps,
+        tool_steps,
         answer,
     })
 }

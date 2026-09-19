@@ -6,6 +6,8 @@ mod config;
 mod db;
 mod harness;
 mod openrouter;
+mod skills;
+mod tools;
 
 fn main() {
     openrouter::spawn_refresh_loop();

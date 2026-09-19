@@ -92,13 +92,29 @@ $('runs').onclick = async (e) => {
     $('main').classList.remove('no-beat')
     chat.replaceChildren()
     try {
-        const msgs = await invoke<{ role: string; content: string; model?: string; ts?: string }[]>(
-            'get_beat_messages',
-            { id: b.id },
-        )
+        const msgs = await invoke<
+            { role: string; content: string; model?: string; ts?: string; arguments?: string; error?: boolean }[]
+        >('get_beat_messages', { id: b.id })
         for (const m of msgs) {
             const t = m.ts ? m.ts.slice(11, 16) : ''
-            addMsg({ who: m.role === 'user' ? 'user' : m.model ?? 'assistant', time: t, text: m.content })
+            if (m.role === 'tool') {
+                addMsg({
+                    who: `${m.model} · tool`,
+                    time: t,
+                    text: toolMarkdown({
+                        tool: m.model ?? 'tool',
+                        arguments: m.arguments ?? '',
+                        result: m.content,
+                        error: !!m.error,
+                    }),
+                })
+            } else {
+                addMsg({
+                    who: m.role === 'user' ? 'user' : m.model ?? 'assistant',
+                    time: t,
+                    text: m.content,
+                })
+            }
         }
     } catch (err) {
         console.error(err)
@@ -189,6 +205,19 @@ function addMsg({ who, time, text }: { who: string; time: string; text: string }
     return wrap
 }
 
+interface ToolStepMsg {
+    tool: string
+    arguments: string
+    result: string
+    error: boolean
+}
+
+// compact transcript line for one executed tool call
+function toolMarkdown(s: ToolStepMsg) {
+    const clip = (t: string) => (t.length > 1200 ? t.slice(0, 1200) + '\n… (truncated)' : t)
+    return `**${s.tool}** ${s.error ? '❌ failed' : '✅'}\n\n\`\`\`json\n${clip(s.arguments)}\n\`\`\`\n\n\`\`\`\n${clip(s.result)}\n\`\`\``
+}
+
 async function send() {
     const text = input.value.trim()
     if (!text) return
@@ -207,10 +236,12 @@ async function send() {
             tier: string
             model: string
             steps: string[]
+            tool_steps: ToolStepMsg[]
             answer: string
         }>('run_task', { beatId: selectedBeat, prompt: text })
         thinking.remove()
         const label = `${r.model} · ${r.tier}`
+        for (const s of r.tool_steps) addMsg({ who: label, time: now(), text: toolMarkdown(s) })
         for (const s of r.steps) addMsg({ who: label, time: now(), text: s })
         addMsg({ who: label, time: now(), text: r.answer })
     } catch (e) {

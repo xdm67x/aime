@@ -12,9 +12,25 @@ pub struct Usage {
     pub completion_tokens: u64,
 }
 
+/// One tool call requested by the model.
+#[derive(Clone)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+/// One chat completion result: reply text, any requested tool calls, and
+/// token usage.
+pub struct ChatResult {
+    pub content: String,
+    pub tool_calls: Vec<ToolCall>,
+    pub usage: Usage,
+}
+
 /// One chat completion against OpenRouter. Retries once on failure; when
 /// `json_mode` is set the retry drops `response_format` (some models reject it).
-/// Returns the reply text and token usage.
+/// When `tools` is set the reply may carry tool calls instead of text.
 pub async fn chat_completion(
     model: &str,
     messages: &[serde_json::Value],
@@ -22,7 +38,8 @@ pub async fn chat_completion(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     json_mode: bool,
-) -> Result<(String, Usage), String> {
+    tools: Option<&[serde_json::Value]>,
+) -> Result<ChatResult, String> {
     let key = config::openrouter_key()?.ok_or("No OpenRouter API key configured")?;
     let mut body = serde_json::json!({ "model": model, "messages": messages });
     if let Some(t) = temperature {
@@ -38,13 +55,17 @@ pub async fn chat_completion(
     if json_mode {
         body["response_format"] = serde_json::json!({ "type": "json_object" });
     }
+    if let Some(tools) = tools {
+        body["tools"] = serde_json::json!(tools);
+        body["tool_choice"] = serde_json::json!("auto");
+    }
 
     let client = reqwest::Client::new();
     async fn once(
         client: &reqwest::Client,
         key: &str,
         body: &serde_json::Value,
-    ) -> Result<(String, Usage), String> {
+    ) -> Result<ChatResult, String> {
         let resp: serde_json::Value = client
             .post("https://openrouter.ai/api/v1/chat/completions")
             .header("Authorization", format!("Bearer {key}"))
@@ -58,14 +79,37 @@ pub async fn chat_completion(
             .json()
             .await
             .map_err(|e| e.to_string())?;
-        let content = resp["choices"][0]["message"]["content"]
-            .as_str()
-            .map(str::to_string)
-            .ok_or_else(|| format!("Unexpected OpenRouter response: {resp}"))?;
+        let message = &resp["choices"][0]["message"];
+        if message.is_null() {
+            return Err(format!("Unexpected OpenRouter response: {resp}"));
+        }
+        let content = message["content"].as_str().unwrap_or("").to_string();
+        let tool_calls = message
+            .get("tool_calls")
+            .and_then(|t| t.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|tc| {
+                        Some(ToolCall {
+                            id: tc["id"].as_str()?.to_string(),
+                            name: tc["function"]["name"].as_str()?.to_string(),
+                            arguments: tc["function"]["arguments"]
+                                .as_str()
+                                .unwrap_or("{}")
+                                .to_string(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let usage: Usage =
             serde_json::from_value(resp.get("usage").cloned().unwrap_or_default())
                 .unwrap_or_default();
-        Ok((content, usage))
+        Ok(ChatResult {
+            content,
+            tool_calls,
+            usage,
+        })
     }
     for attempt in 0..2 {
         match once(&client, &key, &body).await {
