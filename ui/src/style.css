@@ -353,6 +353,25 @@ body {
 .row-agent {
     align-items: flex-start;
 }
+/* queued prompts: dimmed user-style rows with a remove button */
+.row-queued {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    align-items: flex-end;
+    opacity: 0.55;
+}
+.row-queued .q-x {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+    font-size: 12.5px;
+}
+.row-queued .q-x:hover {
+    color: var(--red);
+}
 .msg.error {
     color: var(--red);
     font-style: italic;
