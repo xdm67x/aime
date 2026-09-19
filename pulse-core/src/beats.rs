@@ -33,7 +33,6 @@ fn row_to_beat(row: &Row) -> rusqlite::Result<Beat> {
     })
 }
 
-#[tauri::command]
 pub fn list_beats() -> Result<Vec<Beat>, String> {
     let conn = db::open()?;
     let mut stmt = conn
@@ -44,10 +43,9 @@ pub fn list_beats() -> Result<Vec<Beat>, String> {
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
 pub fn create_beat(
-    name: String,
-    description: String,
+    name: &str,
+    description: &str,
     project_id: Option<i64>,
 ) -> Result<Beat, String> {
     let name = name.trim();
@@ -92,7 +90,6 @@ pub fn create_beat(
     })
 }
 
-#[tauri::command]
 pub fn set_beat_archived(id: i64, archived: bool) -> Result<(), String> {
     db::open()?
         .execute(
@@ -104,7 +101,6 @@ pub fn set_beat_archived(id: i64, archived: bool) -> Result<(), String> {
 }
 
 /// All persisted messages of a beat, oldest first.
-#[tauri::command]
 pub fn get_beat_messages(id: i64) -> Result<Vec<serde_json::Value>, String> {
     let conn = db::open()?;
     let current: String = conn
@@ -120,7 +116,6 @@ pub fn get_beat_messages(id: i64) -> Result<Vec<serde_json::Value>, String> {
 }
 
 /// Permanently delete an archived beat and its usage rows.
-#[tauri::command]
 pub fn delete_beat(id: i64) -> Result<(), String> {
     let conn = db::open()?;
     conn.execute("DELETE FROM beat_usage WHERE beat_id = ?1", params![id])
@@ -168,7 +163,6 @@ pub async fn record_usage(
     Ok(cost)
 }
 
-#[tauri::command]
 pub async fn record_beat_usage(
     beat_id: i64,
     model: String,

@@ -47,16 +47,6 @@ fn validate_dir(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Open a native folder picker; returns the chosen directory, if any.
-#[tauri::command]
-pub async fn pick_folder() -> Result<Option<String>, String> {
-    Ok(rfd::AsyncFileDialog::new()
-        .pick_folder()
-        .await
-        .map(|f| f.path().to_string_lossy().into_owned()))
-}
-
-#[tauri::command]
 pub fn list_projects() -> Result<Vec<Project>, String> {
     let c = conn()?;
     let mut stmt = c
@@ -69,8 +59,7 @@ pub fn list_projects() -> Result<Vec<Project>, String> {
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn add_project(path: String) -> Result<Project, String> {
+pub fn add_project(path: &str) -> Result<Project, String> {
     let path = path.trim().trim_end_matches('/').to_string();
     validate_dir(&path)?;
     let name = Path::new(&path)
@@ -108,8 +97,7 @@ fn get_project(id: i64) -> Result<Project, String> {
 
 /// Clone a GitHub repo (`owner/name` or a full URL) with `gh repo clone` into
 /// `~/.pulse/repos/<name>` and register it. Returns the new project.
-#[tauri::command]
-pub async fn clone_project(repo: String) -> Result<Project, String> {
+pub async fn clone_project(repo: &str) -> Result<Project, String> {
     let repo = repo.trim().to_string();
     if repo.is_empty() {
         return Err("Repository is empty".into());
@@ -167,7 +155,6 @@ pub async fn clone_project(repo: String) -> Result<Project, String> {
 
 /// Remove a project from Pulse. The directory on disk is left untouched; beats
 /// attached to it keep running but lose their working directory.
-#[tauri::command]
 pub fn remove_project(id: i64) -> Result<(), String> {
     let c = conn()?;
     c.execute("DELETE FROM projects WHERE id = ?1", params![id])

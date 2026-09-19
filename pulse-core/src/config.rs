@@ -5,35 +5,31 @@ pub fn api_key(provider: &str) -> Result<Option<String>, String> {
     db::get_setting(&format!("{provider}_api_key"))
 }
 
-#[tauri::command]
-pub fn save_api_key(provider: String, key: String) -> Result<(), String> {
-    if !matches!(provider.as_str(), "openrouter" | "opencode" | "litellm") {
+pub fn save_api_key(provider: &str, key: &str) -> Result<(), String> {
+    if !matches!(provider, "openrouter" | "opencode" | "litellm") {
         return Err(format!("Unknown provider: {provider}"));
     }
     db::set_setting(&format!("{}_api_key", provider), key.trim())
 }
 
-#[tauri::command]
-pub fn get_api_key(provider: String) -> Result<Option<String>, String> {
-    api_key(&provider)
+pub fn get_api_key(provider: &str) -> Result<Option<String>, String> {
+    api_key(provider)
 }
 
 /// Base URL for a self-hosted provider gateway (e.g. LiteLLM proxy).
-fn base_url(provider: &str) -> Result<Option<String>, String> {
+pub fn base_url(provider: &str) -> Result<Option<String>, String> {
     db::get_setting(&format!("{provider}_base_url"))
 }
 
-#[tauri::command]
-pub fn save_base_url(provider: String, url: String) -> Result<(), String> {
-    if !matches!(provider.as_str(), "litellm") {
+pub fn save_base_url(provider: &str, url: &str) -> Result<(), String> {
+    if !matches!(provider, "litellm") {
         return Err(format!("Unknown provider: {provider}"));
     }
     db::set_setting(&format!("{}_base_url", provider), url.trim())
 }
 
-#[tauri::command]
-pub fn get_base_url(provider: String) -> Result<Option<String>, String> {
-    base_url(&provider)
+pub fn get_base_url(provider: &str) -> Result<Option<String>, String> {
+    base_url(provider)
 }
 
 /// The four model slots the harness routes between. Each is an OpenRouter
@@ -70,13 +66,11 @@ impl ModelConfig {
     }
 }
 
-#[tauri::command]
 pub fn get_model_config() -> Result<ModelConfig, String> {
     ModelConfig::load()
 }
 
-#[tauri::command]
-pub fn save_model_config(config: ModelConfig) -> Result<(), String> {
+pub fn save_model_config(config: &ModelConfig) -> Result<(), String> {
     db::set_setting(MODEL_CLASSIFIER, config.classifier.trim())?;
     db::set_setting(MODEL_HIGH, config.high.trim())?;
     db::set_setting(MODEL_BASE, config.base.trim())?;

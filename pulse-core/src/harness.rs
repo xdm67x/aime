@@ -19,7 +19,6 @@ use crate::providers::{chat_completion, chat_completion_stream, Usage};
 use crate::{beats, config, db, projects, prompts, skills, tools};
 use serde::Serialize;
 use serde_json::json;
-use tauri::Emitter;
 
 /* ---- live events pushed to the UI while a task runs ---- */
 
@@ -43,9 +42,9 @@ pub enum TaskEvent {
     Step { text: String },
 }
 
-fn emit(app: &tauri::AppHandle, ev: TaskEvent) {
-    let _ = app.emit("task-event", ev);
-}
+/// Live-event sink for a running task: the UI layer (Tauri, a CLI) supplies
+/// one callback that receives every `TaskEvent` as the task progresses.
+pub type OnEvent<'a> = &'a mut (dyn FnMut(TaskEvent) + Send);
 
 /* ---- routing: the classifier picks a model tier ---- */
 
@@ -169,16 +168,16 @@ const MAX_TOOL_ITERATIONS: u32 = 12;
 #[allow(clippy::too_many_arguments)]
 async fn agentic_loop(
     model: &str,
-    app: &tauri::AppHandle,
+    on_event: OnEvent<'_>,
     messages: &mut Vec<serde_json::Value>,
     entries: &mut Vec<serde_json::Value>,
     tools: &[serde_json::Value],
     cwd: Option<&str>,
 ) -> Result<(String, Vec<tools::ToolStep>, Usage), String> {
-    let mut on_delta = |t: &str| emit(app, TaskEvent::Delta { text: t.into() });
     let mut steps: Vec<tools::ToolStep> = vec![];
     let mut usage = Usage::default();
     for _ in 0..MAX_TOOL_ITERATIONS {
+        let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
         let r = chat_completion_stream(
             model,
             messages,
@@ -198,12 +197,9 @@ async fn agentic_loop(
         // the model's narration for this round is a message in its own right:
         // emit it live (the frontend seals the streaming bubble) and persist it
         if !r.content.trim().is_empty() {
-            emit(
-                app,
-                TaskEvent::Step {
-                    text: r.content.clone(),
-                },
-            );
+            on_event(TaskEvent::Step {
+                text: r.content.clone(),
+            });
             entries.push(json!({
                 "role": "assistant", "model": model, "content": r.content,
             }));
@@ -230,15 +226,12 @@ async fn agentic_loop(
                 Ok(out) => (out, false),
                 Err(e) => (e, true),
             };
-            emit(
-                app,
-                TaskEvent::Tool {
-                    tool: tc.name.clone(),
-                    arguments: tc.arguments.clone(),
-                    result: output.clone(),
-                    error,
-                },
-            );
+            on_event(TaskEvent::Tool {
+                tool: tc.name.clone(),
+                arguments: tc.arguments.clone(),
+                result: output.clone(),
+                error,
+            });
             entries.push(json!({
                 "role": "tool", "model": tc.name,
                 "arguments": tc.arguments, "content": output, "error": error,
@@ -252,6 +245,7 @@ async fn agentic_loop(
             messages.push(json!({"role": "tool", "tool_call_id": tc.id, "content": output}));
         }
     }
+    let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
     let r = chat_completion_stream(
         model,
         messages,
@@ -274,7 +268,7 @@ async fn agentic_loop(
 /// work summarized as evidence for the critique.
 async fn reflexion(
     model: &str,
-    app: &tauri::AppHandle,
+    on_event: OnEvent<'_>,
     prompt: &str,
     draft: &str,
     tool_steps: &[tools::ToolStep],
@@ -294,7 +288,7 @@ async fn reflexion(
     } else {
         evidence
     };
-    let mut on_delta = |t: &str| emit(app, TaskEvent::Delta { text: t.into() });
+    let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
     let r = chat_completion_stream(
         model,
         &[
@@ -357,11 +351,10 @@ async fn record_usage(beat_id: i64, model: &str, u: &Usage) {
 /// the task — agentic with tools for `high`/`base` (plus a reflexion pass for
 /// `high`), a single completion for `low` — and everything is persisted onto
 /// the beat so it survives reloads.
-#[tauri::command]
 pub async fn run_task(
-    app: tauri::AppHandle,
     beat_id: i64,
     prompt: String,
+    on_event: OnEvent<'_>,
 ) -> Result<TaskResult, String> {
     let cfg = config::ModelConfig::load()?;
     let classifier = cfg.classifier.trim();
@@ -382,13 +375,10 @@ pub async fn run_task(
             tier.as_str()
         ));
     }
-    emit(
-        &app,
-        TaskEvent::Start {
-            model: model.to_string(),
-            tier: tier.as_str().to_string(),
-        },
-    );
+    on_event(TaskEvent::Start {
+        model: model.to_string(),
+        tier: tier.as_str().to_string(),
+    });
 
     // skills only contribute their frontmatter up front; the full SKILL.md is
     // loaded on demand when the model invokes a skill tool
@@ -420,7 +410,7 @@ pub async fn run_task(
             let mut msgs = vec![sys, json!({"role": "user", "content": &prompt})];
             let (draft, tool_steps, u1) = agentic_loop(
                 model,
-                &app,
+                on_event,
                 &mut msgs,
                 &mut entries,
                 &tool_defs,
@@ -431,18 +421,15 @@ pub async fn run_task(
             // narrations and tool results are already in `entries`); for base
             // the draft IS the final answer, so don't store it twice — the
             // answer push below persists it
-            emit(
-                &app,
-                TaskEvent::Step {
-                    text: draft.clone(),
-                },
-            );
+            on_event(TaskEvent::Step {
+                text: draft.clone(),
+            });
             if tier == Tier::High {
                 entries.push(json!({
                     "role": "assistant", "model": model, "content": draft,
                 }));
                 let (final_, u2) =
-                    reflexion(model, &app, &prompt, &draft, &tool_steps, &brief, &session).await?;
+                    reflexion(model, on_event, &prompt, &draft, &tool_steps, &brief, &session).await?;
                 let usage = Usage {
                     prompt_tokens: u1.prompt_tokens + u2.prompt_tokens,
                     completion_tokens: u1.completion_tokens + u2.completion_tokens,
@@ -454,7 +441,7 @@ pub async fn run_task(
         }
         Tier::Low => {
             let sys = system_message(&brief, &session, "");
-            let mut on_delta = |t: &str| emit(&app, TaskEvent::Delta { text: t.into() });
+            let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
             let r = chat_completion_stream(
                 model,
                 &[sys, json!({"role": "user", "content": &prompt})],

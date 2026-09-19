@@ -245,6 +245,7 @@ async fn send_chat(
 /// arrives; the returned result carries the full content (and any tool
 /// calls) once the stream ends. If the stream fails before any delta was
 /// delivered, falls back to the non-streaming path (its retry included).
+#[allow(clippy::too_many_arguments)]
 pub async fn chat_completion_stream(
     model: &str,
     messages: &[serde_json::Value],
@@ -517,7 +518,6 @@ fn cached_models() -> Option<Vec<Model>> {
         .map(|(_, m)| m.clone())
 }
 
-#[tauri::command]
 pub async fn list_models() -> Result<Vec<Model>, String> {
     if let Some(models) = cached_models() {
         return Ok(models);
@@ -525,16 +525,16 @@ pub async fn list_models() -> Result<Vec<Model>, String> {
     fetch_models().await
 }
 
-/// Refresh the models cache in the background every 15 minutes.
-pub fn spawn_refresh_loop() {
-    tauri::async_runtime::spawn(async {
-        loop {
-            tokio::time::sleep(MODELS_TTL).await;
-            if let Err(e) = fetch_models().await {
-                eprintln!("models refresh failed: {e}");
-            }
+/// Background loop refreshing the models cache every 15 minutes. Returns a
+/// future that never completes — the host runtime decides how to drive it
+/// (`tauri::async_runtime::spawn`, `tokio::spawn`, …).
+pub async fn refresh_loop() {
+    loop {
+        tokio::time::sleep(MODELS_TTL).await;
+        if let Err(e) = fetch_models().await {
+            eprintln!("models refresh failed: {e}");
         }
-    });
+    }
 }
 
 #[cfg(test)]

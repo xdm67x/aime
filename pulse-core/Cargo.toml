@@ -1,0 +1,12 @@
+[package]
+name = "pulse-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+async-trait = "0.1"
+tokio = { version = "1", features = ["time", "process", "macros", "rt"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
