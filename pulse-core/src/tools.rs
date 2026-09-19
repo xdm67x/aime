@@ -26,11 +26,13 @@ pub fn definitions(skills: &[skills::SkillInfo]) -> Vec<serde_json::Value> {
             "type": "function",
             "function": {
                 "name": "read_file",
-                "description": "Read the contents of a file at the given path.",
+                "description": "Read the contents of a file at the given path. Optionally read a line range (1-indexed, inclusive).",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "Path to the file."}
+                        "path": {"type": "string", "description": "Path to the file."},
+                        "offset": {"type": "integer", "description": "First line to read (1-indexed). Optional."},
+                        "limit": {"type": "integer", "description": "Number of lines to read from offset. Optional."}
                     },
                     "required": ["path"]
                 }
@@ -55,15 +57,17 @@ pub fn definitions(skills: &[skills::SkillInfo]) -> Vec<serde_json::Value> {
             "type": "function",
             "function": {
                 "name": "edit_file",
-                "description": "Replace the first occurrence of old_string with new_string in a file.",
+                "description": "Edit a file in one of two ways: (a) replace the first occurrence of old_string with new_string, or (b) replace the line range start_line..end_line (1-indexed, inclusive) with new_string.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": {"type": "string", "description": "Path to the file."},
-                        "old_string": {"type": "string", "description": "Exact text to find."},
-                        "new_string": {"type": "string", "description": "Replacement text."}
+                        "old_string": {"type": "string", "description": "Exact text to find (string mode)."},
+                        "new_string": {"type": "string", "description": "Replacement text."},
+                        "start_line": {"type": "integer", "description": "First line to replace (1-indexed). Line mode when set; requires new_string, old_string not needed."},
+                        "end_line": {"type": "integer", "description": "Last line to replace (1-indexed, inclusive). Optional; defaults to start_line."}
                     },
-                    "required": ["path", "old_string", "new_string"]
+                    "required": ["path", "new_string"]
                 }
             }
         }),
@@ -145,7 +149,18 @@ fn resolve(path: &str, cwd: Option<&str>) -> String {
 fn read_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
     let path = resolve(args["path"].as_str().ok_or("missing 'path'")?, cwd);
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    Ok(truncate(content, 50_000))
+    let offset = args["offset"].as_u64().unwrap_or(1).max(1) as usize;
+    let limit = args["limit"].as_u64().map(|l| l as usize);
+    if offset == 1 && limit.is_none() {
+        return Ok(truncate(content, 50_000));
+    }
+    let lines: Vec<&str> = content.lines().collect();
+    let start = (offset - 1).min(lines.len());
+    let end = limit.map(|l| (start + l).min(lines.len())).unwrap_or(lines.len());
+    if start >= lines.len() {
+        return Err(format!("offset {} is past end of file ({} lines)", offset, lines.len()));
+    }
+    Ok(lines[start..end].join("\n"))
 }
 
 fn write_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
@@ -160,9 +175,33 @@ fn write_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, Str
 
 fn edit_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
     let path = resolve(args["path"].as_str().ok_or("missing 'path'")?, cwd);
-    let old = args["old_string"].as_str().ok_or("missing 'old_string'")?;
     let new = args["new_string"].as_str().ok_or("missing 'new_string'")?;
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+
+    // Line mode: replace lines start..=end (1-indexed, inclusive) with new_string.
+    if let Some(start) = args["start_line"].as_u64() {
+        let start = start.max(1) as usize;
+        let end = args["end_line"].as_u64().unwrap_or(start as u64).max(1) as usize;
+        if end < start {
+            return Err(format!("end_line {} is before start_line {}", end, start));
+        }
+        let mut lines: Vec<&str> = content.lines().collect();
+        if start > lines.len() {
+            return Err(format!("start_line {} is past end of file ({} lines)", start, lines.len()));
+        }
+        let s = start - 1;
+        let e = end.min(lines.len());
+        lines.splice(s..e, new.lines());
+        let mut out = lines.join("\n");
+        if content.ends_with('\n') {
+            out.push('\n');
+        }
+        std::fs::write(&path, out).map_err(|e| e.to_string())?;
+        return Ok(format!("Replaced lines {}-{} in {path}", start, e));
+    }
+
+    // String mode: replace first occurrence of old_string.
+    let old = args["old_string"].as_str().ok_or("missing 'old_string' (or set start_line)")?;
     let count = content.matches(old).count();
     if count == 0 {
         return Err("old_string not found in file".into());
@@ -299,6 +338,56 @@ mod tests {
                 "old_string": "nonexistent",
                 "new_string": "x"
             }),
+            None,
+        );
+        assert!(err.is_err());
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_line_numbers() {
+        let tmp = std::env::temp_dir().join(format!("tools-linenum-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp);
+        let file = tmp.join("lines.txt");
+        write_file(
+            &json!({"path": file.to_str().unwrap(), "content": "a\nb\nc\nd\ne\n"}),
+            None,
+        )
+        .unwrap();
+
+        // read with offset/limit
+        let content = read_file(
+            &json!({"path": file.to_str().unwrap(), "offset": 2, "limit": 2}),
+            None,
+        )
+        .unwrap();
+        assert_eq!(content, "b\nc");
+
+        // read: offset past EOF errors
+        assert!(read_file(&json!({"path": file.to_str().unwrap(), "offset": 99}), None).is_err());
+
+        // edit: single line replace
+        edit_file(
+            &json!({"path": file.to_str().unwrap(), "start_line": 3, "new_string": "C!"}),
+            None,
+        )
+        .unwrap();
+        let content = read_file(&json!({"path": file.to_str().unwrap()}), None).unwrap();
+        assert_eq!(content, "a\nb\nC!\nd\ne\n");
+
+        // edit: range replace with fewer lines
+        edit_file(
+            &json!({"path": file.to_str().unwrap(), "start_line": 4, "end_line": 5, "new_string": "x\ny\nz"}),
+            None,
+        )
+        .unwrap();
+        let content = read_file(&json!({"path": file.to_str().unwrap()}), None).unwrap();
+        assert_eq!(content, "a\nb\nC!\nx\ny\nz\n");
+
+        // edit: end_line before start_line errors
+        let err = edit_file(
+            &json!({"path": file.to_str().unwrap(), "start_line": 5, "end_line": 2, "new_string": "q"}),
             None,
         );
         assert!(err.is_err());
