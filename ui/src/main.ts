@@ -240,9 +240,9 @@ function openBeatModal(p: Project | null) {
     modalProject = p
     $('beat-modal-status').textContent = ''
     $('beat-overlay').classList.add('open')
-    ;($('beat-name') as HTMLInputElement).value = p?.name ?? ''
+    ;($('beat-name') as HTMLInputElement).value = ''
     ;($('beat-desc') as HTMLTextAreaElement).value = ''
-    ;(p ? ($('beat-desc') as HTMLTextAreaElement) : ($('beat-name') as HTMLInputElement)).focus()
+    ;($('beat-name') as HTMLInputElement).focus()
 }
 $('new-beat-btn').onclick = () => openBeatModal(null)
 const closeBeatModal = () => $('beat-overlay').classList.remove('open')
