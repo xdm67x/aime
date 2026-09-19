@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Pulse — Feel the model's heartbeat</title>
+        <meta
+            name="description"
+            content="Pulse is a desktop companion that lets you feel your AI model's heartbeat. Track beats, costs and tokens in real time."
+        />
+        <link rel="stylesheet" href="/src/style.css" />
+    </head>
+    <body>
+        <header class="nav">
+            <div class="nav-inner">
+                <a class="logo" href="#"><span class="bolt">⚡</span>PULSE</a>
+                <nav>
+                    <a href="#features">Features</a>
+                    <a href="#download" class="nav-cta">Download</a>
+                </nav>
+            </div>
+        </header>
+
+        <main>
+            <section class="hero">
+                <p class="eyebrow">Desktop companion for AI workflows</p>
+                <h1>Feel the model's <span class="grad">heartbeat</span>.</h1>
+                <p class="sub">
+                    Pulse keeps a live pulse on your AI sessions — beats, tokens and costs — so you
+                    always know what your models are doing and what they're costing you.
+                </p>
+                <div class="hero-actions">
+                    <a class="btn btn-primary" href="#download">
+                        <span aria-hidden="true">⬇</span> Download for macOS
+                    </a>
+                    <a class="btn btn-ghost" href="#features">Learn more</a>
+                </div>
+                <p class="platform-note">
+                    <span class="apple" aria-hidden="true"></span>
+                    Currently available for macOS only.
+                </p>
+            </section>
+
+            <section id="features" class="features">
+                <div class="card">
+                    <div class="icon i-cyan">🫀</div>
+                    <h2>Live beats</h2>
+                    <p>
+                        Watch every AI session as a heartbeat. Beats show progress and activity in
+                        real time, so nothing runs silently in the background.
+                    </p>
+                </div>
+                <div class="card">
+                    <div class="icon i-orange">💸</div>
+                    <h2>Cost tracking</h2>
+                    <p>
+                        Know exactly what each session costs. Pulse adds up token spend per beat and
+                        per project, in dollars, not abstract counts.
+                    </p>
+                </div>
+                <div class="card">
+                    <div class="icon i-green">🧩</div>
+                    <h2>Projects &amp; worktrees</h2>
+                    <p>
+                        Organize beats by project and git worktree. See status at a glance and jump
+                        between parallel streams of work.
+                    </p>
+                </div>
+            </section>
+
+            <section id="download" class="download">
+                <h2>Download Pulse</h2>
+                <p class="sub">
+                    Free to use. Grab the latest build for macOS — Apple silicon and Intel are both
+                    supported.
+                </p>
+                <a
+                    id="download-btn"
+                    class="btn btn-primary btn-lg"
+                    href="https://github.com/xdm67x/pulse/releases/latest"
+                    rel="noopener"
+                >
+                    <span aria-hidden="true">⬇</span> Download for macOS
+                </a>
+                <p class="hint" id="download-hint">You'll be taken to the latest GitHub release.</p>
+            </section>
+        </main>
+
+        <footer>
+            <p>Pulse — built with Tauri. © 2025</p>
+        </footer>
+
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>
