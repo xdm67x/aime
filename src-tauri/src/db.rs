@@ -12,12 +12,20 @@ pub fn open() -> Result<Connection, String> {
     )
     .map_err(|e| e.to_string())?;
     conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS beats (
+        "CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            path TEXT NOT NULL UNIQUE,
+            source TEXT NOT NULL DEFAULT 'local',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS beats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
             archived INTEGER NOT NULL DEFAULT 0,
             messages TEXT NOT NULL DEFAULT '[]',
+            project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS beat_usage (
@@ -38,6 +46,10 @@ pub fn open() -> Result<Connection, String> {
     );
     let _ = conn.execute(
         "ALTER TABLE beats ADD COLUMN messages TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE beats ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL",
         [],
     );
     conn.pragma_update(None, "foreign_keys", "ON")

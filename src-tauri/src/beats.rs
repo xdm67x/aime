@@ -10,10 +10,15 @@ pub struct Beat {
     pub archived: bool,
     pub created_at: String,
     pub cost_usd: f64,
+    /// Project the beat runs in (its directory is the working directory).
+    pub project_id: Option<i64>,
+    pub project_name: Option<String>,
 }
 
 const SELECT: &str = "SELECT b.id, b.name, b.description, b.archived, b.created_at, \
-    COALESCE((SELECT SUM(cost_usd) FROM beat_usage WHERE beat_id = b.id), 0.0) FROM beats b";
+    COALESCE((SELECT SUM(cost_usd) FROM beat_usage WHERE beat_id = b.id), 0.0), \
+    b.project_id, p.name \
+    FROM beats b LEFT JOIN projects p ON p.id = b.project_id";
 
 fn row_to_beat(row: &Row) -> rusqlite::Result<Beat> {
     Ok(Beat {
@@ -23,6 +28,8 @@ fn row_to_beat(row: &Row) -> rusqlite::Result<Beat> {
         archived: row.get::<_, i64>(3)? != 0,
         created_at: row.get(4)?,
         cost_usd: row.get(5)?,
+        project_id: row.get(6)?,
+        project_name: row.get(7)?,
     })
 }
 
@@ -38,7 +45,11 @@ pub fn list_beats() -> Result<Vec<Beat>, String> {
 }
 
 #[tauri::command]
-pub fn create_beat(name: String, description: String) -> Result<Beat, String> {
+pub fn create_beat(
+    name: String,
+    description: String,
+    project_id: Option<i64>,
+) -> Result<Beat, String> {
     let name = name.trim();
     if name.is_empty() {
         return Err("Beat name cannot be empty".into());
@@ -46,8 +57,8 @@ pub fn create_beat(name: String, description: String) -> Result<Beat, String> {
     let description = description.trim();
     let conn = db::open()?;
     conn.execute(
-        "INSERT INTO beats (name, description) VALUES (?1, ?2)",
-        params![name, description],
+        "INSERT INTO beats (name, description, project_id) VALUES (?1, ?2, ?3)",
+        params![name, description, project_id],
     )
     .map_err(|e| e.to_string())?;
     let id = conn.last_insert_rowid();
@@ -58,6 +69,17 @@ pub fn create_beat(name: String, description: String) -> Result<Beat, String> {
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
+    let project_name: Option<String> = match project_id {
+        Some(pid) => conn
+            .query_row(
+                "SELECT name FROM projects WHERE id = ?1",
+                params![pid],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?,
+        None => None,
+    };
     Ok(Beat {
         id,
         name: name.into(),
@@ -65,6 +87,8 @@ pub fn create_beat(name: String, description: String) -> Result<Beat, String> {
         archived: false,
         created_at,
         cost_usd: 0.0,
+        project_id,
+        project_name,
     })
 }
 

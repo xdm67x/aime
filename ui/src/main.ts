@@ -13,6 +13,15 @@ interface Beat {
     description?: string
     archived?: boolean
     cost_usd?: number
+    project_id?: number | null
+    project_name?: string | null
+}
+
+interface Project {
+    id: number
+    name: string
+    path: string
+    source: string
 }
 
 interface Model {
@@ -20,6 +29,97 @@ interface Model {
     name: string
     context_length?: number
     pricing: { prompt: string; completion: string }
+}
+
+/* ---- projects (local dirs / gh clones) ---- */
+let projects: Project[] = []
+async function loadProjects() {
+    try {
+        projects = await invoke('list_projects')
+    } catch (e) {
+        console.error(e)
+    }
+    renderProjects()
+}
+function projectRow(p: Project) {
+    return `<div class="run project" title="${esc(p.path)}" data-id="${p.id}">
+    <span class="beat-name">${esc(p.name)}</span>
+    <span class="proj-src">${p.source === 'github' ? 'gh' : 'local'}</span>
+    <button class="beat-x beat-play" title="New session"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg></button>
+    <button class="beat-x" title="Remove"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>`
+}
+function renderProjects() {
+    $('projects').innerHTML = projects.length
+        ? projects.map(projectRow).join('')
+        : '<div class="proj-empty">none yet</div>'
+}
+$('projects').onclick = async (e) => {
+    const el = (e.target as Element).closest<HTMLElement>('.project')
+    if (!el) return
+    const p = projects.find((x) => x.id === +el.dataset.id!)
+    if (!p) return
+    if ((e.target as Element).closest('.beat-play')) {
+        // sessions spawned from a project run inside its directory
+        try {
+            const b = await invoke<Beat>('create_beat', {
+                name: p.name,
+                description: '',
+                projectId: p.id,
+            })
+            await loadBeats()
+            ;(document.querySelector(`.run[data-id="${b.id}"]`) as HTMLElement | null)?.click()
+        } catch (err) {
+            console.error(err)
+        }
+        return
+    }
+    if ((e.target as Element).closest('.beat-x')) {
+        try {
+            await invoke('remove_project', { id: p.id })
+        } catch (err) {
+            console.error(err)
+        }
+        loadProjects()
+    }
+}
+$('new-project-btn').onclick = () => {
+    $('project-modal-status').textContent = ''
+    $('project-overlay').classList.add('open')
+    ;($('project-repo') as HTMLInputElement).value = ''
+    $('project-repo').focus()
+}
+const closeProjectModal = () => $('project-overlay').classList.remove('open')
+$('close-project-modal').onclick = closeProjectModal
+$('project-overlay').onclick = (e) => {
+    if (e.target === $('project-overlay')) closeProjectModal()
+}
+async function addProject(cmd: 'clone_project' | 'add_project', arg: string) {
+    const status = $('project-modal-status')
+    if (!arg) return
+    status.textContent = cmd === 'clone_project' ? 'Cloning…' : 'Adding…'
+    try {
+        await invoke(cmd, cmd === 'clone_project' ? { repo: arg } : { path: arg })
+        closeProjectModal()
+        loadProjects()
+    } catch (err) {
+        status.textContent = String(err)
+    }
+}
+$('project-clone').onclick = () =>
+    addProject('clone_project', ($('project-repo') as HTMLInputElement).value.trim())
+$('project-repo').onkeydown = (e) => {
+    if (e.key === 'Enter')
+        addProject('clone_project', ($('project-repo') as HTMLInputElement).value.trim())
+}
+$('project-choose').onclick = async () => {
+    // native folder picker → register the picked directory as a local project
+    try {
+        const path = await invoke<string | null>('pick_folder')
+        if (path) await addProject('add_project', path)
+    } catch (err) {
+        $('project-modal-status').textContent = String(err)
+    }
 }
 
 /* ---- beats (SQLite-backed) ---- */
@@ -51,6 +151,7 @@ function beatRow(b: Beat) {
         : icon('Archive', '<path d="M18 6 6 18M6 6l12 12"/>')
     return `<div class="run ${b.id === selectedBeat ? 'active' : ''} ${b.archived ? 'dim' : ''}" data-id="${b.id}">
     <span class="beat-name">${esc(b.name)}</span>
+    ${b.project_name ? `<span class="proj-src">${esc(b.project_name)}</span>` : ''}
     ${b.archived ? '' : `<span class="beat-cost">${fmtCost(b.cost_usd)}</span>`}
     ${actions}
   </div>`
@@ -89,6 +190,7 @@ $('runs').onclick = async (e) => {
     }
     selectedBeat = b.id
     $('run-title').textContent = b.name
+    $('run-project').textContent = b.project_name ? `⌂ ${b.project_name}` : ''
     $('main').classList.remove('no-beat')
     chat.replaceChildren()
     try {
@@ -163,6 +265,7 @@ async function createBeat() {
         const b = await invoke<Beat>('create_beat', {
             name,
             description: ($('beat-desc') as HTMLTextAreaElement).value,
+            projectId: null,
         })
         selectedBeat = b.id
         $('run-title').textContent = b.name
@@ -184,6 +287,7 @@ $('beat-desc').onkeydown = (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) createBeat()
 }
 $('search').oninput = () => renderBeats()
+loadProjects()
 loadBeats()
 
 /* ---- chat (local only: sent messages append until beat is reloaded) ---- */
@@ -265,6 +369,7 @@ window.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return
     $('overlay').classList.remove('open')
     closeBeatModal()
+    closeProjectModal()
     $('delete-overlay').classList.remove('open')
 })
 

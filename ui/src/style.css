@@ -61,7 +61,7 @@ body {
     min-width: 300px;
     background: var(--panel);
     border-right: 1px solid var(--border-soft);
-    padding: 22px 18px;
+    padding: 26px 20px;
     display: flex;
     flex-direction: column;
 }
@@ -89,9 +89,9 @@ body {
     background: var(--input);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 9px 12px;
+    padding: 11px 13px;
     color: var(--text);
-    margin-bottom: 22px;
+    margin-bottom: 26px;
 }
 #search::placeholder {
     color: var(--faint);
@@ -108,7 +108,7 @@ body {
     align-items: center;
     justify-content: space-between;
 }
-#new-beat-btn {
+.new-btn {
     background: none;
     border: 0;
     color: var(--muted);
@@ -117,16 +117,16 @@ body {
     padding: 0 4px;
     line-height: 1;
 }
-#new-beat-btn:hover {
+.new-btn:hover {
     color: var(--text-strong);
 }
 .run {
-    padding: 10px 14px;
+    padding: 11px 14px;
     border-radius: 8px;
     border-left: 3px solid transparent;
     color: var(--text-dim);
     cursor: pointer;
-    margin-bottom: 4px;
+    margin-bottom: 5px;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -159,6 +159,9 @@ body {
 .beat-x:hover {
     color: var(--text-strong);
 }
+.beat-play:hover {
+    color: var(--blue);
+}
 #confirm-delete-name {
     color: var(--text-strong);
     font-weight: 600;
@@ -181,10 +184,24 @@ body {
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--text-dim);
-    padding: 9px 12px;
+    padding: 10px 12px;
     cursor: pointer;
     text-align: left;
     font-size: 13px;
+}
+/* beats scroll in their own region; projects + settings stay pinned below */
+#runs {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+.side-label-projects {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border-soft);
+}
+#projects {
+    margin-bottom: 16px;
 }
 #settings-btn:hover {
     background: var(--input);
@@ -204,6 +221,77 @@ body {
     justify-content: space-between;
     padding: 16px 24px;
     border-bottom: 1px solid var(--border-soft);
+}
+#run-project {
+    color: var(--faint);
+    font-size: 12px;
+    margin-top: 2px;
+}
+.proj-src {
+    font-size: 10.5px;
+    color: var(--faint);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 5px;
+    white-space: nowrap;
+}
+.proj-empty {
+    color: var(--faint);
+    font-size: 12px;
+    padding: 6px 14px;
+}
+.proj-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    margin-top: 14px;
+    background: var(--raised);
+}
+.proj-card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.proj-card-ico {
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+.proj-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+}
+.proj-card-hint {
+    font-size: 11.5px;
+    color: var(--faint);
+    margin-top: 1px;
+}
+.proj-choose {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: none;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    color: var(--text-dim);
+    padding: 11px 12px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+}
+.proj-choose:hover {
+    border-color: var(--blue);
+    color: var(--text);
 }
 #run-title {
     font-weight: 700;
@@ -523,7 +611,8 @@ body {
     gap: 8px;
 }
 #key,
-#key-opencode {
+#key-opencode,
+#project-repo {
     flex: 1;
     background: var(--raised);
     color: var(--text);
@@ -602,7 +691,8 @@ td.num {
     color: var(--green);
 }
 #close-settings,
-#close-beat-modal {
+#close-beat-modal,
+#close-project-modal {
     background: none;
     border: 0;
     color: var(--muted);

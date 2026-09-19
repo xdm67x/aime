@@ -16,7 +16,7 @@
 //! model tier, drives `agentic_loop`, and persists the result onto the beat.
 
 use crate::providers::{chat_completion, Usage};
-use crate::{beats, config, db, prompts, skills, tools};
+use crate::{beats, config, db, projects, prompts, skills, tools};
 use serde::Serialize;
 use serde_json::json;
 
@@ -141,6 +141,7 @@ async fn agentic_loop(
     model: &str,
     messages: &mut Vec<serde_json::Value>,
     tools: &[serde_json::Value],
+    cwd: Option<&str>,
 ) -> Result<(String, Vec<tools::ToolStep>, Usage), String> {
     let mut steps: Vec<tools::ToolStep> = vec![];
     let mut usage = Usage::default();
@@ -169,7 +170,7 @@ async fn agentic_loop(
             "tool_calls": tool_calls_json,
         }));
         for tc in &calls {
-            let (output, error) = match tools::execute(&tc.name, &tc.arguments).await {
+            let (output, error) = match tools::execute(&tc.name, &tc.arguments, cwd).await {
                 Ok(out) => (out, false),
                 Err(e) => (e, true),
             };
@@ -303,9 +304,26 @@ pub async fn run_task(beat_id: i64, prompt: String) -> Result<TaskResult, String
 
     let (answer, steps, tool_steps, usage) = match tier {
         Tier::High | Tier::Base => {
-            let sys = system_message(&brief, &session, prompts::AGENT_NOTE);
+            // a beat attached to a project runs its tools inside the project
+            // directory and gets its AGENTS.md injected as instructions
+            let wd = projects::working_dir(beat_id)?;
+            let mut note = prompts::AGENT_NOTE.to_string();
+            if let Some(dir) = &wd {
+                if !note.is_empty() {
+                    note.push_str("\n\n");
+                }
+                note.push_str(&format!(
+                    "Working directory: {dir}. Relative tool paths resolve against it, \
+                     bash runs inside it.\n\n"
+                ));
+                if let Some(agents) = projects::agents_note(dir) {
+                    note.push_str(&agents);
+                }
+            }
+            let sys = system_message(&brief, &session, &note);
             let mut msgs = vec![sys, json!({"role": "user", "content": &prompt})];
-            let (draft, tool_steps, u1) = agentic_loop(model, &mut msgs, &tool_defs).await?;
+            let (draft, tool_steps, u1) =
+                agentic_loop(model, &mut msgs, &tool_defs, wd.as_deref()).await?;
             if tier == Tier::High {
                 let (final_, u2) =
                     reflexion(model, &prompt, &draft, &tool_steps, &brief, &session).await?;

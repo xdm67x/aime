@@ -114,15 +114,17 @@ pub fn definitions(skills: &[skills::SkillInfo]) -> Vec<serde_json::Value> {
     tools
 }
 
-/// Execute a tool call. Returns the output string (Err for failures).
-pub async fn execute(name: &str, arguments: &str) -> Result<String, String> {
+/// Execute a tool call. `cwd` is the beat's project directory (if any):
+/// relative paths resolve against it and `bash`/`grep` run inside it.
+/// Returns the output string (Err for failures).
+pub async fn execute(name: &str, arguments: &str, cwd: Option<&str>) -> Result<String, String> {
     let args: serde_json::Value = serde_json::from_str(arguments).unwrap_or_default();
     match name {
-        "read_file" => read_file(&args),
-        "write_file" => write_file(&args),
-        "edit_file" => edit_file(&args),
-        "grep" => run_grep(&args),
-        "bash" => run_bash(&args).await,
+        "read_file" => read_file(&args, cwd),
+        "write_file" => write_file(&args, cwd),
+        "edit_file" => edit_file(&args, cwd),
+        "grep" => run_grep(&args, cwd),
+        "bash" => run_bash(&args, cwd).await,
         other if other.starts_with("skill_") => {
             let skill_name = other.strip_prefix("skill_").unwrap_or(other);
             skills::load_content(skill_name)
@@ -131,39 +133,48 @@ pub async fn execute(name: &str, arguments: &str) -> Result<String, String> {
     }
 }
 
-fn read_file(args: &serde_json::Value) -> Result<String, String> {
-    let path = args["path"].as_str().ok_or("missing 'path'")?;
-    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+/// Resolve a tool path against the working directory when it's relative.
+fn resolve(path: &str, cwd: Option<&str>) -> String {
+    let p = std::path::Path::new(path);
+    match (p.is_absolute(), cwd) {
+        (true, _) | (false, None) => path.to_string(),
+        (false, Some(dir)) => std::path::Path::new(dir).join(p).to_string_lossy().into_owned(),
+    }
+}
+
+fn read_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
+    let path = resolve(args["path"].as_str().ok_or("missing 'path'")?, cwd);
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     Ok(truncate(content, 50_000))
 }
 
-fn write_file(args: &serde_json::Value) -> Result<String, String> {
-    let path = args["path"].as_str().ok_or("missing 'path'")?;
+fn write_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
+    let path = resolve(args["path"].as_str().ok_or("missing 'path'")?, cwd);
     let content = args["content"].as_str().ok_or("missing 'content'")?;
-    if let Some(parent) = std::path::Path::new(path).parent() {
+    if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    std::fs::write(path, content).map_err(|e| e.to_string())?;
+    std::fs::write(&path, content).map_err(|e| e.to_string())?;
     Ok(format!("Wrote {} bytes to {path}", content.len()))
 }
 
-fn edit_file(args: &serde_json::Value) -> Result<String, String> {
-    let path = args["path"].as_str().ok_or("missing 'path'")?;
+fn edit_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
+    let path = resolve(args["path"].as_str().ok_or("missing 'path'")?, cwd);
     let old = args["old_string"].as_str().ok_or("missing 'old_string'")?;
     let new = args["new_string"].as_str().ok_or("missing 'new_string'")?;
-    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let count = content.matches(old).count();
     if count == 0 {
         return Err("old_string not found in file".into());
     }
     let new_content = content.replacen(old, new, 1);
-    std::fs::write(path, new_content).map_err(|e| e.to_string())?;
+    std::fs::write(&path, new_content).map_err(|e| e.to_string())?;
     Ok(format!("Replaced 1 of {count} occurrence(s) in {path}"))
 }
 
-fn run_grep(args: &serde_json::Value) -> Result<String, String> {
+fn run_grep(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
     let pattern = args["pattern"].as_str().ok_or("missing 'pattern'")?;
-    let path = args["path"].as_str().unwrap_or(".");
+    let path = resolve(args["path"].as_str().unwrap_or("."), cwd);
     let glob = args["glob"].as_str();
     // Prefer ripgrep (faster, better defaults); fall back to grep -rn.
     let rg = std::process::Command::new("rg")
@@ -173,7 +184,7 @@ fn run_grep(args: &serde_json::Value) -> Result<String, String> {
         .arg("never")
         .args(glob.map(|g| vec!["--glob", g]).unwrap_or_default())
         .arg(pattern)
-        .arg(path)
+        .arg(&path)
         .output();
     match rg {
         Ok(o) if !o.stdout.is_empty() => {
@@ -190,7 +201,7 @@ fn run_grep(args: &serde_json::Value) -> Result<String, String> {
     if let Some(g) = glob {
         cmd.arg("--include").arg(g);
     }
-    cmd.arg(pattern).arg(path);
+    cmd.arg(pattern).arg(&path);
     let o = cmd.output().map_err(|e| e.to_string())?;
     if !o.stdout.is_empty() {
         Ok(truncate(
@@ -204,20 +215,22 @@ fn run_grep(args: &serde_json::Value) -> Result<String, String> {
     }
 }
 
-/// Execute a shell command with a 30-second timeout.
-async fn run_bash(args: &serde_json::Value) -> Result<String, String> {
+/// Execute a shell command with a 30-second timeout, inside `cwd` when set.
+async fn run_bash(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
     let command = args["command"]
         .as_str()
         .ok_or("missing 'command'")?
         .to_string();
-    let child = tokio::process::Command::new("sh")
-        .arg("-c")
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.arg("-c")
         .arg(&command)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true) // dropped child on timeout → process killed
-        .spawn()
-        .map_err(|e| e.to_string())?;
+        .kill_on_drop(true); // dropped child on timeout → process killed
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    let child = cmd.spawn().map_err(|e| e.to_string())?;
     match tokio::time::timeout(Duration::from_secs(30), child.wait_with_output()).await {
         Ok(Ok(output)) => {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -237,7 +250,7 @@ async fn run_bash(args: &serde_json::Value) -> Result<String, String> {
     }
 }
 
-fn truncate(s: String, max: usize) -> String {
+pub(crate) fn truncate(s: String, max: usize) -> String {
     if s.len() <= max {
         s
     } else {
@@ -256,31 +269,49 @@ mod tests {
         let file = tmp.join("test.txt");
 
         // write
-        write_file(&json!({"path": file.to_str().unwrap(), "content": "hello world"})).unwrap();
+        write_file(
+            &json!({"path": file.to_str().unwrap(), "content": "hello world"}),
+            None,
+        )
+        .unwrap();
 
         // read
-        let content = read_file(&json!({"path": file.to_str().unwrap()})).unwrap();
+        let content = read_file(&json!({"path": file.to_str().unwrap()}), None).unwrap();
         assert_eq!(content, "hello world");
 
         // edit
-        edit_file(&json!({
-            "path": file.to_str().unwrap(),
-            "old_string": "hello",
-            "new_string": "goodbye"
-        }))
+        edit_file(
+            &json!({
+                "path": file.to_str().unwrap(),
+                "old_string": "hello",
+                "new_string": "goodbye"
+            }),
+            None,
+        )
         .unwrap();
-        let content = read_file(&json!({"path": file.to_str().unwrap()})).unwrap();
+        let content = read_file(&json!({"path": file.to_str().unwrap()}), None).unwrap();
         assert_eq!(content, "goodbye world");
 
         // edit: not found
-        let err = edit_file(&json!({
-            "path": file.to_str().unwrap(),
-            "old_string": "nonexistent",
-            "new_string": "x"
-        }));
+        let err = edit_file(
+            &json!({
+                "path": file.to_str().unwrap(),
+                "old_string": "nonexistent",
+                "new_string": "x"
+            }),
+            None,
+        );
         assert!(err.is_err());
 
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_resolve() {
+        // absolute paths pass through, relative ones join the cwd
+        assert_eq!(resolve("/tmp/x", Some("/proj")), "/tmp/x");
+        assert_eq!(resolve("src/main.rs", Some("/proj")), "/proj/src/main.rs");
+        assert_eq!(resolve("src/main.rs", None), "src/main.rs");
     }
 
     #[test]

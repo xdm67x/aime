@@ -5,6 +5,7 @@ mod beats;
 mod config;
 mod db;
 mod harness;
+mod projects;
 mod prompts;
 mod providers;
 mod skills;
@@ -26,6 +27,11 @@ fn main() {
             beats::set_beat_archived,
             beats::delete_beat,
             beats::record_beat_usage,
+            projects::list_projects,
+            projects::add_project,
+            projects::clone_project,
+            projects::remove_project,
+            projects::pick_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
