@@ -202,17 +202,19 @@ fn system_message(brief: &str, session: &str, note: &str) -> serde_json::Value {
     json!({"role": "system", "content": content})
 }
 
-/* ---- agentic loop: model + tools until a plain-text answer ---- */
+/* ---- agentic loop: model + tools until the model signals completion ---- */
 
-const MAX_TOOL_ITERATIONS: u32 = 12;
+const MAX_TOOL_ITERATIONS: u32 = 40;
 
 /// Drive the model against `messages` (already seeded with system + user
-/// turns): each round's tool calls are executed and fed back as `tool`
-/// messages until the model replies with plain text — or after
-/// `MAX_TOOL_ITERATIONS` rounds, where one final call without tools forces a
-/// plain-text answer. Every round's text and each tool result is emitted
-/// live and appended to `entries` (the persisted transcript, in order).
-/// Returns (final text, executed tool steps, total usage).
+/// turns). The loop only ends when the model explicitly calls `task_complete`
+/// with its final answer — a plain-text reply with no tool call is treated as
+/// mid-task narration (or a parse hiccup) and the loop continues after a
+/// reminder, so unfinished work can't silently end the session. The hard cap
+/// `MAX_TOOL_ITERATIONS` bounds runaway loops; hitting it forces one final
+/// no-tools completion as a fallback. Every round's text and each tool result
+/// is emitted live and appended to `entries` (the persisted transcript, in
+/// order). Returns (final text, executed tool steps, total usage).
 #[allow(clippy::too_many_arguments)]
 async fn agentic_loop(
     model: &str,
@@ -225,35 +227,80 @@ async fn agentic_loop(
     let mut steps: Vec<tools::ToolStep> = vec![];
     let mut usage = Usage::default();
     let mut nudged = false;
-    for _ in 0..MAX_TOOL_ITERATIONS {
+    let mut rounds = 0u32;
+    loop {
+        rounds += 1;
         if cancelled() {
             return Err(STOPPED.into());
         }
-        let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
-        let r = chat_completion_stream(
-            model,
-            messages,
-            &[],
-            Some(0.7),
-            None,
-            false,
-            Some(tools),
-            &mut on_delta,
-        )
-        .await?;
+        let r = {
+            let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
+            chat_completion_stream(
+                model,
+                messages,
+                &[],
+                Some(0.7),
+                None,
+                false,
+                Some(tools),
+                &mut on_delta,
+            )
+            .await?
+        };
         usage.prompt_tokens += r.usage.prompt_tokens;
         usage.completion_tokens += r.usage.completion_tokens;
+
+        // Path 1: the model called `task_complete` — the only sanctioned way
+        // to finish. Its `summary` argument is the final answer.
+        if let Some(done) = r
+            .tool_calls
+            .iter()
+            .find(|tc| tc.name == "task_complete")
+        {
+            let summary = serde_json::from_str::<serde_json::Value>(&done.arguments)
+                .ok()
+                .and_then(|v| v["summary"].as_str().map(str::to_string))
+                .filter(|s| !s.trim().is_empty())
+                // a malformed/empty summary: fall back to any narration on
+                // this turn, else ask the model to restate it
+                .unwrap_or_default();
+            if summary.is_empty() {
+                persist_round(model, &r, messages, entries, on_event);
+                for tc in &r.tool_calls {
+                    messages.push(
+                        json!({"role": "tool", "tool_call_id": tc.id,
+                               "content": "task_complete requires a non-empty 'summary' argument. Call it again with your full final answer."}),
+                    );
+                }
+                continue;
+            }
+            on_event(TaskEvent::Step {
+                text: summary.clone(),
+            });
+            entries.push(json!({
+                "role": "assistant", "model": model, "content": summary,
+            }));
+            return Ok((summary, steps, usage));
+        }
+
         if r.tool_calls.is_empty() {
-            // A text-only reply is normally the final answer — but not when
-            // it was cut off (`length`), the provider said `tool_calls`
-            // while we parsed none (fragment loss), or it came back EMPTY
-            // (reasoning models can burn a turn on reasoning and emit no
-            // content). Ending on any of those finishes the session with no
-            // visible message right after the tool calls — continue instead,
-            // with a one-time nudge so a blank turn can't repeat itself.
+            // Plain text with no tool call: normally mid-task narration, not
+            // a completion signal — keep the loop going. Only when the turn
+            // was cut off (`length`), the provider claimed `tool_calls` we
+            // couldn't parse (fragment loss), or the reply came back EMPTY
+            // (reasoning models can burn a turn) do we treat it as a broken
+            // turn: emit + persist it and continue, with a one-time nudge so
+            // a blank turn can't repeat itself.
             let blank = r.content.trim().is_empty();
-            if blank || matches!(r.finish_reason.as_deref(), Some("length" | "tool_calls")) {
-                if !blank {
+            if !blank && !matches!(r.finish_reason.as_deref(), Some("length" | "tool_calls")) {
+                // a real narration turn: persist it, then remind the model
+                // how to finish. Don't re-persist if the model repeats the
+                // same text verbatim (some providers resend the turn).
+                let dup = entries
+                    .last()
+                    .map(|e| e["role"] == "assistant" && e["content"] == r.content)
+                    .unwrap_or(false);
+                if !dup {
                     on_event(TaskEvent::Step {
                         text: r.content.clone(),
                     });
@@ -261,14 +308,28 @@ async fn agentic_loop(
                         "role": "assistant", "model": model, "content": r.content,
                     }));
                     messages.push(json!({"role": "assistant", "content": r.content}));
-                } else if !nudged {
-                    nudged = true;
-                    messages.push(json!({"role": "user", "content": "Continue."}));
                 }
+                messages.push(json!({
+                    "role": "user",
+                    "content": "Your reply arrived without a tool call, so the task is still open. Continue working with tools, or call `task_complete` with your final answer if everything is done.",
+                }));
                 continue;
             }
-            return Ok((r.content, steps, usage));
+            if !blank {
+                on_event(TaskEvent::Step {
+                    text: r.content.clone(),
+                });
+                entries.push(json!({
+                    "role": "assistant", "model": model, "content": r.content,
+                }));
+                messages.push(json!({"role": "assistant", "content": r.content}));
+            } else if !nudged {
+                nudged = true;
+                messages.push(json!({"role": "user", "content": "Continue."}));
+            }
+            continue;
         }
+
         // the model's narration for this round is a message in its own right:
         // emit it live (the frontend seals the streaming bubble) and persist it
         if !r.content.trim().is_empty() {
@@ -322,22 +383,67 @@ async fn agentic_loop(
             });
             messages.push(json!({"role": "tool", "tool_call_id": tc.id, "content": output}));
         }
+
+        // Hard cap: don't loop forever. One final call without tools forces
+        // a plain-text answer out of whatever state we're in.
+        if rounds >= MAX_TOOL_ITERATIONS {
+            eprintln!(
+                "agentic loop hit the {MAX_TOOL_ITERATIONS}-round cap; forcing a final answer"
+            );
+            let r = {
+                let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
+                chat_completion_stream(
+                    model,
+                    messages,
+                    &[],
+                    Some(0.7),
+                    None,
+                    false,
+                    None,
+                    &mut on_delta,
+                )
+                .await?
+            };
+            usage.prompt_tokens += r.usage.prompt_tokens;
+            usage.completion_tokens += r.usage.completion_tokens;
+            return Ok((r.content, steps, usage));
+        }
     }
-    let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
-    let r = chat_completion_stream(
-        model,
-        messages,
-        &[],
-        Some(0.7),
-        None,
-        false,
-        None,
-        &mut on_delta,
-    )
-    .await?;
-    usage.prompt_tokens += r.usage.prompt_tokens;
-    usage.completion_tokens += r.usage.completion_tokens;
-    Ok((r.content, steps, usage))
+}
+
+/// Persist one model round's narration + tool-call turn: emit the text live,
+/// append it to `entries`, and push the assistant turn (with tool calls) onto
+/// `messages` so follow-up `tool` messages stay valid.
+fn persist_round(
+    model: &str,
+    r: &crate::providers::ChatResult,
+    messages: &mut Vec<serde_json::Value>,
+    entries: &mut Vec<serde_json::Value>,
+    on_event: RawEvent<'_>,
+) {
+    if !r.content.trim().is_empty() {
+        on_event(TaskEvent::Step {
+            text: r.content.clone(),
+        });
+        entries.push(json!({
+            "role": "assistant", "model": model, "content": r.content,
+        }));
+    }
+    let tool_calls_json: Vec<serde_json::Value> = r
+        .tool_calls
+        .iter()
+        .map(|tc| {
+            json!({
+                "id": tc.id, "type": "function",
+                "function": {"name": tc.name, "arguments": tc.arguments}
+            })
+        })
+        .collect();
+    messages.push(json!({
+        "role": "assistant",
+        "content": r.content,
+        "tool_calls": tool_calls_json,
+    }));
 }
 
 /* ---- reflexion (high tier): critique the agentic draft → refined answer ---- */

@@ -25,6 +25,20 @@ pub fn definitions(skills: &[skills::SkillInfo]) -> Vec<serde_json::Value> {
         json!({
             "type": "function",
             "function": {
+                "name": "task_complete",
+                "description": "Signal that the task is fully finished and no further work is needed. Call this — and only this — as your final action, once every part of the task is verified done. Include the complete final answer for the user. Do NOT call it while work remains (unverified changes, failing tests, unanswered parts of the request).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string", "description": "The complete final answer / summary of the work for the user. Markdown allowed."}
+                    },
+                    "required": ["summary"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
                 "name": "read_file",
                 "description": "Read the contents of a file at the given path. Optionally read a line range (1-indexed, inclusive).",
                 "parameters": {
