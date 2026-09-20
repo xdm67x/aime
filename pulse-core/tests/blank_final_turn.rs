@@ -95,8 +95,10 @@ async fn blank_final_turn_never_ends_run_silently() {
         // with finish "stop": the exact shape that used to end the run with
         // no visible message)
         json!({"content": "", "finish_reason": "stop"}),
-        // round 4: after the "Continue." nudge, the model delivers the answer
-        json!({"content": "Here is the full answer with details — done", "finish_reason": "stop"}),
+        // round 4: after the reminder, the model signals completion properly
+        // via `task_complete` with its final answer
+        json!({"narration": "", "tool": "task_complete",
+               "args": "{\"summary\":\"Here is the full answer with details — done\"}"}),
     ];
     let (url, _n) = spawn_mock(script);
     db::set_setting("litellm_base_url", &url).unwrap();
