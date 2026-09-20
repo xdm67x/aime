@@ -137,7 +137,7 @@ function toast(msg: string) {
     setTimeout(() => {
         t.classList.remove('show')
         setTimeout(() => t.remove(), 300)
-    }, 10_000)
+    }, 2000)
 }
 
 async function loadBeats() {
