@@ -751,14 +751,27 @@ body {
     position: relative;
     width: 100%;
     max-width: 60%;
+    display: flex;
+    flex-direction: column;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    overflow: visible;
 }
-/* mirror layer behind the input: shows the same text so /commands can be
-   highlighted (the real input text stays transparent over it) */
+/* text area: mirror behind the (transparent-text) textarea so /commands can
+   be highlighted; textarea auto-grows with content up to a max height */
+.input-text-area {
+    position: relative;
+    overflow-y: auto;
+    max-height: 320px;
+    border-radius: 13px 13px 0 0;
+    scrollbar-width: thin;
+}
 #input-mirror {
     position: absolute;
-    inset: 1px;
-    border-radius: 13px;
-    padding: 18px 20px;
+    inset: 0;
+    padding: 14px 18px 8px;
     font: inherit;
     font-size: 16px;
     color: var(--text);
@@ -766,7 +779,7 @@ body {
     word-break: break-word;
     overflow: hidden;
     pointer-events: none;
-    background: var(--input);
+    background: transparent;
 }
 #input-mirror .cmd {
     color: var(--accent);
@@ -779,19 +792,31 @@ body {
     position: relative;
     display: block;
     width: 100%;
-    height: 130px;
+    height: auto;
+    min-height: 52px;
+    max-height: 320px;
     resize: none;
     background: transparent;
-    border: 1px solid var(--border);
+    border: none;
     outline: none;
-    border-radius: 14px;
-    padding: 18px 20px;
+    padding: 14px 18px 8px;
     font: inherit;
     font-size: 16px;
     color: transparent;
     caret-color: var(--text);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-    overflow-y: auto;
+    overflow: hidden;
+}
+/* bottom bar inside the input: usage stats + actions, like a chat composer */
+.input-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 30px;
+    padding: 4px 10px 8px;
+}
+.input-bottom:empty {
+    display: none;
 }
 #input::placeholder {
     color: var(--faint);
