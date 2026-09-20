@@ -618,24 +618,79 @@ body {
     width: 100%;
     max-width: 60%;
 }
-#input {
-    width: 100%;
+/* mirror layer behind the input: shows the same text so /commands can be
+   highlighted (the real input text stays transparent over it) */
+#input-mirror {
+    position: absolute;
+    inset: 1px;
+    border-radius: 13px;
+    padding: 18px 20px;
+    font: inherit;
+    font-size: 16px;
+    color: var(--text);
+    white-space: pre;
+    overflow: hidden;
+    pointer-events: none;
     background: var(--input);
+}
+#input-mirror .cmd {
+    color: var(--accent);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border-radius: 5px;
+    padding: 1px 0;
+}
+#input {
+    position: relative;
+    width: 100%;
+    background: transparent;
     border: 1px solid var(--border);
     outline: none;
     border-radius: 14px;
     padding: 18px 20px;
     font: inherit;
     font-size: 16px;
-    color: var(--text);
+    color: transparent;
     caret-color: var(--text);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
-#input:focus {
-    border-color: var(--blue);
-}
 #input::placeholder {
     color: var(--faint);
+}
+/* slash-command autocomplete popup */
+#cmd-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    min-width: 260px;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    z-index: 30;
+}
+.cmd-item {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.cmd-item.active {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.cmd-item .cmd-name {
+    color: var(--accent);
+    font-weight: 600;
+    white-space: nowrap;
+}
+.cmd-item .cmd-desc {
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 /* model working: infinite progress bar running around the input border */
 @property --spin {
