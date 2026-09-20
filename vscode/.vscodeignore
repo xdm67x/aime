@@ -1,0 +1,10 @@
+node_modules
+samples
+tests
+src
+harness
+*.ts
+tsconfig*.json
+vite.webview.config.ts
+.oxlintrc.json
+pnpm-lock.yaml

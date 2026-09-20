@@ -1,0 +1,68 @@
+{
+  "name": "pulse-vscode",
+  "displayName": "Pulse",
+  "description": "AI agent harness in your editor — classifier-routed model tiers, agentic tools, and persistent sessions (beats).",
+  "version": "0.1.0",
+  "publisher": "pulse",
+  "license": "MIT",
+  "private": true,
+  "packageManager": "pnpm@12.4.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pulse.open",
+        "title": "Pulse: Open Harness"
+      }
+    ],
+    "configuration": {
+      "title": "Pulse",
+      "properties": {
+        "pulse.workingDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Working directory for beat tools. Absolute path; empty uses the workspace root."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.extension.json && pnpm build:webview",
+    "build:webview": "vite build -c vite.webview.config.ts",
+    "watch": "tsc -p tsconfig.extension.json --watch",
+    "dev:webview": "vite build -c vite.webview.config.ts --watch",
+    "lint": "oxlint",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "doctor": "react-doctor src/webview --offline --no-telemetry --no-supply-chain -y",
+    "test": "vitest run",
+    "package": "pnpm build && vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/vscode": "^1.85.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "oxfmt": "^0.17.0",
+    "oxlint": "^1.30.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-doctor": "^0.9.14",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0",
+    "vitest": "^3.2.4"
+  }
+}

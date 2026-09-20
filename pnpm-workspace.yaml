@@ -1,2 +1,5 @@
+packages:
+  - vscode
 allowBuilds:
   esbuild: true
+  better-sqlite3: true

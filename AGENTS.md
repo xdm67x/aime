@@ -45,6 +45,21 @@ model tier, an agentic tool loop executes work, and results persist as "beats".
   `marked` + sanitized with `dompurify`.
 - `web/` — static GitHub Pages site (project landing page + release
   downloads). Deployed under `/pulse/`, so `vite.config.ts` uses `base: './'`.
+- `vscode/` — the harness as a VS Code extension (TypeScript + React).
+  Shares the same `~/.pulse/pulse.db` as the Tauri app.
+  - `harness/` — the agent harness ported from `pulse-core`: `db.ts` (SQLite
+    via better-sqlite3), `config.ts`, `beats.ts`, `projects.ts`, `providers.ts`
+    (openrouter/opencode/litellm, chat + SSE streaming), `harness.ts`
+    (classifier → tier routing → agentic loop → reflexion, `/compact`,
+    per-beat cancellation), `tools.ts` (read/write/edit/grep/bash + skills),
+    `skills.ts`, `diff.ts`.
+  - `src/extension.ts` + `src/panel.ts` — extension host: webview panel with
+    CSP + nonce, message protocol in `src/protocol.ts`.
+  - `src/webview/` — React 19 UI (sidebar beats, transcript with streaming
+    bubbles and tool/diff cards, settings). Built by Vite into
+    `webview-dist/`, loaded via `webview.asWebviewUri`.
+  - React pattern quality is enforced by **react-doctor** (`pnpm --dir vscode
+    doctor`), alongside oxlint/oxfmt.
 
 ## Toolchains & commands
 
@@ -59,6 +74,11 @@ pnpm --dir ui dev               # dev server (Vite, port 5173) for the Tauri app
 pnpm --dir ui lint && pnpm --dir ui format:check
 pnpm --dir web build            # static site (base: './')
 pnpm tauri dev                  # full desktop app (from src-tauri)
+pnpm install                     # workspace install (incl. vscode extension)
+pnpm --dir vscode build         # compile extension + build webview (Vite)
+pnpm --dir vscode test          # vitest harness tests
+pnpm --dir vscode doctor        # react-doctor scan of the React webview
+pnpm --dir vscode package       # build .vsix (via vsce)
 ```
 
 ## Conventions & gotchas
