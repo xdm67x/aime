@@ -123,11 +123,7 @@ impl Tier {
 
 /// Ask the classifier model which tier this prompt belongs to. Falls back to
 /// `base` (a safe middle ground) if the reply can't be parsed.
-async fn classify(
-    classifier: &str,
-    prompt: &str,
-    mu: &mut ModelUsage,
-) -> Result<Tier, String> {
+async fn classify(classifier: &str, prompt: &str, mu: &mut ModelUsage) -> Result<Tier, String> {
     let r = chat_completion(
         classifier,
         &[
@@ -583,24 +579,18 @@ impl std::ops::AddAssign for ModelUsage {
 /// Price one model call from cached OpenRouter pricing; $0 when unknown.
 async fn usage_cost(model_id: &str, prompt: u64, completion: u64) -> f64 {
     let models = providers::list_models().await.unwrap_or_default();
-    models
-        .iter()
-        .find(|m| m.id == model_id)
-        .map_or(0.0, |m| {
-            let p: f64 = m.pricing.prompt.parse().unwrap_or(0.0);
-            let c: f64 = m.pricing.completion.parse().unwrap_or(0.0);
-            p * prompt as f64 + c * completion as f64
-        })
+    models.iter().find(|m| m.id == model_id).map_or(0.0, |m| {
+        let p: f64 = m.pricing.prompt.parse().unwrap_or(0.0);
+        let c: f64 = m.pricing.completion.parse().unwrap_or(0.0);
+        p * prompt as f64 + c * completion as f64
+    })
 }
 
 /// Context-window fill percentage for `model` given the last round's prompt
 /// token count. `None` when the model's context length is unknown.
 async fn context_percent(model_id: &str, prompt_tokens: u64) -> Option<f64> {
     let models = providers::list_models().await.unwrap_or_default();
-    let len = models
-        .iter()
-        .find(|m| m.id == model_id)?
-        .context_length?;
+    let len = models.iter().find(|m| m.id == model_id)?.context_length?;
     if len == 0 {
         return None;
     }
@@ -686,9 +676,7 @@ fn replay_message(m: &serde_json::Value) -> serde_json::Value {
                 .collect();
             let mut parts: Vec<serde_json::Value> = urls
                 .iter()
-                .map(|u| {
-                    json!({"type": "image_url", "image_url": {"url": u}})
-                })
+                .map(|u| json!({"type": "image_url", "image_url": {"url": u}}))
                 .collect();
             if !text.trim().is_empty() {
                 parts.push(json!({ "type": "text", "text": text }));
