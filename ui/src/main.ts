@@ -760,7 +760,7 @@ async function runOne(s: SessionState, item: { text: string; images: string[] })
     }
     renderChips()
 }
-const input = $('input') as HTMLInputElement
+const input = $('input') as HTMLTextAreaElement
 
 /* ---- slash commands: autocomplete + highlighted rendering ---- */
 const SLASH_COMMANDS = [
@@ -866,7 +866,10 @@ input.addEventListener('keydown', (e) => {
             return
         }
     }
-    if (e.key === 'Enter') send()
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        send()
+    }
 })
 
 /* ---- usage stats line under the prompt input ---- */
@@ -951,7 +954,7 @@ async function loadUsageTotals(beatId: number) {
 }
 
 input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') send()
+    if (e.key === 'Enter' && !e.shiftKey) send()
 })
 
 /* ---- pasted clipboard images ---- */
