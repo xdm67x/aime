@@ -546,10 +546,34 @@ body {
     flex-wrap: wrap;
     gap: 6px;
 }
-#wt-status {
-    color: var(--muted);
+#toasts {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 1000;
+    pointer-events: none;
+}
+.toast {
+    background: var(--panel, #1a1a1a);
+    color: var(--fg, #eee);
+    border: 1px solid var(--border, #333);
+    border-radius: 8px;
+    padding: 8px 14px;
     font-size: 12px;
-    margin-bottom: 4px;
+    max-width: 320px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transform: translateY(-6px);
+    transition:
+        opacity 0.3s ease,
+        transform 0.3s ease;
+}
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
 }
 .chip {
     display: inline-flex;
