@@ -691,7 +691,16 @@ async function runOne(s: SessionState, item: { text: string; images: string[] })
             tier: string
             model: string
             answer: string
+            usage: {
+                model: string
+                prompt_tokens: number
+                completion_tokens: number
+                cost_usd: number
+            }[]
+            cost_usd: number
+            context_percent: number | null
         }>('run_task', { beatId: s.id, prompt: item.text, images: item.images })
+        renderUsageStats(r)
         s.liveLabel = `${r.model} · ${r.tier}`
         // the step event already sealed this text (base tier) — only seal
         // when the answer hasn't been rendered live yet (low tier, fallback)
@@ -719,6 +728,36 @@ async function runOne(s: SessionState, item: { text: string; images: string[] })
     renderChips()
 }
 const input = $('input') as HTMLInputElement
+
+/* ---- usage stats line under the prompt input ---- */
+const fmtTokens = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
+const fmtCost2 = (c: number) => (c > 0 ? '$' + (c < 0.01 ? c.toFixed(4) : c.toFixed(2)) : '')
+const fmtCtx = (p: number) => (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'
+
+function renderUsageStats(r: {
+    model: string
+    usage: { model: string; prompt_tokens: number; completion_tokens: number; cost_usd: number }[]
+    cost_usd: number
+    context_percent: number | null
+}) {
+    const el = $('usage-stats') as HTMLElement
+    const parts = r.usage.map((u) => {
+        let s = `${u.model}: ${fmtTokens(u.prompt_tokens)} in / ${fmtTokens(u.completion_tokens)} out`
+        const c = fmtCost2(u.cost_usd)
+        if (c) s += ` · ${c}`
+        return s
+    })
+    if (r.context_percent !== null) {
+        const pct = fmtCtx(r.context_percent)
+        const full = r.context_percent >= 90
+        parts.push(
+            `<span class="${full ? 'ctx-full' : ''}" title="Context window used by ${r.model}">context ${pct}</span>`,
+        )
+    }
+    el.innerHTML = parts.map((p) => `<span class="usage-part">${p}</span>`).join('')
+    el.style.display = 'flex'
+}
+
 input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') send()
 })

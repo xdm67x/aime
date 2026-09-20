@@ -82,9 +82,59 @@ pub struct Pricing {
     pub completion: String,
 }
 
+/// OpenAI-style `/models` responses vary: OpenRouter carries
+/// `context_length` + `pricing.{prompt,completion}` (per-token strings),
+/// LiteLLM proxies carry `max_input_tokens`/`max_tokens` +
+/// `input_cost_per_token`/`output_cost_per_token` (per-token floats), and
+/// others (OpenCode Go) carry none of it. `Model::from_json` normalizes all
+/// of these so usage pricing and context fill work for every provider.
+impl Model {
+    pub fn from_json(v: &serde_json::Value) -> Self {
+        let mut m = Self {
+            id: v["id"].as_str().unwrap_or_default().to_string(),
+            name: v["name"].as_str().unwrap_or_default().to_string(),
+            context_length: v["context_length"].as_u64().or_else(|| {
+                v["max_input_tokens"]
+                    .as_u64()
+                    .or_else(|| v["max_tokens"].as_u64())
+                    .or_else(|| {
+                        v["max_input_tokens"]
+                            .as_str()
+                            .and_then(|s| s.parse().ok())
+                    })
+            }),
+            pricing: Pricing {
+                prompt: v["pricing"]["prompt"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_default(),
+                completion: v["pricing"]["completion"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_default(),
+            },
+        };
+        // LiteLLM-style numeric per-token costs.
+        if m.pricing.prompt.is_empty() {
+            if let Some(p) = v["input_cost_per_token"].as_f64() {
+                m.pricing.prompt = p.to_string();
+            }
+        }
+        if m.pricing.completion.is_empty() {
+            if let Some(c) = v["output_cost_per_token"].as_f64() {
+                m.pricing.completion = c.to_string();
+            }
+        }
+        if m.name.is_empty() {
+            m.name = m.id.clone();
+        }
+        m
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ModelsResp {
-    pub data: Vec<Model>,
+    pub data: Vec<serde_json::Value>,
 }
 
 /* ---- provider trait + registry ---- */
@@ -493,11 +543,9 @@ pub(crate) async fn fetch_model_list(
         .map_err(|e| format!("Unexpected {name} models response: {text} ({e})"))?;
     Ok(resp
         .data
-        .into_iter()
-        .map(|mut m| {
-            if m.name.is_empty() {
-                m.name = m.id.clone();
-            }
+        .iter()
+        .map(|v| {
+            let mut m = Model::from_json(v);
             m.id = format!("{prefix}{}", m.id);
             m
         })

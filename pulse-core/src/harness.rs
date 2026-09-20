@@ -15,7 +15,7 @@
 //! New patterns: add a `pub async fn run_*` command that classifies, picks a
 //! model tier, drives `agentic_loop`, and persists the result onto the beat.
 
-use crate::providers::{chat_completion, chat_completion_stream, Usage};
+use crate::providers::{self, chat_completion, chat_completion_stream, Usage};
 use crate::{beats, config, db, projects, prompts, skills, tools};
 use serde::Serialize;
 use serde_json::json;
@@ -123,7 +123,11 @@ impl Tier {
 
 /// Ask the classifier model which tier this prompt belongs to. Falls back to
 /// `base` (a safe middle ground) if the reply can't be parsed.
-async fn classify(classifier: &str, prompt: &str) -> Result<Tier, String> {
+async fn classify(
+    classifier: &str,
+    prompt: &str,
+    mu: &mut ModelUsage,
+) -> Result<Tier, String> {
     let r = chat_completion(
         classifier,
         &[
@@ -137,6 +141,7 @@ async fn classify(classifier: &str, prompt: &str) -> Result<Tier, String> {
         None,
     )
     .await?;
+    mu.add(&r.usage);
     Ok(extract_json(&r.content)
         .and_then(|v| v.get("tier").and_then(|t| t.as_str()).and_then(Tier::parse))
         .unwrap_or(Tier::Base))
@@ -146,7 +151,11 @@ async fn classify(classifier: &str, prompt: &str) -> Result<Tier, String> {
 
 /// The beat's prior conversation, condensed into a context brief. Uses the
 /// classifier model (cheap) as the summarizer.
-async fn summarize_history(beat_id: i64, model: &str) -> Result<String, String> {
+async fn summarize_history(
+    beat_id: i64,
+    model: &str,
+    mu: &mut ModelUsage,
+) -> Result<String, String> {
     let prior = beats::get_beat_messages(beat_id)?;
     let text = prior
         .iter()
@@ -176,6 +185,7 @@ async fn summarize_history(beat_id: i64, model: &str) -> Result<String, String> 
         None,
     )
     .await?;
+    mu.add(&r.usage);
     Ok(format!("Conversation context so far:\n{}", r.content))
 }
 
@@ -526,13 +536,85 @@ pub struct TaskResult {
     /// Tool calls the model made while working.
     pub tool_steps: Vec<tools::ToolStep>,
     pub answer: String,
+    /// Per-model token usage for this run (classifier, summarizer, main
+    /// model, reflexion — one entry per model that was called).
+    pub usage: Vec<ModelUsage>,
+    /// Total cost of this run in USD, summed across all model calls.
+    pub cost_usd: f64,
+    /// How full the main model's context window was on the last round
+    /// (0.0–100.0), or `None` when the context length is unknown.
+    pub context_percent: Option<f64>,
 }
 
-/// Record one model call's token usage + cost against a beat.
-async fn record_usage(beat_id: i64, model: &str, u: &Usage) {
+/// Token usage recorded against one model during a task run.
+#[derive(Clone, Serialize)]
+pub struct ModelUsage {
+    pub model: String,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    /// Cost of these calls in USD (0.0 when pricing is unknown).
+    pub cost_usd: f64,
+}
+
+impl ModelUsage {
+    fn new(model: &str) -> Self {
+        Self {
+            model: model.to_string(),
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            cost_usd: 0.0,
+        }
+    }
+    fn add(&mut self, u: &Usage) {
+        self.prompt_tokens += u.prompt_tokens;
+        self.completion_tokens += u.completion_tokens;
+    }
+}
+
+impl std::ops::AddAssign for ModelUsage {
+    fn add_assign(&mut self, other: Self) {
+        self.model = other.model;
+        self.prompt_tokens += other.prompt_tokens;
+        self.completion_tokens += other.completion_tokens;
+        self.cost_usd += other.cost_usd;
+    }
+}
+
+/// Price one model call from cached OpenRouter pricing; $0 when unknown.
+async fn usage_cost(model_id: &str, prompt: u64, completion: u64) -> f64 {
+    let models = providers::list_models().await.unwrap_or_default();
+    models
+        .iter()
+        .find(|m| m.id == model_id)
+        .map_or(0.0, |m| {
+            let p: f64 = m.pricing.prompt.parse().unwrap_or(0.0);
+            let c: f64 = m.pricing.completion.parse().unwrap_or(0.0);
+            p * prompt as f64 + c * completion as f64
+        })
+}
+
+/// Context-window fill percentage for `model` given the last round's prompt
+/// token count. `None` when the model's context length is unknown.
+async fn context_percent(model_id: &str, prompt_tokens: u64) -> Option<f64> {
+    let models = providers::list_models().await.unwrap_or_default();
+    let len = models
+        .iter()
+        .find(|m| m.id == model_id)?
+        .context_length?;
+    if len == 0 {
+        return None;
+    }
+    Some((prompt_tokens as f64 / len as f64 * 100.0).min(100.0))
+}
+
+/// Record one model call's token usage + cost against a beat. Returns the
+/// priced `ModelUsage` so callers can aggregate and report it.
+async fn record_usage(beat_id: i64, mu: &mut ModelUsage, u: &Usage) {
+    mu.add(u);
+    mu.cost_usd += usage_cost(&mu.model, u.prompt_tokens, u.completion_tokens).await;
     if let Err(e) = beats::record_usage(
         beat_id,
-        model,
+        &mu.model,
         u.prompt_tokens as i64,
         u.completion_tokens as i64,
     )
@@ -629,8 +711,9 @@ async fn run_task_inner(
         return Err("No classifier model configured — set the four models in Settings.".into());
     }
     let session = session_prompt();
-    let brief = summarize_history(beat_id, classifier).await?;
-    let tier = classify(classifier, &prompt).await?;
+    let mut classifier_usage = ModelUsage::new(classifier);
+    let brief = summarize_history(beat_id, classifier, &mut classifier_usage).await?;
+    let tier = classify(classifier, &prompt, &mut classifier_usage).await?;
     let model = match tier {
         Tier::High => cfg.high.trim(),
         Tier::Base => cfg.base.trim(),
@@ -642,6 +725,7 @@ async fn run_task_inner(
             tier.as_str()
         ));
     }
+    let mut main_usage = ModelUsage::new(model);
     on_event(TaskEvent::Start {
         model: model.to_string(),
         tier: tier.as_str().to_string(),
@@ -655,7 +739,7 @@ async fn run_task_inner(
     // the persisted transcript, built chronologically as work happens
     let mut entries = vec![user_entry(&prompt, &images)];
 
-    let (answer, steps, tool_steps, usage) = match tier {
+    let (answer, steps, tool_steps, _usage) = match tier {
         Tier::High | Tier::Base => {
             // a beat attached to a project runs its tools inside the project
             // directory and gets its AGENTS.md injected as instructions
@@ -713,8 +797,10 @@ async fn run_task_inner(
                     prompt_tokens: u1.prompt_tokens + u2.prompt_tokens,
                     completion_tokens: u1.completion_tokens + u2.completion_tokens,
                 };
+                record_usage(beat_id, &mut main_usage, &usage).await;
                 (final_, vec![draft], tool_steps, usage)
             } else {
+                record_usage(beat_id, &mut main_usage, &u1).await;
                 (draft, vec![], tool_steps, u1)
             }
         }
@@ -735,10 +821,16 @@ async fn run_task_inner(
                 &mut on_delta,
             )
             .await?;
+            record_usage(beat_id, &mut main_usage, &r.usage).await;
             (r.content, vec![], vec![], r.usage)
         }
     };
-    record_usage(beat_id, model, &usage).await;
+
+    // aggregate: classifier/summarizer calls + the main model's calls
+    let mut usage = main_usage.clone();
+    usage += classifier_usage;
+    let cost_usd = usage.cost_usd;
+    let context_percent = context_percent(model, main_usage.prompt_tokens).await;
 
     // a blank answer must not end the run silently — fall back to the last
     // real assistant message (e.g. the truncated turn the loop continued
@@ -773,6 +865,9 @@ async fn run_task_inner(
         steps,
         tool_steps,
         answer,
+        usage: vec![usage],
+        cost_usd,
+        context_percent,
     })
 }
 
