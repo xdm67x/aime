@@ -1,10 +1,6 @@
 import * as vscode from "vscode";
-import * as beats from "../harness/beats";
-import * as config from "../harness/config";
-import { cancelCurrent, runTask } from "../harness/harness";
-import * as projects from "../harness/projects";
-import { listModels, startModelsRefresh } from "../harness/providers";
 import type { HostToWebview, WebviewToHost } from "./protocol";
+import * as native from "./native";
 
 export class PulsePanel {
   public static current: PulsePanel | undefined;
@@ -76,12 +72,12 @@ export class PulsePanel {
     try {
       switch (msg.kind) {
         case "ready":
-          startModelsRefresh();
-          this.post({ kind: "beats", beats: beats.listBeats() });
-          this.post({ kind: "projects", projects: projects.listProjects() });
-          this.post({ kind: "model-config", config: config.getModelConfig() });
+          native.startModelsRefresh();
+          this.post({ kind: "beats", beats: native.listBeats() });
+          this.post({ kind: "projects", projects: native.listProjects() });
+          this.post({ kind: "model-config", config: native.getModelConfig() });
           try {
-            this.post({ kind: "models", models: await listModels() });
+            this.post({ kind: "models", models: await native.listModels() });
           } catch (e) {
             this.post({ kind: "toast", text: `Models unavailable: ${e}` });
           }
@@ -90,65 +86,69 @@ export class PulsePanel {
           this.startTask(msg.beatId, msg.prompt, msg.images);
           return;
         case "cancel-task":
-          cancelCurrent(msg.beatId);
+          native.cancelCurrent(msg.beatId);
           return;
         case "list-beats":
-          this.post({ kind: "beats", beats: beats.listBeats() });
+          this.post({ kind: "beats", beats: native.listBeats() });
           return;
         case "create-beat": {
-          const beat = beats.createBeat(msg.name, msg.description, msg.projectId);
-          this.post({ kind: "beats", beats: beats.listBeats() });
+          const beat = native.createBeat(msg.name, msg.description, msg.projectId);
+          this.post({ kind: "beats", beats: native.listBeats() });
           this.post({ kind: "toast", text: `Beat “${beat.name}” created` });
           return;
         }
         case "archive-beat":
-          beats.setBeatArchived(msg.beatId, msg.archived);
-          this.post({ kind: "beats", beats: beats.listBeats() });
+          native.setBeatArchived(msg.beatId, msg.archived);
+          this.post({ kind: "beats", beats: native.listBeats() });
           return;
         case "delete-beat":
-          this.post({ kind: "toast", text: beats.deleteBeat(msg.beatId) });
-          this.post({ kind: "beats", beats: beats.listBeats() });
+          this.post({ kind: "toast", text: native.deleteBeat(msg.beatId) });
+          this.post({ kind: "beats", beats: native.listBeats() });
           return;
         case "get-beat-messages":
           this.post({
             kind: "beat-messages",
             beatId: msg.beatId,
-            messages: beats.getBeatMessages(msg.beatId),
+            messages: native.getBeatMessages(msg.beatId),
           });
           return;
         case "list-projects":
-          this.post({ kind: "projects", projects: projects.listProjects() });
+          this.post({ kind: "projects", projects: native.listProjects() });
           return;
         case "add-project":
-          projects.addProject(msg.path);
-          this.post({ kind: "projects", projects: projects.listProjects() });
+          native.addProject(msg.path);
+          this.post({ kind: "projects", projects: native.listProjects() });
           return;
         case "remove-project":
-          projects.removeProject(msg.projectId);
-          this.post({ kind: "projects", projects: projects.listProjects() });
+          native.removeProject(msg.projectId);
+          this.post({ kind: "projects", projects: native.listProjects() });
           return;
         case "list-models":
-          this.post({ kind: "models", models: await listModels() });
+          this.post({ kind: "models", models: await native.listModels() });
           return;
         case "get-model-config":
-          this.post({ kind: "model-config", config: config.getModelConfig() });
+          this.post({ kind: "model-config", config: native.getModelConfig() });
           return;
         case "save-model-config":
-          config.saveModelConfig(msg.config);
+          native.saveModelConfig(msg.config);
           this.post({ kind: "toast", text: "Model slots saved" });
           return;
         case "save-api-key":
-          config.saveApiKey(msg.provider, msg.key);
+          native.saveApiKey(msg.provider, msg.key);
           this.post({ kind: "toast", text: "API key saved" });
           return;
         case "get-api-key":
-          this.post({ kind: "api-key", provider: msg.provider, key: config.apiKey(msg.provider) });
+          this.post({
+            kind: "api-key",
+            provider: msg.provider,
+            key: native.getApiKey(msg.provider),
+          });
           return;
         case "beat-usage-totals":
           this.post({
             kind: "usage-totals",
             beatId: msg.beatId,
-            totals: beats.usageTotals(msg.beatId),
+            totals: native.usageTotals(msg.beatId),
           });
           return;
         case "pick-folder": {
@@ -168,13 +168,15 @@ export class PulsePanel {
 
   private startTask(beatId: number, prompt: string, images: string[]): void {
     this.running.add(beatId);
-    runTask(beatId, prompt, images, (ev) => {
-      this.post({ kind: "task-event", beatId: ev.beatId, ev: ev });
-    })
+    native
+      .runTask(beatId, prompt, images, (ev) => {
+        const { beatId: _tag, ...event } = ev;
+        this.post({ kind: "task-event", beatId: ev.beatId, ev: event });
+      })
       .then((result) => {
         this.post({ kind: "task-result", beatId, result });
-        this.post({ kind: "beats", beats: beats.listBeats() });
-        this.post({ kind: "usage-totals", beatId, totals: beats.usageTotals(beatId) });
+        this.post({ kind: "beats", beats: native.listBeats() });
+        this.post({ kind: "usage-totals", beatId, totals: native.usageTotals(beatId) });
       })
       .catch((e: unknown) => {
         this.post({ kind: "task-error", beatId, error: String(e) });

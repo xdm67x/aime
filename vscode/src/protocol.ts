@@ -1,10 +1,14 @@
-import type { Beat, UsageTotal } from "../harness/beats";
-import type { TaskEvent, TaskResult } from "../harness/harness";
-import type { Project } from "../harness/projects";
-import type { Model } from "../harness/providers";
-import type { ModelConfig } from "../harness/config";
+import type {
+  Beat,
+  Model,
+  ModelConfig,
+  Project,
+  TaskEvent,
+  TaskResult,
+  UsageTotal,
+} from "./native";
 
-export type { Beat, UsageTotal, TaskEvent, TaskResult, Project, Model, ModelConfig };
+export type { Beat, Model, ModelConfig, Project, TaskEvent, TaskResult, UsageTotal };
 
 export type WebviewToHost =
   | { kind: "ready" }

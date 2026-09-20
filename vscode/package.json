@@ -47,10 +47,9 @@
     "package": "pnpm build && vsce package --no-dependencies"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3"
+    "pulse-node": "workspace:*"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
@@ -59,8 +58,8 @@
     "oxfmt": "^0.17.0",
     "oxlint": "^1.30.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0",
     "react-doctor": "^0.9.14",
+    "react-dom": "^19.3.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.0",
     "vitest": "^3.2.4"

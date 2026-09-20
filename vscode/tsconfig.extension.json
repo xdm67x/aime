@@ -11,6 +11,6 @@
     "jsx": "preserve",
     "sourceMap": true,
   },
-  "include": ["src", "harness"],
+  "include": ["src"],
   "exclude": ["src/webview"],
 }

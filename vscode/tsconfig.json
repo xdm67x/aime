@@ -10,5 +10,5 @@
     "jsx": "react-jsx",
     "types": ["vite/client"],
   },
-  "include": ["src/webview", "harness", "tests"],
+  "include": ["src/webview", "src/native.ts", "src/protocol.ts", "tests"],
 }

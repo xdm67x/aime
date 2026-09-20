@@ -35,9 +35,9 @@ export function BeatList({
           {b.name}
         </span>
         <span className="beat-meta">
-          {b.cost_usd > 0 && `$${b.cost_usd.toFixed(3)}`}{" "}
-          {b.prompt_tokens + b.completion_tokens > 0 &&
-            `${((b.prompt_tokens + b.completion_tokens) / 1000).toFixed(1)}k tok`}
+          {b.costUsd > 0 && `$${b.costUsd.toFixed(3)}`}{" "}
+          {b.promptTokens + b.completionTokens > 0 &&
+            `${((b.promptTokens + b.completionTokens) / 1000).toFixed(1)}k tok`}
         </span>
       </button>
       <span className="beat-actions">
