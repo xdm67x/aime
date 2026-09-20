@@ -185,6 +185,21 @@ fn session_prompt() -> String {
     prompts::SYSTEM.trim().to_string()
 }
 
+/// Replay the beat's prior conversation into the live message list so follow-up
+/// instructions keep the session's context. Tool entries are skipped — they
+/// lack the `tool_call_id` pairing the API requires, and the brief (plus the
+/// assistant narration they accompanied) covers that ground.
+fn prior_turns(beat_id: i64) -> Result<Vec<serde_json::Value>, String> {
+    Ok(beats::get_beat_messages(beat_id)?
+        .into_iter()
+        .filter(|m| {
+            matches!(m["role"].as_str(), Some("user" | "assistant"))
+                && !m["content"].as_str().unwrap_or("").trim().is_empty()
+        })
+        .map(|m| json!({"role": m["role"], "content": m["content"]}))
+        .collect())
+}
+
 fn system_message(brief: &str, session: &str, note: &str) -> serde_json::Value {
     let mut content = String::new();
     if !brief.is_empty() {
@@ -604,7 +619,11 @@ async fn run_task_inner(
                 }
             }
             let sys = system_message(&brief, &session, &note);
-            let mut msgs = vec![sys, json!({"role": "user", "content": &prompt})];
+            // system first (some providers require it), then the replayed
+            // prior turns, then this instruction
+            let mut msgs = vec![sys];
+            msgs.extend(prior_turns(beat_id)?);
+            msgs.push(json!({"role": "user", "content": &prompt}));
             let (draft, tool_steps, u1) = agentic_loop(
                 model,
                 on_event,
@@ -638,10 +657,13 @@ async fn run_task_inner(
         }
         Tier::Low => {
             let sys = system_message(&brief, &session, "");
+            let mut msgs = vec![sys];
+            msgs.extend(prior_turns(beat_id)?);
+            msgs.push(json!({"role": "user", "content": &prompt}));
             let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
             let r = chat_completion_stream(
                 model,
-                &[sys, json!({"role": "user", "content": &prompt})],
+                &msgs,
                 &[],
                 Some(0.7),
                 None,
