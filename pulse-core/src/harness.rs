@@ -630,14 +630,14 @@ async fn run_task_inner(
                 wd.as_deref(),
             )
             .await?;
-            // the agentic draft is one more assistant message (the loop's own
-            // narrations and tool results are already in `entries`); for base
-            // the draft IS the final answer, so don't store it twice — the
-            // answer push below persists it
-            on_event(TaskEvent::Step {
-                text: draft.clone(),
-            });
+            // for base the draft IS the final answer, already emitted by
+            // `agentic_loop` when `task_complete` fired — don't show it twice.
+            // For high tier the draft is a distinct intermediate message: emit
+            // and persist it before reflexion refines it into the final answer.
             if tier == Tier::High {
+                on_event(TaskEvent::Step {
+                    text: draft.clone(),
+                });
                 entries.push(json!({
                     "role": "assistant", "model": model, "content": draft,
                 }));
