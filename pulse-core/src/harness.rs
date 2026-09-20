@@ -225,17 +225,23 @@ fn system_message(brief: &str, session: &str, note: &str) -> serde_json::Value {
 
 /* ---- agentic loop: model + tools until the model signals completion ---- */
 
-const MAX_TOOL_ITERATIONS: u32 = 40;
+/// Session context limit: when the live context (last round's prompt tokens)
+/// fills this share of the model's context window, the loop stops instead of
+/// running forever. There is no turn cap — the context IS the limit. Once a
+/// session hits it, only `/compact` (a fresh session holding just a summary)
+/// lets work continue.
+const CONTEXT_LIMIT_PERCENT: f64 = 90.0;
 
 /// Drive the model against `messages` (already seeded with system + user
 /// turns). The loop only ends when the model explicitly calls `task_complete`
 /// with its final answer — a plain-text reply with no tool call is treated as
 /// mid-task narration (or a parse hiccup) and the loop continues after a
-/// reminder, so unfinished work can't silently end the session. The hard cap
-/// `MAX_TOOL_ITERATIONS` bounds runaway loops; hitting it forces one final
-/// no-tools completion as a fallback. Every round's text and each tool result
-/// is emitted live and appended to `entries` (the persisted transcript, in
-/// order). Returns (final text, executed tool steps, total usage).
+/// reminder, so unfinished work can't silently end the session. The session
+/// context limit replaces any turn cap: when the prompt tokens of a round
+/// reach `CONTEXT_LIMIT_PERCENT` of the model's context window, one final
+/// no-tools completion is forced and the session is flagged so only `/compact`
+/// can continue it. Returns (final text, executed tool steps, total usage,
+/// whether the session context limit was reached).
 #[allow(clippy::too_many_arguments)]
 async fn agentic_loop(
     model: &str,
@@ -244,13 +250,12 @@ async fn agentic_loop(
     entries: &mut Vec<serde_json::Value>,
     tools: &[serde_json::Value],
     cwd: Option<&str>,
-) -> Result<(String, Vec<tools::ToolStep>, Usage), String> {
+) -> Result<(String, Vec<tools::ToolStep>, Usage, bool), String> {
     let mut steps: Vec<tools::ToolStep> = vec![];
     let mut usage = Usage::default();
     let mut nudged = false;
-    let mut rounds = 0u32;
+    let mut last_prompt_tokens: Option<u64>;
     loop {
-        rounds += 1;
         if cancelled() {
             return Err(STOPPED.into());
         }
@@ -270,6 +275,8 @@ async fn agentic_loop(
         };
         usage.prompt_tokens += r.usage.prompt_tokens;
         usage.completion_tokens += r.usage.completion_tokens;
+        // the last round's prompt tokens are the live session context size
+        last_prompt_tokens = Some(r.usage.prompt_tokens);
 
         // Path 1: the model called `task_complete` — the only sanctioned way
         // to finish. Its `summary` argument is the final answer.
@@ -297,7 +304,7 @@ async fn agentic_loop(
             entries.push(json!({
                 "role": "assistant", "model": model, "content": summary,
             }));
-            return Ok((summary, steps, usage));
+            return Ok((summary, steps, usage, false));
         }
 
         if r.tool_calls.is_empty() {
@@ -401,12 +408,13 @@ async fn agentic_loop(
             messages.push(json!({"role": "tool", "tool_call_id": tc.id, "content": output}));
         }
 
-        // Hard cap: don't loop forever. One final call without tools forces
-        // a plain-text answer out of whatever state we're in.
-        if rounds >= MAX_TOOL_ITERATIONS {
-            eprintln!(
-                "agentic loop hit the {MAX_TOOL_ITERATIONS}-round cap; forcing a final answer"
-            );
+        // Session context limit — replaces any turn cap. When the live
+        // context fills its share of the model's window, force one final
+        // no-tools completion (a plain answer instead of an error, since the
+        // model may legitimately be done) and flag the session as full: only
+        // `/compact` can continue it afterwards.
+        if context_limit_reached(model, last_prompt_tokens).await {
+            eprintln!("agentic loop hit the session context limit; forcing a final answer");
             let r = {
                 let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
                 chat_completion_stream(
@@ -423,9 +431,31 @@ async fn agentic_loop(
             };
             usage.prompt_tokens += r.usage.prompt_tokens;
             usage.completion_tokens += r.usage.completion_tokens;
-            return Ok((r.content, steps, usage));
+            return Ok((r.content, steps, usage, true));
         }
     }
+}
+
+/// True when the live context (last round's prompt tokens) has filled
+/// `CONTEXT_LIMIT_PERCENT` of the model's context window. Unknown context
+/// lengths never trip the limit.
+async fn context_limit_reached(model_id: &str, prompt_tokens: Option<u64>) -> bool {
+    let Some(tokens) = prompt_tokens else {
+        return false;
+    };
+    let models = providers::list_models().await.unwrap_or_default();
+    let len = match models
+        .iter()
+        .find(|m| m.id == model_id)
+        .and_then(|m| m.context_length)
+    {
+        Some(l) => l,
+        None => return false,
+    };
+    if len == 0 {
+        return false;
+    }
+    tokens as f64 / len as f64 * 100.0 >= CONTEXT_LIMIT_PERCENT
 }
 
 /// Persist one model round's narration + tool-call turn: emit the text live,
@@ -540,6 +570,12 @@ pub struct TaskResult {
     /// How full the main model's context window was on the last round
     /// (0.0–100.0), or `None` when the context length is unknown.
     pub context_percent: Option<f64>,
+    /// True when the session hit its context limit this run. The session is
+    /// paused until `/compact` opens a fresh one holding only a summary.
+    pub context_full: bool,
+    /// For `/compact`: the id of the fresh session holding the summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_beat_id: Option<i64>,
 }
 
 /// Token usage recorded against one model during a task run.
@@ -612,6 +648,55 @@ async fn record_usage(beat_id: i64, mu: &mut ModelUsage, u: &Usage) {
     {
         eprintln!("usage record failed: {e}");
     }
+}
+
+/// Persisted "session context limit reached" flag for a beat.
+fn session_is_full(beat_id: i64) -> Result<bool, String> {
+    beats::is_context_full(beat_id)
+}
+
+/// `/compact`: summarize the current session, archive it, and return a result
+/// pointing at a brand-new session holding only that summary. The new beat
+/// inherits the project (and thus the working directory) but starts with a
+/// clean context.
+async fn compact_session(beat_id: i64, on_event: RawEvent<'_>) -> Result<TaskResult, String> {
+    let cfg = config::ModelConfig::load()?;
+    let classifier = cfg.classifier.trim();
+    if classifier.is_empty() {
+        return Err("No classifier model configured — set the four models in Settings.".into());
+    }
+    let mut mu = ModelUsage::new(classifier);
+    let summary = summarize_history(beat_id, classifier, &mut mu).await?;
+    if summary.trim().is_empty() {
+        return Err("Nothing to compact — this session has no messages yet.".into());
+    }
+    let new_beat = beats::create_summary_beat(beat_id, &summary)?;
+    // the old session is done: archive it and clear its full flag so it can
+    // still be browsed (and compacted again if ever unarchived)
+    let _ = beats::set_beat_archived(beat_id, true);
+    beats::set_context_full(beat_id, false)?;
+    on_event(TaskEvent::Step {
+        text: format!(
+            "Session compacted into a new session: “{}”.\n\n{}",
+            new_beat.name, summary
+        ),
+    });
+    let cost_usd = mu.cost_usd;
+    Ok(TaskResult {
+        tier: "low".into(),
+        model: classifier.to_string(),
+        steps: vec![],
+        tool_steps: vec![],
+        answer: format!(
+            "Compacted. New session “{}” holds the summary:\n\n{}",
+            new_beat.name, summary
+        ),
+        usage: vec![mu],
+        cost_usd,
+        context_percent: None,
+        context_full: false,
+        new_beat_id: Some(new_beat.id),
+    })
 }
 
 /// Handle one user message: the classifier picks a tier, the tier's model runs
@@ -693,6 +778,18 @@ async fn run_task_inner(
     images: Vec<String>,
     on_event: RawEvent<'_>,
 ) -> Result<TaskResult, String> {
+    // A full session only accepts `/compact` — everything else is refused
+    // until the context is carried over into a fresh summarized session.
+    if session_is_full(beat_id)? && !prompt.trim().eq_ignore_ascii_case("/compact") {
+        return Err(
+            "Session context limit reached. Run /compact to open a new session \
+             holding only a summary of this one."
+                .to_string(),
+        );
+    }
+    if prompt.trim().eq_ignore_ascii_case("/compact") {
+        return compact_session(beat_id, on_event).await;
+    }
     let cfg = config::ModelConfig::load()?;
     let classifier = cfg.classifier.trim();
     if classifier.is_empty() {
@@ -727,7 +824,7 @@ async fn run_task_inner(
     // the persisted transcript, built chronologically as work happens
     let mut entries = vec![user_entry(&prompt, &images)];
 
-    let (answer, steps, tool_steps, _usage) = match tier {
+    let (answer, steps, tool_steps, _usage, ctx_full) = match tier {
         Tier::High | Tier::Base => {
             // a beat attached to a project runs its tools inside the project
             // directory and gets its AGENTS.md injected as instructions
@@ -751,7 +848,7 @@ async fn run_task_inner(
             let mut msgs = vec![sys];
             msgs.extend(prior_turns(beat_id)?);
             msgs.push(user_message(&prompt, &images));
-            let (draft, tool_steps, u1) = agentic_loop(
+            let (draft, tool_steps, u1, ctx_full) = agentic_loop(
                 model,
                 on_event,
                 &mut msgs,
@@ -786,10 +883,10 @@ async fn run_task_inner(
                     completion_tokens: u1.completion_tokens + u2.completion_tokens,
                 };
                 record_usage(beat_id, &mut main_usage, &usage).await;
-                (final_, vec![draft], tool_steps, usage)
+                (final_, vec![draft], tool_steps, usage, ctx_full)
             } else {
                 record_usage(beat_id, &mut main_usage, &u1).await;
-                (draft, vec![], tool_steps, u1)
+                (draft, vec![], tool_steps, u1, ctx_full)
             }
         }
         Tier::Low => {
@@ -810,7 +907,7 @@ async fn run_task_inner(
             )
             .await?;
             record_usage(beat_id, &mut main_usage, &r.usage).await;
-            (r.content, vec![], vec![], r.usage)
+            (r.content, vec![], vec![], r.usage, false)
         }
     };
 
@@ -819,6 +916,15 @@ async fn run_task_inner(
     usage += classifier_usage;
     let cost_usd = usage.cost_usd;
     let context_percent = context_percent(model, main_usage.prompt_tokens).await;
+    // the session is full when the loop said so, or the reported fill already
+    // crossed the limit line
+    let context_full = ctx_full
+        || context_percent
+            .map(|p| p >= CONTEXT_LIMIT_PERCENT)
+            .unwrap_or(false);
+    if context_full {
+        beats::set_context_full(beat_id, true)?;
+    }
 
     // a blank answer must not end the run silently — fall back to the last
     // real assistant message (e.g. the truncated turn the loop continued
@@ -856,6 +962,8 @@ async fn run_task_inner(
         usage: vec![usage],
         cost_usd,
         context_percent,
+        context_full,
+        new_beat_id: None,
     })
 }
 

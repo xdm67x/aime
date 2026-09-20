@@ -26,6 +26,7 @@ pub fn open() -> Result<Connection, String> {
             archived INTEGER NOT NULL DEFAULT 0,
             messages TEXT NOT NULL DEFAULT '[]',
             project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+            context_full INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS beat_usage (
@@ -53,6 +54,10 @@ pub fn open() -> Result<Connection, String> {
         [],
     );
     let _ = conn.execute("ALTER TABLE beats ADD COLUMN worktree TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE beats ADD COLUMN context_full INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(|e| e.to_string())?;
     // concurrent runs persist to the same db — wait instead of erroring "locked"

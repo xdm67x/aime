@@ -699,6 +699,8 @@ async function runOne(s: SessionState, item: { text: string; images: string[] })
             }[]
             cost_usd: number
             context_percent: number | null
+            context_full: boolean
+            new_beat_id?: number | null
         }>('run_task', { beatId: s.id, prompt: item.text, images: item.images })
         renderUsageStats(r)
         s.liveLabel = `${r.model} · ${r.tier}`
@@ -707,15 +709,31 @@ async function runOne(s: SessionState, item: { text: string; images: string[] })
         if (s.lastSealed === r.answer) clearLive(s)
         else sealLive(s, r.answer)
         s.status = 'done'
-        s.statusText = ''
+        s.statusText = r.context_full ? 'context full — run /compact' : ''
+        // /compact produced a fresh summarized session: switch to it
+        if (r.new_beat_id) {
+            await loadBeats()
+            const nb = beats.find((b) => b.id === r.new_beat_id)
+            if (nb) openBeat(nb)
+        }
     } catch (e) {
         clearLive(s)
         // a cancelled run (Escape) isn't an error — show it as a plain note
         const stopped = String(e).includes('stopped')
-        s.status = stopped ? 'stopped' : 'error'
-        s.statusText = stopped ? 'stopped' : String(e)
-        const row = addMsg(s, { who: 'Pulse', time: now(), text: stopped ? 'Stopped.' : String(e) })
-        if (!stopped) row.querySelector('.msg')!.classList.add('error')
+        // context-limit refusal: surface as a clear hint, not an error
+        const ctxFull = String(e).includes('context limit reached')
+        s.status = stopped ? 'stopped' : ctxFull ? 'idle' : 'error'
+        s.statusText = stopped ? 'stopped' : ctxFull ? 'context full — run /compact' : String(e)
+        const row = addMsg(s, {
+            who: 'Pulse',
+            time: now(),
+            text: stopped
+                ? 'Stopped.'
+                : ctxFull
+                  ? 'Session context limit reached — type /compact to open a new session holding only a summary of this one.'
+                  : String(e),
+        })
+        if (!stopped && !ctxFull) row.querySelector('.msg')!.classList.add('error')
     }
     // done/stopped chips clean themselves up; errors stay until looked at
     if (s.status === 'done' || s.status === 'stopped') {
