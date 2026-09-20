@@ -7,8 +7,8 @@
 
 pub mod beats;
 pub mod config;
-pub mod diff;
 pub mod db;
+pub mod diff;
 pub mod harness;
 pub mod projects;
 pub mod prompts;
