@@ -73,7 +73,11 @@ fn get_beat_messages(id: i64) -> Result<Vec<Value>, String> {
 }
 
 #[tauri::command]
-fn create_beat(name: String, description: String, project_id: Option<i64>) -> Result<beats::Beat, String> {
+fn create_beat(
+    name: String,
+    description: String,
+    project_id: Option<i64>,
+) -> Result<beats::Beat, String> {
     beats::create_beat(&name, &description, project_id)
 }
 

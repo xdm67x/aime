@@ -156,7 +156,10 @@ fn resolve(path: &str, cwd: Option<&str>) -> String {
     let p = std::path::Path::new(path);
     match (p.is_absolute(), cwd) {
         (true, _) | (false, None) => path.to_string(),
-        (false, Some(dir)) => std::path::Path::new(dir).join(p).to_string_lossy().into_owned(),
+        (false, Some(dir)) => std::path::Path::new(dir)
+            .join(p)
+            .to_string_lossy()
+            .into_owned(),
     }
 }
 
@@ -170,9 +173,15 @@ fn read_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, Stri
     }
     let lines: Vec<&str> = content.lines().collect();
     let start = (offset - 1).min(lines.len());
-    let end = limit.map(|l| (start + l).min(lines.len())).unwrap_or(lines.len());
+    let end = limit
+        .map(|l| (start + l).min(lines.len()))
+        .unwrap_or(lines.len());
     if start >= lines.len() {
-        return Err(format!("offset {} is past end of file ({} lines)", offset, lines.len()));
+        return Err(format!(
+            "offset {} is past end of file ({} lines)",
+            offset,
+            lines.len()
+        ));
     }
     Ok(lines[start..end].join("\n"))
 }
@@ -201,7 +210,11 @@ fn edit_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, Stri
         }
         let mut lines: Vec<&str> = content.lines().collect();
         if start > lines.len() {
-            return Err(format!("start_line {} is past end of file ({} lines)", start, lines.len()));
+            return Err(format!(
+                "start_line {} is past end of file ({} lines)",
+                start,
+                lines.len()
+            ));
         }
         let s = start - 1;
         let e = end.min(lines.len());
@@ -215,7 +228,9 @@ fn edit_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, Stri
     }
 
     // String mode: replace first occurrence of old_string.
-    let old = args["old_string"].as_str().ok_or("missing 'old_string' (or set start_line)")?;
+    let old = args["old_string"]
+        .as_str()
+        .ok_or("missing 'old_string' (or set start_line)")?;
     let count = content.matches(old).count();
     if count == 0 {
         return Err("old_string not found in file".into());

@@ -28,11 +28,16 @@ fn sse_for(entry: &Value) -> String {
     } else {
         // tool-call round: name + arguments streamed as fragments
         out.push_str(&chunk(json!({"content": entry["narration"]}), None));
-        out.push_str(&chunk(json!({"tool_calls":[{"index":0,"id":"c1","function":{
-            "name": entry["tool"], "arguments": entry["args"]}}]}), None));
+        out.push_str(&chunk(
+            json!({"tool_calls":[{"index":0,"id":"c1","function":{
+            "name": entry["tool"], "arguments": entry["args"]}}]}),
+            None,
+        ));
         out.push_str(&chunk(json!({}), Some("tool_calls")));
     }
-    out.push_str("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}\n\n");
+    out.push_str(
+        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}\n\n",
+    );
     out.push_str("data: [DONE]\n\n");
     out
 }
@@ -49,19 +54,21 @@ fn spawn_mock(script: Vec<Value>) -> (String, Arc<AtomicUsize>) {
             let mut buf = vec![0u8; 65536];
             let m = s.read(&mut buf).unwrap_or(0);
             let raw = String::from_utf8_lossy(&buf[..m]).to_string();
-            let body = raw
-                .split("\r\n\r\n")
-                .nth(1)
-                .unwrap_or("")
-                .to_string();
+            let body = raw.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
             let v: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
             let model = v["model"].as_str().unwrap_or("").to_string();
-            eprintln!("--- request #{i}: model={model} tools={}", v.get("tools").is_some());
+            eprintln!(
+                "--- request #{i}: model={model} tools={}",
+                v.get("tools").is_some()
+            );
             let payload = if model.contains("classifier") {
                 // non-streaming classify response
                 json!({"choices":[{"message":{"content":"{\"tier\": \"base\", \"n\": 2}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}).to_string()
             } else {
-                let entry = script.get(i.saturating_sub(1)).cloned().unwrap_or(json!({"content":"(script exhausted)","finish_reason":"stop"}));
+                let entry = script
+                    .get(i.saturating_sub(1))
+                    .cloned()
+                    .unwrap_or(json!({"content":"(script exhausted)","finish_reason":"stop"}));
                 sse_for(&entry)
             };
             let resp = format!(
@@ -120,10 +127,17 @@ async fn blank_final_turn_never_ends_run_silently() {
     for e in &events {
         println!("{}", serde_json::to_string_pretty(e).unwrap());
     }
-    println!("=== RESULT ===\n{}", serde_json::to_string_pretty(&result).unwrap());
+    println!(
+        "=== RESULT ===\n{}",
+        serde_json::to_string_pretty(&result).unwrap()
+    );
     println!("=== PERSISTED ===");
     for m in beats::get_beat_messages(beat.id).unwrap() {
-        println!("{}: {}", m["role"], m["content"].as_str().unwrap_or("(non-str)"));
+        println!(
+            "{}: {}",
+            m["role"],
+            m["content"].as_str().unwrap_or("(non-str)")
+        );
     }
 
     // the run must not finish with a blank answer: the truncated text is
@@ -140,6 +154,9 @@ async fn blank_final_turn_never_ends_run_silently() {
     let persisted = beats::get_beat_messages(beat.id).unwrap();
     let last = persisted.last().unwrap();
     assert_eq!(last["role"], "assistant");
-    assert_eq!(last["content"], "Here is the full answer with details — done");
+    assert_eq!(
+        last["content"],
+        "Here is the full answer with details — done"
+    );
     assert_ne!(persisted[persisted.len() - 2]["content"], r.answer);
 }
