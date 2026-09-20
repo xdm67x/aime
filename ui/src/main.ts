@@ -280,7 +280,7 @@ interface SessionState {
     id: number
     el: HTMLElement
     busy: boolean
-    queue: string[]
+    queue: { text: string; images: string[] }[]
     status: SessionStatus
     statusText: string
     loaded: boolean
@@ -334,7 +334,7 @@ function scrollView(s: SessionState) {
 
 function renderMsg(
     view: HTMLElement,
-    { who, time, text }: { who: string; time: string; text: string },
+    { who, time, text, images }: { who: string; time: string; text: string; images?: string[] },
 ) {
     const wrap = document.createElement('div')
     wrap.className = who === 'user' ? 'row-user' : 'row-agent'
@@ -347,6 +347,14 @@ function renderMsg(
     if (who === 'user') msg.textContent = text
     // model output is untrusted → sanitize before injecting
     else msg.innerHTML = DOMPurify.sanitize(marked.parse(text, { async: false }))
+    // pasted images render as thumbnails under the text
+    for (const src of images ?? []) {
+        const img = document.createElement('img')
+        img.className = 'msg-image'
+        img.src = src
+        img.alt = 'pasted image'
+        msg.appendChild(img)
+    }
     view.appendChild(wrap)
     return wrap
 }
@@ -409,7 +417,10 @@ function renderTool(view: HTMLElement, t: ToolRowMsg) {
     return wrap
 }
 
-function addMsg(s: SessionState, d: { who: string; time: string; text: string }) {
+function addMsg(
+    s: SessionState,
+    d: { who: string; time: string; text: string; images?: string[] },
+) {
     const w = renderMsg(s.el, d)
     scrollView(s)
     return w
@@ -528,8 +539,8 @@ function renderQueuePills() {
     }
     box.innerHTML = s.queue
         .map(
-            (text, i) => `<span class="pill" title="${esc(text)}">
-        <span class="pill-text">${esc(text)}</span>
+            (item, i) => `<span class="pill" title="${esc(item.text)}">
+        <span class="pill-text">${item.images.length ? `🖼 ` : ''}${esc(item.text) || '(image)'}</span>
         <button class="pill-x" data-i="${i}" title="Remove from queue">✕</button>
       </span>`,
         )
@@ -605,6 +616,7 @@ async function openBeat(b: Beat) {
                         who: m.role === 'user' ? 'user' : (m.model ?? 'assistant'),
                         time: t,
                         text: m.content,
+                        images: (m as { images?: string[] }).images,
                     })
                 }
             }
@@ -623,39 +635,42 @@ async function openBeat(b: Beat) {
 
 async function send() {
     const text = input.value.trim()
-    if (!text) return
+    if (!text && !pendingImages.length) return
     const s = currentSess()
     if (!s) return
+    const item = { text, images: pendingImages }
+    pendingImages = []
+    renderPendingImages()
     input.value = ''
     if (s.busy) {
         // this session's agent is still working — queue behind it; other
         // sessions run independently and are unaffected
-        s.queue.push(text)
+        s.queue.push(item)
         renderChips()
         return
     }
-    await startRun(s, text)
+    await startRun(s, item)
 }
 
 // take the next queued prompt (if any) and run it; resolves when the queue
 // is drained and the session goes back to idle
-async function startRun(s: SessionState, first: string) {
+async function startRun(s: SessionState, first: { text: string; images: string[] }) {
     const next = () => {
-        const text = s.queue.shift()
-        if (text === undefined) return null
+        const item = s.queue.shift()
+        if (item === undefined) return null
         // the queued prompt becomes a visible message only once the run starts
-        addMsg(s, { who: 'user', time: now(), text })
-        return text
+        addMsg(s, { who: 'user', time: now(), text: item.text, images: item.images })
+        return item
     }
     s.busy = true
-    addMsg(s, { who: 'user', time: now(), text: first })
+    addMsg(s, { who: 'user', time: now(), text: first.text, images: first.images })
     refreshMain()
-    let text: string | null = first
+    let item: { text: string; images: string[] } | null = first
     try {
-        while (text) {
-            await runOne(s, text)
+        while (item) {
+            await runOne(s, item)
             if (s.status === 'stopped') break
-            text = next()
+            item = next()
         }
     } finally {
         s.busy = false
@@ -664,7 +679,7 @@ async function startRun(s: SessionState, first: string) {
     }
 }
 
-async function runOne(s: SessionState, text: string) {
+async function runOne(s: SessionState, item: { text: string; images: string[] }) {
     const now = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     clearLive(s)
     s.status = 'running'
@@ -676,7 +691,7 @@ async function runOne(s: SessionState, text: string) {
             tier: string
             model: string
             answer: string
-        }>('run_task', { beatId: s.id, prompt: text })
+        }>('run_task', { beatId: s.id, prompt: item.text, images: item.images })
         s.liveLabel = `${r.model} · ${r.tier}`
         // the step event already sealed this text (base tier) — only seal
         // when the answer hasn't been rendered live yet (low tier, fallback)
@@ -706,6 +721,43 @@ async function runOne(s: SessionState, text: string) {
 const input = $('input') as HTMLInputElement
 input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') send()
+})
+
+/* ---- pasted clipboard images ---- */
+let pendingImages: string[] = []
+
+function renderPendingImages() {
+    const strip = $('pending-images')
+    strip.innerHTML = pendingImages
+        .map(
+            (src, i) =>
+                `<span class="pending-img"><img src="${src}" alt="pasted image"><button data-i="${i}" title="Remove">✕</button></span>`,
+        )
+        .join('')
+}
+$('pending-images').onclick = (e) => {
+    const btn = (e.target as HTMLElement).closest('button')
+    if (btn) {
+        pendingImages.splice(Number(btn.dataset.i), 1)
+        renderPendingImages()
+    }
+}
+input.addEventListener('paste', (e) => {
+    const files = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+        f.type.startsWith('image/'),
+    )
+    if (!files.length) return
+    e.preventDefault()
+    for (const f of files.slice(0, 4)) {
+        const reader = new FileReader()
+        reader.onload = () => {
+            if (typeof reader.result === 'string') {
+                pendingImages.push(reader.result)
+                renderPendingImages()
+            }
+        }
+        reader.readAsDataURL(f)
+    }
 })
 
 /* ---- settings ---- */
