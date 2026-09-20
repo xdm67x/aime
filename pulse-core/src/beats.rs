@@ -107,6 +107,55 @@ pub fn set_beat_archived(id: i64, archived: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// True when the beat hit its session context limit and is paused until
+/// `/compact` carries it over into a fresh summarized session.
+pub fn is_context_full(id: i64) -> Result<bool, String> {
+    let conn = db::open()?;
+    let full: Option<i64> = conn
+        .query_row(
+            "SELECT context_full FROM beats WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(full.unwrap_or(0) != 0)
+}
+
+pub fn set_context_full(id: i64, full: bool) -> Result<(), String> {
+    db::open()?
+        .execute(
+            "UPDATE beats SET context_full = ?1 WHERE id = ?2",
+            params![full as i64, id],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// A fresh beat holding only this summary — created by `/compact`.
+pub fn create_summary_beat(source_id: i64, summary: &str) -> Result<Beat, String> {
+    let (name, project_id): (String, Option<i64>) = {
+        let conn = db::open()?;
+        conn.query_row(
+            "SELECT name || ' (compacted)', project_id FROM beats WHERE id = ?1",
+            params![source_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .ok_or("Beat not found")?
+    };
+    let beat = create_beat(&name, "Compacted session", project_id)?;
+    db::append_messages(
+        beat.id,
+        vec![serde_json::json!({
+            "role": "system",
+            "content": format!("Summary of the previous session:\n\n{summary}"),
+        })],
+    )?;
+    Ok(beat)
+}
+
 /// All persisted messages of a beat, oldest first.
 pub fn get_beat_messages(id: i64) -> Result<Vec<serde_json::Value>, String> {
     let conn = db::open()?;
