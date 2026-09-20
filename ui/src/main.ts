@@ -1,5 +1,6 @@
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import hljs from 'highlight.js/lib/common'
 
 const invoke = (window as any).__TAURI__.core.invoke as <T = any>(
     cmd: string,
@@ -401,6 +402,99 @@ function toolSummary(tool: string, argsJson: string): string {
 }
 
 // tool calls render as light, collapsible full-width rows — not bubbles
+
+// extension → highlight.js language (mirrors pulse-core's diff.rs subset)
+function langForPath(path: string): string | undefined {
+    const ext = path.includes('.') ? path.split('.').pop() : undefined
+    const map: Record<string, string> = {
+        rs: 'rust',
+        ts: 'typescript',
+        tsx: 'typescript',
+        mts: 'typescript',
+        js: 'javascript',
+        jsx: 'javascript',
+        mjs: 'javascript',
+        cjs: 'javascript',
+        py: 'python',
+        go: 'go',
+        c: 'c',
+        h: 'c',
+        cpp: 'cpp',
+        cc: 'cpp',
+        hpp: 'cpp',
+        java: 'java',
+        kt: 'kotlin',
+        swift: 'swift',
+        rb: 'ruby',
+        php: 'php',
+        cs: 'csharp',
+        sh: 'bash',
+        bash: 'bash',
+        zsh: 'bash',
+        json: 'json',
+        yaml: 'yaml',
+        yml: 'yaml',
+        toml: 'ini',
+        md: 'markdown',
+        html: 'xml',
+        htm: 'xml',
+        css: 'css',
+        scss: 'scss',
+        sass: 'scss',
+        sql: 'sql',
+        xml: 'xml',
+        svg: 'xml',
+        lua: 'lua',
+        zig: 'zig',
+        dart: 'dart',
+        ex: 'elixir',
+        exs: 'elixir',
+        hs: 'haskell',
+        scala: 'scala',
+        pl: 'perl',
+        pm: 'perl',
+        vue: 'xml',
+    }
+    return ext ? map[ext] : undefined
+}
+
+// syntax-highlight one line of code; falls back to plain escaped text
+function hlLine(line: string, lang?: string): string {
+    if (!lang) return esc(line)
+    try {
+        return hljs.highlight(line, { language: lang, ignoreIllegals: true }).value
+    } catch {
+        return esc(line)
+    }
+}
+
+// git-style diff view for write_file / edit_file results: the backend appends
+// a "\x1bDIFF\x1b\n" marker followed by +/- tagged lines; render each line
+// color-coded and syntax-highlighted for the file's language
+function renderDiff(path: string, diffText: string): string {
+    const lang = langForPath(path)
+    const rows = diffText
+        .split('\n')
+        .filter((l, i, a) => !(l === '' && i === a.length - 1))
+        .map((line) => {
+            const kind =
+                line[0] === '+' ? 'add' : line[0] === '-' ? 'del' : line[0] === ' ' ? 'ctx' : 'meta'
+            const body = kind === 'meta' ? line : line.slice(1)
+            return `<div class="diff-line ${kind}"><code>${kind === 'meta' ? esc(body) : hlLine(body, lang)}</code></div>`
+        })
+        .join('')
+    return `<div class="diff"><div class="diff-head">${esc(path)}</div>${rows}</div>`
+}
+
+// split a tool result into (plain summary, optional diff section); the
+// backend (pulse-core tools.rs) appends "\n\x1bDIFF\x1b\n" + the diff body
+const DIFF_MARKER = '\n\x1bDIFF\x1b\n'
+function splitDiff(result: string): { text: string; diff: string | null } {
+    const i = result.indexOf(DIFF_MARKER)
+    if (i < 0) return { text: result, diff: null }
+    return { text: result.slice(0, i), diff: result.slice(i + DIFF_MARKER.length) }
+}
+
 function renderTool(view: HTMLElement, t: ToolRowMsg) {
     const summary = esc(toolSummary(t.tool, t.arguments))
     const wrap = document.createElement('div')
@@ -411,11 +505,24 @@ function renderTool(view: HTMLElement, t: ToolRowMsg) {
         <span class="tool-args">${summary}</span>
         <span class="tool-status">${t.error ? 'failed' : 'done'}</span>
       </button>
-      <div class="tool-body" hidden>
-        <pre>${esc(t.arguments)}</pre>
-        <pre>${esc(t.result)}</pre>
-      </div>`
+      <div class="tool-body" hidden></div>`
     const body = wrap.querySelector<HTMLElement>('.tool-body')!
+    // file edits get a git-style syntax-colored diff view instead of raw text
+    if ((t.tool === 'write_file' || t.tool === 'edit_file') && !t.error) {
+        let path = ''
+        let args: Record<string, unknown> = {}
+        try {
+            args = JSON.parse(t.arguments)
+            path = typeof args.path === 'string' ? args.path : ''
+        } catch {
+            /* keep empty path */
+        }
+        const { text, diff } = splitDiff(t.result)
+        body.innerHTML =
+            (text ? `<pre>${esc(text)}</pre>` : '') + (diff ? renderDiff(path, diff) : '')
+    } else {
+        body.innerHTML = `<pre>${esc(t.arguments)}</pre><pre>${esc(t.result)}</pre>`
+    }
     wrap.querySelector('.tool-head')!.addEventListener('click', () => {
         body.hidden = !body.hidden
         wrap.classList.toggle('open', !body.hidden)
@@ -615,7 +722,7 @@ async function openBeat(b: Beat) {
                     renderTool(temp, {
                         tool: m.model ?? 'tool',
                         arguments: m.arguments ?? '',
-                        result: m.content,
+                        result: (m as { raw_content?: string }).raw_content ?? m.content,
                         error: !!m.error,
                     })
                 } else {
