@@ -757,6 +757,7 @@ async function send() {
     pendingImages = []
     renderPendingImages()
     input.value = ''
+    autoGrow()
     renderMirror()
     renderCmdMenu()
     if (s.busy) {
@@ -929,6 +930,7 @@ function applyCommand() {
     cmdIndex = -1
     renderMirror()
     renderCmdMenu()
+    autoGrow()
     input.focus()
 }
 
@@ -936,7 +938,14 @@ input.addEventListener('input', () => {
     cmdIndex = -1
     renderMirror()
     renderCmdMenu()
+    autoGrow()
 })
+
+// auto-grow: textarea height follows content, scrolling once max is reached
+function autoGrow() {
+    input.style.height = 'auto'
+    input.style.height = Math.min(input.scrollHeight, 320) + 'px'
+}
 
 cmdMenu.addEventListener('mousedown', (e) => {
     // mousedown so the input keeps focus; click would blur it first
