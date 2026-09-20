@@ -126,14 +126,18 @@ const esc = (s: string) =>
     )
 const fmtCost = (c?: number) => (c && c > 0 ? '$' + (c < 0.01 ? c.toFixed(4) : c.toFixed(2)) : '')
 
-// transient line above the prompt: worktree create/drop status
-let wtStatusTimer: ReturnType<typeof setTimeout> | null = null
-function showWtStatus(msg: string) {
-    const el = $('wt-status')
-    el.textContent = msg
-    el.style.display = ''
-    if (wtStatusTimer) clearTimeout(wtStatusTimer)
-    wtStatusTimer = setTimeout(() => (el.style.display = 'none'), 10_000)
+// toast notifications: transient messages (worktree create/drop etc.)
+function toast(msg: string) {
+    const box = $('toasts')
+    const t = document.createElement('div')
+    t.className = 'toast'
+    t.textContent = msg
+    box.appendChild(t)
+    requestAnimationFrame(() => t.classList.add('show'))
+    setTimeout(() => {
+        t.classList.remove('show')
+        setTimeout(() => t.remove(), 300)
+    }, 10_000)
 }
 
 async function loadBeats() {
@@ -211,7 +215,7 @@ $('delete-confirm').onclick = async () => {
         }
         dropSession(id)
         refreshMain()
-        showWtStatus(st)
+        toast(st)
     } catch (err) {
         console.error(err)
     }
@@ -249,7 +253,7 @@ async function createBeat() {
         closeBeatModal()
         await loadBeats()
         openBeat(b)
-        if (b.worktree_status) showWtStatus(b.worktree_status)
+        if (b.worktree_status) toast(b.worktree_status)
     } catch (err) {
         $('beat-modal-status').textContent = String(err)
         $('beat-modal-status').classList.add('err')
@@ -646,6 +650,8 @@ async function send() {
     pendingImages = []
     renderPendingImages()
     input.value = ''
+    renderMirror()
+    renderCmdMenu()
     if (s.busy) {
         // this session's agent is still working — queue behind it; other
         // sessions run independently and are unaffected
@@ -755,6 +761,113 @@ async function runOne(s: SessionState, item: { text: string; images: string[] })
     renderChips()
 }
 const input = $('input') as HTMLInputElement
+
+/* ---- slash commands: autocomplete + highlighted rendering ---- */
+const SLASH_COMMANDS = [
+    { name: '/compact', desc: 'Summarize this session into a fresh one' },
+] as const
+
+const cmdMenu = $('cmd-menu') as HTMLElement
+const mirror = $('input-mirror') as HTMLElement
+let cmdIndex = -1 // highlighted item in the autocomplete menu, -1 = none
+let cmdMatches: (typeof SLASH_COMMANDS)[number][] = []
+
+function currentCmdQuery(): string | null {
+    // a command is being typed when the input starts with "/" and has no
+    // space yet — matching is case-insensitive, prefix-based
+    const v = input.value
+    if (!v.startsWith('/') || /\s/.test(v)) return null
+    return v.slice(1).toLowerCase()
+}
+
+function renderMirror() {
+    const v = input.value
+    if (v.startsWith('/') && !/\s/.test(v)) {
+        // escape then wrap the whole token in a highlight span
+        const esc = v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        mirror.innerHTML = `<span class="cmd">${esc}</span>`
+    } else {
+        mirror.textContent = v
+    }
+}
+
+function renderCmdMenu() {
+    const q = currentCmdQuery()
+    if (q === null) {
+        cmdMenu.style.display = 'none'
+        cmdMatches = []
+        cmdIndex = -1
+        return
+    }
+    cmdMatches = SLASH_COMMANDS.filter((c) => c.name.slice(1).toLowerCase().startsWith(q))
+    if (!cmdMatches.length) {
+        cmdMenu.style.display = 'none'
+        cmdIndex = -1
+        return
+    }
+    if (cmdIndex >= cmdMatches.length) cmdIndex = cmdMatches.length - 1
+    cmdMenu.innerHTML = cmdMatches
+        .map(
+            (c, i) =>
+                `<div class="cmd-item${i === cmdIndex ? ' active' : ''}" data-i="${i}"><span class="cmd-name">${c.name}</span><span class="cmd-desc">${c.desc}</span></div>`,
+        )
+        .join('')
+    cmdMenu.style.display = 'block'
+}
+
+function applyCommand() {
+    if (cmdIndex >= 0 && cmdMatches[cmdIndex]) {
+        input.value = cmdMatches[cmdIndex]!.name
+    }
+    cmdIndex = -1
+    renderMirror()
+    renderCmdMenu()
+    input.focus()
+}
+
+input.addEventListener('input', () => {
+    cmdIndex = -1
+    renderMirror()
+    renderCmdMenu()
+})
+
+cmdMenu.addEventListener('mousedown', (e) => {
+    // mousedown so the input keeps focus; click would blur it first
+    e.preventDefault()
+    const item = (e.target as HTMLElement).closest('.cmd-item') as HTMLElement | null
+    if (item) {
+        cmdIndex = Number(item.dataset.i)
+        applyCommand()
+    }
+})
+
+input.addEventListener('keydown', (e) => {
+    if (cmdMenu.style.display === 'block') {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            cmdIndex = (cmdIndex + 1) % cmdMatches.length
+            renderCmdMenu()
+            return
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            cmdIndex = (cmdIndex - 1 + cmdMatches.length) % cmdMatches.length
+            renderCmdMenu()
+            return
+        }
+        if (e.key === 'Tab' || (e.key === 'Enter' && cmdIndex >= 0)) {
+            e.preventDefault()
+            applyCommand()
+            return
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault()
+            cmdMenu.style.display = 'none'
+            return
+        }
+    }
+    if (e.key === 'Enter') send()
+})
 
 /* ---- usage stats line under the prompt input ---- */
 const fmtTokens = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
