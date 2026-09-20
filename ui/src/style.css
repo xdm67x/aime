@@ -142,18 +142,50 @@ body {
     color: var(--green);
     font-variant-numeric: tabular-nums;
 }
+.beat-tokens {
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
 
-/* usage stats line under the prompt input */
+/* usage stats line under the prompt input: compact per-model pills */
 #usage-stats {
     display: flex;
-    gap: 14px;
+    gap: 6px;
     flex-wrap: wrap;
     justify-content: center;
     font-size: 11px;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
 }
+#usage-stats .usage-part {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 2px 8px;
+    border: 1px solid color-mix(in srgb, var(--muted) 25%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--muted) 6%, transparent);
+    white-space: nowrap;
+    line-height: 1.4;
+}
+#usage-stats .usage-part b {
+    font-weight: 600;
+    color: var(--text);
+}
+#usage-stats .usage-part i {
+    font-style: normal;
+    color: var(--green);
+}
+#usage-stats .ctx {
+    border-style: dashed;
+}
 #usage-stats .ctx-full {
+    color: #d33;
+    border-color: #d33;
+}
+#usage-stats .ctx-full b,
+#usage-stats .ctx-full i {
     color: #d33;
 }
 .beat-x {
