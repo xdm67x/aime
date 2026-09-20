@@ -124,14 +124,18 @@ const esc = (s: string) =>
     )
 const fmtCost = (c?: number) => (c && c > 0 ? '$' + (c < 0.01 ? c.toFixed(4) : c.toFixed(2)) : '')
 
-// transient line above the prompt: worktree create/drop status
-let wtStatusTimer: ReturnType<typeof setTimeout> | null = null
-function showWtStatus(msg: string) {
-    const el = $('wt-status')
-    el.textContent = msg
-    el.style.display = ''
-    if (wtStatusTimer) clearTimeout(wtStatusTimer)
-    wtStatusTimer = setTimeout(() => (el.style.display = 'none'), 10_000)
+// toast notifications: transient messages (worktree create/drop etc.)
+function toast(msg: string) {
+    const box = $('toasts')
+    const t = document.createElement('div')
+    t.className = 'toast'
+    t.textContent = msg
+    box.appendChild(t)
+    requestAnimationFrame(() => t.classList.add('show'))
+    setTimeout(() => {
+        t.classList.remove('show')
+        setTimeout(() => t.remove(), 300)
+    }, 10_000)
 }
 
 async function loadBeats() {
@@ -208,7 +212,7 @@ $('delete-confirm').onclick = async () => {
         }
         dropSession(id)
         refreshMain()
-        showWtStatus(st)
+        toast(st)
     } catch (err) {
         console.error(err)
     }
@@ -246,7 +250,7 @@ async function createBeat() {
         closeBeatModal()
         await loadBeats()
         openBeat(b)
-        if (b.worktree_status) showWtStatus(b.worktree_status)
+        if (b.worktree_status) toast(b.worktree_status)
     } catch (err) {
         $('beat-modal-status').textContent = String(err)
         $('beat-modal-status').classList.add('err')
