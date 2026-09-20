@@ -580,8 +580,8 @@ body {
 }
 #toasts {
     position: fixed;
-    top: 16px;
-    right: 16px;
+    bottom: 16px;
+    left: 16px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -589,16 +589,18 @@ body {
     pointer-events: none;
 }
 .toast {
-    background: var(--panel, #1a1a1a);
-    color: var(--fg, #eee);
-    border: 1px solid var(--border, #333);
+    background: var(--raised);
+    color: var(--text-strong);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
     border-radius: 8px;
-    padding: 8px 14px;
+    padding: 10px 14px;
     font-size: 12px;
-    max-width: 320px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    line-height: 1.5;
+    max-width: 340px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
     opacity: 0;
-    transform: translateY(-6px);
+    transform: translateY(6px);
     transition:
         opacity 0.3s ease,
         transform 0.3s ease;
