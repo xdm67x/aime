@@ -196,7 +196,7 @@ fn prior_turns(beat_id: i64) -> Result<Vec<serde_json::Value>, String> {
             matches!(m["role"].as_str(), Some("user" | "assistant"))
                 && !m["content"].as_str().unwrap_or("").trim().is_empty()
         })
-        .map(|m| json!({"role": m["role"], "content": m["content"]}))
+        .map(|m| replay_message(&m))
         .collect())
 }
 
@@ -551,18 +551,76 @@ async fn record_usage(beat_id: i64, model: &str, u: &Usage) {
 pub async fn run_task(
     beat_id: i64,
     prompt: String,
+    images: Vec<String>,
     on_event: OnEvent<'_>,
 ) -> Result<TaskResult, String> {
     clear_cancel(beat_id);
     let mut sink = |ev: TaskEvent| {
         on_event(TaggedEvent { beat_id, ev });
     };
-    BEAT.scope(beat_id, run_task_inner(beat_id, prompt, &mut sink))
+    BEAT.scope(beat_id, run_task_inner(beat_id, prompt, images, &mut sink))
         .await
 }
+
+/// The user message sent to the model: plain text normally, but with images
+/// attached it becomes an OpenAI-style multimodal content-parts array
+/// (image_url parts first, then the text). Data URLs (data:image/...;base64)
+/// are what the frontend pastes from the clipboard.
+fn user_message(prompt: &str, images: &[String]) -> serde_json::Value {
+    if images.is_empty() {
+        return json!({ "role": "user", "content": prompt });
+    }
+    let mut parts = vec![];
+    for url in images {
+        parts.push(json!({
+            "type": "image_url",
+            "image_url": { "url": url },
+        }));
+    }
+    parts.push(json!({ "type": "text", "text": prompt }));
+    json!({ "role": "user", "content": parts })
+}
+
+/// The persisted transcript entry for the user turn — text plus the raw image
+/// data URLs under `images`, so prior turns can be replayed multimodally.
+fn user_entry(prompt: &str, images: &[String]) -> serde_json::Value {
+    if images.is_empty() {
+        return json!({ "role": "user", "content": prompt });
+    }
+    json!({ "role": "user", "content": prompt, "images": images })
+}
+
+/// Rebuild a message for the live API call from a persisted transcript entry.
+/// Entries that carry images become multimodal content-parts again; plain
+/// entries stay as plain strings.
+fn replay_message(m: &serde_json::Value) -> serde_json::Value {
+    let role = m["role"].clone();
+    let text = m["content"].as_str().unwrap_or("").to_string();
+    if let Some(imgs) = m["images"].as_array() {
+        if !imgs.is_empty() {
+            let urls: Vec<String> = imgs
+                .iter()
+                .filter_map(|i| i.as_str().map(str::to_string))
+                .collect();
+            let mut parts: Vec<serde_json::Value> = urls
+                .iter()
+                .map(|u| {
+                    json!({"type": "image_url", "image_url": {"url": u}})
+                })
+                .collect();
+            if !text.trim().is_empty() {
+                parts.push(json!({ "type": "text", "text": text }));
+            }
+            return json!({ "role": role, "content": parts });
+        }
+    }
+    json!({ "role": role, "content": text })
+}
+
 async fn run_task_inner(
     beat_id: i64,
     prompt: String,
+    images: Vec<String>,
     on_event: RawEvent<'_>,
 ) -> Result<TaskResult, String> {
     let cfg = config::ModelConfig::load()?;
@@ -595,7 +653,7 @@ async fn run_task_inner(
     let tool_defs = tools::definitions(&discovered);
 
     // the persisted transcript, built chronologically as work happens
-    let mut entries = vec![json!({"role": "user", "content": &prompt})];
+    let mut entries = vec![user_entry(&prompt, &images)];
 
     let (answer, steps, tool_steps, usage) = match tier {
         Tier::High | Tier::Base => {
@@ -620,7 +678,7 @@ async fn run_task_inner(
             // prior turns, then this instruction
             let mut msgs = vec![sys];
             msgs.extend(prior_turns(beat_id)?);
-            msgs.push(json!({"role": "user", "content": &prompt}));
+            msgs.push(user_message(&prompt, &images));
             let (draft, tool_steps, u1) = agentic_loop(
                 model,
                 on_event,
@@ -664,7 +722,7 @@ async fn run_task_inner(
             let sys = system_message(&brief, &session, "");
             let mut msgs = vec![sys];
             msgs.extend(prior_turns(beat_id)?);
-            msgs.push(json!({"role": "user", "content": &prompt}));
+            msgs.push(user_message(&prompt, &images));
             let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
             let r = chat_completion_stream(
                 model,

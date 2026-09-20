@@ -47,8 +47,9 @@ async fn run_task(
     app: tauri::AppHandle,
     beat_id: i64,
     prompt: String,
+    images: Option<Vec<String>>,
 ) -> Result<harness::TaskResult, String> {
-    harness::run_task(beat_id, prompt, &mut |ev| {
+    harness::run_task(beat_id, prompt, images.unwrap_or_default(), &mut |ev| {
         let _ = app.emit("task-event", ev);
     })
     .await

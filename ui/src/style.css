@@ -1072,3 +1072,51 @@ td.num {
 #models-status.err {
     color: var(--red);
 }
+
+/* pasted clipboard images awaiting send */
+#pending-images:empty {
+    display: none !important;
+}
+#pending-images {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    max-width: 60%;
+    margin-bottom: 6px;
+}
+.pending-img {
+    position: relative;
+    display: inline-block;
+}
+.pending-img img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    display: block;
+}
+.pending-img button {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg, #111);
+    color: var(--text);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+/* image thumbnails inside transcript messages */
+.msg-image {
+    max-width: 220px;
+    max-height: 160px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    margin-top: 6px;
+    display: block;
+}

@@ -119,7 +119,8 @@ async fn blank_final_turn_never_ends_run_silently() {
     let proj = pulse_core::projects::add_project(proj_dir.path().to_str().unwrap()).unwrap();
     let beat = beats::create_beat("repro", "", Some(proj.id)).unwrap();
     let mut events: Vec<Value> = vec![];
-    let result = harness::run_task(beat.id, "do a thing".to_string(), &mut |ev| {
+    let result =
+        harness::run_task(beat.id, "do a thing".to_string(), vec![], &mut |ev| {
         events.push(serde_json::to_value(&ev).unwrap());
     })
     .await;
