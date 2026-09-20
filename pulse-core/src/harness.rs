@@ -913,7 +913,7 @@ async fn run_task_inner(
 
     // aggregate: only the routed (post-classification) model's calls; the
     // classifier/summarizer calls are internal plumbing, not session usage
-    let mut usage = main_usage.clone();
+    let usage = main_usage.clone();
     let cost_usd = usage.cost_usd;
     let context_percent = context_percent(model, main_usage.prompt_tokens).await;
     // the session is full when the loop said so, or the reported fill already
