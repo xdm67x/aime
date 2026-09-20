@@ -1,0 +1,17 @@
+node_modules
+samples
+tests
+src
+harness*.ts
+tsconfig*.json
+vite.webview.config.ts
+.oxlintrc.json
+pnpm-lock.yaml
+node_modules/pulse-node/src
+node_modules/pulse-node/build.rs
+node_modules/pulse-node/Cargo.toml
+node_modules/pulse-node/node_modules
+node_modules/pulse-node/package-lock.json
+node_modules/pulse-node/package.json
+webview-dist/*.map
+out/*.map

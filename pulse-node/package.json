@@ -1,0 +1,22 @@
+{
+  "name": "pulse-node",
+  "version": "0.1.0",
+  "description": "Node bindings for pulse-core — the Pulse agent harness.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT",
+  "private": true,
+  "napi": {
+    "name": "pulse-node",
+    "triples": {
+      "defaults": true
+    }
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.10.4"
+  }
+}
