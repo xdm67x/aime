@@ -10,6 +10,9 @@ pub struct Beat {
     pub archived: bool,
     pub created_at: String,
     pub cost_usd: f64,
+    /// Session-wide token totals (all models), for the sidebar listing.
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
     /// Project the beat runs in (its directory is the working directory).
     /// Set right after creation (create_beat only): worktree status shown in
     /// the UI, success or failure.
@@ -20,6 +23,8 @@ pub struct Beat {
 
 const SELECT: &str = "SELECT b.id, b.name, b.description, b.archived, b.created_at, \
     COALESCE((SELECT SUM(cost_usd) FROM beat_usage WHERE beat_id = b.id), 0.0), \
+    COALESCE((SELECT SUM(prompt_tokens) FROM beat_usage WHERE beat_id = b.id), 0), \
+    COALESCE((SELECT SUM(completion_tokens) FROM beat_usage WHERE beat_id = b.id), 0), \
     b.project_id, p.name \
     FROM beats b LEFT JOIN projects p ON p.id = b.project_id";
 
@@ -31,9 +36,11 @@ fn row_to_beat(row: &Row) -> rusqlite::Result<Beat> {
         archived: row.get::<_, i64>(3)? != 0,
         created_at: row.get(4)?,
         cost_usd: row.get(5)?,
+        prompt_tokens: row.get(6)?,
+        completion_tokens: row.get(7)?,
         worktree_status: None,
-        project_id: row.get(6)?,
-        project_name: row.get(7)?,
+        project_id: row.get(8)?,
+        project_name: row.get(9)?,
     })
 }
 
@@ -91,6 +98,8 @@ pub fn create_beat(name: &str, description: &str, project_id: Option<i64>) -> Re
         archived: false,
         created_at,
         cost_usd: 0.0,
+        prompt_tokens: 0,
+        completion_tokens: 0,
         worktree_status,
         project_id,
         project_name,
@@ -241,4 +250,41 @@ pub async fn record_beat_usage(
     completion_tokens: i64,
 ) -> Result<f64, String> {
     record_usage(beat_id, &model, prompt_tokens, completion_tokens).await
+}
+
+/// Per-model usage totals for a whole session (beat): summed prompt/completion
+/// tokens and cost, one row per model that was ever called in it.
+pub fn usage_totals(beat_id: i64) -> Result<Vec<UsageTotal>, String> {
+    let conn = db::open()?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT model, SUM(prompt_tokens), SUM(completion_tokens), SUM(cost_usd)
+             FROM beat_usage WHERE beat_id = ?1
+             GROUP BY model ORDER BY SUM(cost_usd) DESC, model",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![beat_id], |r| {
+            Ok(UsageTotal {
+                model: r.get(0)?,
+                prompt_tokens: r.get(1)?,
+                completion_tokens: r.get(2)?,
+                cost_usd: r.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = vec![];
+    for row in rows {
+        out.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+/// Session-wide usage totals for one model.
+#[derive(Clone, serde::Serialize)]
+pub struct UsageTotal {
+    pub model: String,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub cost_usd: f64,
 }

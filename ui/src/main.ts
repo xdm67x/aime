@@ -13,6 +13,8 @@ interface Beat {
     description?: string
     archived?: boolean
     cost_usd?: number
+    prompt_tokens?: number
+    completion_tokens?: number
     worktree_status?: string | null
     project_id?: number | null
     project_name?: string | null
@@ -159,6 +161,7 @@ function beatRow(b: Beat) {
     <span class="beat-name">${esc(b.name)}</span>
     ${b.project_name ? `<span class="proj-src">${esc(b.project_name)}</span>` : ''}
     ${b.archived ? '' : `<span class="beat-cost">${fmtCost(b.cost_usd)}</span>`}
+    ${(b.prompt_tokens ?? 0) + (b.completion_tokens ?? 0) > 0 ? `<span class="beat-tokens" title="${b.prompt_tokens ?? 0} prompt / ${b.completion_tokens ?? 0} completion tokens this session">${fmtTokens((b.prompt_tokens ?? 0) + (b.completion_tokens ?? 0))}</span>` : ''}
     ${actions}
   </div>`
 }
@@ -634,6 +637,7 @@ async function openBeat(b: Beat) {
     s.el.scrollTop = s.el.scrollHeight
     renderBeats()
     refreshMain()
+    loadUsageTotals(b.id)
     input.focus()
 }
 
@@ -708,7 +712,12 @@ async function runOne(s: SessionState, item: { text: string; images: string[] })
             context_full: boolean
             new_beat_id?: number | null
         }>('run_task', { beatId: s.id, prompt: item.text, images: item.images })
-        renderUsageStats(r)
+        mergeRunUsage(s.id, r.usage)
+        // only the focused session's usage shows under the input; other
+        // sessions still record theirs (visible when you switch to them)
+        if (selectedBeat === s.id) renderUsageStats(s.id, r.context_percent, r.model)
+        // the sidebar row (cost + tokens) changed — refresh it
+        loadBeats()
         s.liveLabel = `${r.model} · ${r.tier}`
         // the step event already sealed this text (base tier) — only seal
         // when the answer hasn't been rendered live yet (low tier, fallback)
@@ -865,29 +874,85 @@ const fmtTokens = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : Stri
 const fmtCost2 = (c: number) => (c > 0 ? '$' + (c < 0.01 ? c.toFixed(4) : c.toFixed(2)) : '')
 const fmtCtx = (p: number) => (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'
 
-function renderUsageStats(r: {
-    model: string
-    usage: { model: string; prompt_tokens: number; completion_tokens: number; cost_usd: number }[]
-    cost_usd: number
-    context_percent: number | null
-}) {
+// session-wide per-model usage totals, cached per beat so switching sessions
+// restores them instantly; refreshed from the DB on open and after each run
+const usageCache = new Map<number, Map<string, { p: number; c: number; cost: number }>>()
+
+function usageMapFor(beatId: number) {
+    let m = usageCache.get(beatId)
+    if (!m) {
+        m = new Map()
+        usageCache.set(beatId, m)
+    }
+    return m
+}
+
+// short display name: vendor prefix stripped, tail kept ("openai/gpt-4o" → gpt-4o)
+const shortModel = (m: string) => m.split('/').pop() ?? m
+
+function renderUsageStats(beatId: number, contextPercent: number | null, ctxModel: string) {
     const el = $('usage-stats') as HTMLElement
-    const parts = r.usage.map((u) => {
-        let s = `${u.model}: ${fmtTokens(u.prompt_tokens)} in / ${fmtTokens(u.completion_tokens)} out`
-        const c = fmtCost2(u.cost_usd)
-        if (c) s += ` · ${c}`
-        return s
-    })
-    if (r.context_percent !== null) {
-        const pct = fmtCtx(r.context_percent)
-        const full = r.context_percent >= 90
+    const totals = usageMapFor(beatId)
+    if (!totals.size) {
+        el.style.display = 'none'
+        return
+    }
+    const parts = Array.from(totals.entries())
+        .sort(([, a], [, b]) => b.cost - a.cost)
+        .map(([model, u]) => {
+            const cost = fmtCost2(u.cost)
+            return `<span class="usage-part" title="${esc(model)}: ${u.p} prompt / ${u.c} completion tokens${cost ? ` · ${cost}` : ''}"><b>${esc(shortModel(model))}</b>${fmtTokens(u.p)}▸${fmtTokens(u.c)}${cost ? `<i>${cost}</i>` : ''}</span>`
+        })
+    if (contextPercent !== null) {
+        const pct = fmtCtx(contextPercent)
+        const full = contextPercent >= 90
         parts.push(
-            `<span class="${full ? 'ctx-full' : ''}" title="Context window used by ${r.model}">context ${pct}</span>`,
+            `<span class="usage-part ctx${full ? ' ctx-full' : ''}" title="Context window used by ${esc(ctxModel)}">ctx ${pct}</span>`,
         )
     }
-    el.innerHTML = parts.map((p) => `<span class="usage-part">${p}</span>`).join('')
+    el.innerHTML = parts.join('')
     el.style.display = 'flex'
 }
+
+// merge one run's per-model usage into the session totals and re-render
+function mergeRunUsage(
+    beatId: number,
+    usage: { model: string; prompt_tokens: number; completion_tokens: number; cost_usd: number }[],
+) {
+    const totals = usageMapFor(beatId)
+    for (const u of usage) {
+        const cur = totals.get(u.model) ?? { p: 0, c: 0, cost: 0 }
+        cur.p += u.prompt_tokens
+        cur.c += u.completion_tokens
+        cur.cost += u.cost_usd
+        totals.set(u.model, cur)
+    }
+}
+
+// load a session's per-model totals from the DB (on open)
+async function loadUsageTotals(beatId: number) {
+    try {
+        const rows = await invoke<
+            {
+                model: string
+                prompt_tokens: number
+                completion_tokens: number
+                cost_usd: number
+            }[]
+        >('beat_usage_totals', { beatId })
+        const totals = usageMapFor(beatId)
+        totals.clear()
+        for (const r of rows)
+            totals.set(r.model, { p: r.prompt_tokens, c: r.completion_tokens, cost: r.cost_usd })
+        if (selectedBeat === beatId) renderUsageStats(beatId, null, '')
+    } catch (e) {
+        console.error(e)
+    }
+}
+
+input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') send()
+})
 
 /* ---- pasted clipboard images ---- */
 let pendingImages: string[] = []

@@ -103,6 +103,11 @@ async fn record_beat_usage(
 }
 
 #[tauri::command]
+fn beat_usage_totals(beat_id: i64) -> Result<Vec<beats::UsageTotal>, String> {
+    beats::usage_totals(beat_id)
+}
+
+#[tauri::command]
 fn beat_context_full(id: i64) -> Result<bool, String> {
     beats::is_context_full(id)
 }
@@ -158,6 +163,7 @@ fn main() {
             set_beat_archived,
             delete_beat,
             record_beat_usage,
+            beat_usage_totals,
             beat_context_full,
             list_projects,
             add_project,
