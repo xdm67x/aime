@@ -1076,15 +1076,21 @@ async function saveLiteLlm() {
 }
 function populateSlots() {
     for (const sel of document.querySelectorAll<HTMLSelectElement>('select.model-slot')) {
-        const saved = sel.value // preserve the currently chosen model
+        // The saved value can't be read off the select here: it was applied
+        // before any <option> existed, so the browser reset it to "". Restore
+        // from the config loaded from the DB instead.
+        const slot = sel.dataset.slot
+        const saved = slot ? savedModelConfig[slot] : undefined
         sel.innerHTML =
             '<option value="">— select —</option>' +
             models.map((m) => `<option value="${esc(m.id)}">${esc(m.id)}</option>`).join('')
-        sel.value = saved
+        if (saved) sel.value = saved
     }
 }
 
 /* ---- model routing config ---- */
+// Last config loaded from the DB; populateSlots uses it to restore selections.
+const savedModelConfig: Record<string, string> = {}
 const setModelsStatus = (msg: string, err = false) => {
     const el = $('models-status')
     el.textContent = msg
@@ -1140,8 +1146,10 @@ applyTheme(localStorage.getItem('theme') ?? 'dark')
             base: string
             low: string
         }>('get_model_config')
-        for (const s of ['classifier', 'high', 'base', 'low'] as const)
+        for (const s of ['classifier', 'high', 'base', 'low'] as const) {
+            savedModelConfig[s] = cfg[s] ?? ''
             slotSelect(s).value = cfg[s] ?? ''
+        }
     } catch (e) {
         console.error(e)
     }
