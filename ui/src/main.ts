@@ -785,7 +785,7 @@ $('save-models').onclick = async () => {
         low: slotSelect('low').value,
     }
     try {
-        await invoke('save_model_config', { config })
+        await invoke('save_model_config', { cfg: config })
         setModelsStatus('Models saved.')
     } catch (e) {
         setModelsStatus(String(e), true)
