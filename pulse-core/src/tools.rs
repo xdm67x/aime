@@ -283,14 +283,46 @@ fn run_grep(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, Strin
     }
 }
 
+/// The user's default shell, e.g. from `$SHELL` or `/etc/passwd`; falls back
+/// to `sh`. Used so spawned commands see the user's normal (login) PATH.
+fn default_shell() -> String {
+    if let Ok(shell) = std::env::var("SHELL") {
+        if !shell.is_empty() {
+            return shell;
+        }
+    }
+    // Fall back to the passwd entry for the current user (Unix).
+    #[cfg(unix)]
+    {
+        if let Some(passwd) = std::env::var("USER")
+            .ok()
+            .and_then(|u| passwd_shell(&u))
+        {
+            return passwd;
+        }
+    }
+    "sh".into()
+}
+
+#[cfg(unix)]
+fn passwd_shell(user: &str) -> Option<String> {
+    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
+    passwd.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        (fields.next()? == user).then(|| fields.nth(5).map(|s| s.to_string())).flatten()
+    })
+}
+
 /// Execute a shell command with a 30-second timeout, inside `cwd` when set.
 async fn run_bash(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
     let command = args["command"]
         .as_str()
         .ok_or("missing 'command'")?
         .to_string();
-    let mut cmd = tokio::process::Command::new("sh");
-    cmd.arg("-c")
+    let mut cmd = tokio::process::Command::new(default_shell());
+    // Login shell so the user's PATH (e.g. Homebrew) applies.
+    cmd.arg("-l")
+        .arg("-c")
         .arg(&command)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
