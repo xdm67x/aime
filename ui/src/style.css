@@ -518,6 +518,82 @@ body {
     white-space: pre-wrap;
     word-break: break-word;
 }
+/* ---- git-style diff view for write_file / edit_file ---- */
+.diff {
+    background: var(--input);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    margin: 4px 0 8px;
+    max-height: 320px;
+    overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+}
+.diff-head {
+    position: sticky;
+    top: 0;
+    padding: 4px 10px;
+    background: var(--raised);
+    border-bottom: 1px solid var(--border-soft);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+}
+.diff-line {
+    padding: 0 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.diff-line.add {
+    background: color-mix(in srgb, var(--green) 12%, transparent);
+    color: var(--green);
+}
+.diff-line.del {
+    background: color-mix(in srgb, var(--red) 12%, transparent);
+    color: var(--red);
+}
+.diff-line.ctx {
+    color: var(--text-dim);
+}
+.diff-line.meta {
+    color: var(--faint);
+    font-style: italic;
+}
+/* highlight.js token colors, themed off the app palette */
+.diff .hljs-keyword,
+.diff .hljs-selector-tag,
+.diff .hljs-literal,
+.diff .hljs-section {
+    color: var(--accent);
+}
+.diff .hljs-string,
+.diff .hljs-attr {
+    color: var(--orange);
+}
+.diff .hljs-comment,
+.diff .hljs-quote {
+    color: var(--faint);
+    font-style: italic;
+}
+.diff .hljs-number,
+.diff .hljs-symbol {
+    color: var(--blue);
+}
+.diff .hljs-title,
+.diff .hljs-name,
+.diff .hljs-function {
+    color: var(--text-strong);
+}
+.diff .hljs-type,
+.diff .hljs-built_in,
+.diff .hljs-class {
+    color: var(--accent);
+}
+.diff .hljs-variable,
+.diff .hljs-template-variable {
+    color: var(--text);
+}
 /* markdown inside agent bubbles */
 .msg > :first-child {
     margin-top: 0;

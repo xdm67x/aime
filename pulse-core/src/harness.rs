@@ -389,6 +389,9 @@ async fn agentic_loop(
                 Ok(out) => (out, false),
                 Err(e) => (e, true),
             };
+            // The diff section is for the UI only — the model already knows
+            // what it wrote, so keep it out of the transcript.
+            let model_output = tools::strip_diff(&output);
             on_event(TaskEvent::Tool {
                 tool: tc.name.clone(),
                 arguments: tc.arguments.clone(),
@@ -397,7 +400,9 @@ async fn agentic_loop(
             });
             entries.push(json!({
                 "role": "tool", "model": tc.name,
-                "arguments": tc.arguments, "content": output, "error": error,
+                "arguments": tc.arguments, "content": model_output, "error": error,
+                // full result incl. the diff section, for the UI's git-style view
+                "raw_content": output,
             }));
             steps.push(tools::ToolStep {
                 tool: tc.name.clone(),
@@ -405,7 +410,7 @@ async fn agentic_loop(
                 result: output.clone(),
                 error,
             });
-            messages.push(json!({"role": "tool", "tool_call_id": tc.id, "content": output}));
+            messages.push(json!({"role": "tool", "tool_call_id": tc.id, "content": model_output}));
         }
 
         // Session context limit — replaces any turn cap. When the live

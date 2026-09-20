@@ -7,6 +7,7 @@
 
 pub mod beats;
 pub mod config;
+pub mod diff;
 pub mod db;
 pub mod harness;
 pub mod projects;

@@ -192,8 +192,35 @@ fn write_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, Str
     if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
+    // Capture the previous content so the returned result carries a diff the
+    // UI can render (git-style additions/deletions with syntax coloring).
+    let before = std::fs::read_to_string(&path).unwrap_or_default();
     std::fs::write(&path, content).map_err(|e| e.to_string())?;
-    Ok(format!("Wrote {} bytes to {path}", content.len()))
+    let diff = crate::diff::unified_diff(&before, content, DIFF_MAX_LINES);
+    Ok(format!("Wrote {} bytes to {path}", content.len()) + &diff_suffix(&diff))
+}
+
+/// Max diff lines embedded in a write/edit result (keeps the model's context
+/// lean while still showing the change to the user).
+const DIFF_MAX_LINES: usize = 200;
+
+/// Append the diff to a tool result, separated by a clear marker the UI
+/// splits on to render the git-style view.
+fn diff_suffix(diff: &str) -> String {
+    if diff.is_empty() {
+        String::new()
+    } else {
+        format!("\n\x1bDIFF\x1b\n{diff}")
+    }
+}
+
+/// Remove the UI-only diff section from a tool result (used before the result
+/// is fed back into the model transcript).
+pub fn strip_diff(result: &str) -> String {
+    match result.find("\n\x1bDIFF\x1b\n") {
+        Some(i) => result[..i].to_string(),
+        None => result.to_string(),
+    }
 }
 
 fn edit_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
@@ -224,7 +251,9 @@ fn edit_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, Stri
             out.push('\n');
         }
         std::fs::write(&path, out).map_err(|e| e.to_string())?;
-        return Ok(format!("Replaced lines {}-{} in {path}", start, e));
+        let after = std::fs::read_to_string(&path).unwrap_or_default();
+        let diff = crate::diff::unified_diff(&content, &after, DIFF_MAX_LINES);
+        return Ok(format!("Replaced lines {}-{} in {path}", start, e) + &diff_suffix(&diff));
     }
 
     // String mode: replace first occurrence of old_string.
@@ -236,8 +265,9 @@ fn edit_file(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, Stri
         return Err("old_string not found in file".into());
     }
     let new_content = content.replacen(old, new, 1);
-    std::fs::write(&path, new_content).map_err(|e| e.to_string())?;
-    Ok(format!("Replaced 1 of {count} occurrence(s) in {path}"))
+    std::fs::write(&path, &new_content).map_err(|e| e.to_string())?;
+    let diff = crate::diff::unified_diff(&content, &new_content, DIFF_MAX_LINES);
+    Ok(format!("Replaced 1 of {count} occurrence(s) in {path}") + &diff_suffix(&diff))
 }
 
 fn run_grep(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, String> {
