@@ -171,11 +171,7 @@ pub async fn chat_completion(
     unreachable!()
 }
 
-async fn send_chat(
-    p: &dyn Provider,
-    req: &ChatRequest,
-    key: &str,
-) -> Result<ChatResult, String> {
+async fn send_chat(p: &dyn Provider, req: &ChatRequest, key: &str) -> Result<ChatResult, String> {
     let (url, headers, body) = p.chat_setup(req, key);
     let mut r = reqwest::Client::new().post(url);
     for (k, v) in headers {
@@ -433,14 +429,9 @@ pub(crate) fn base_body(req: &ChatRequest) -> serde_json::Value {
 /// Parse one SSE `data:` JSON payload (OpenAI streaming shape) into a text
 /// delta, streamed tool-call fragments keyed by index, optional usage, and
 /// the stop reason.
-fn parse_chunk(
-    v: &serde_json::Value,
-) -> (
-    String,
-    Vec<(u64, ToolCall)>,
-    Option<Usage>,
-    Option<String>,
-) {
+type ParsedChunk = (String, Vec<(u64, ToolCall)>, Option<Usage>, Option<String>);
+
+fn parse_chunk(v: &serde_json::Value) -> ParsedChunk {
     let mut text = String::new();
     if let Some(t) = v["choices"][0]["delta"]["content"].as_str() {
         text.push_str(t);

@@ -69,9 +69,7 @@ fn dedupe_messages(conn: &Connection) {
     let Ok(mut stmt) = conn.prepare("SELECT id, messages FROM beats") else {
         return;
     };
-    let Ok(rows) = stmt.query_map([], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
-    }) else {
+    let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))) else {
         return;
     };
     let beats: Vec<(i64, Vec<serde_json::Value>)> = rows
@@ -218,7 +216,7 @@ mod tests {
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0]["content"], "hi");
         assert!(arr[1]["ts"].as_str().unwrap().len() == 19); // datetime('now') format
-        // adjacent duplicate cleanup: append an identical reply, reopen, dedupe
+                                                             // adjacent duplicate cleanup: append an identical reply, reopen, dedupe
         append_messages(
             id,
             vec![serde_json::json!({"role": "assistant", "content": "yo"})],
@@ -234,7 +232,7 @@ mod tests {
             .unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&msgs).unwrap();
         assert_eq!(arr.len(), 2); // identical adjacent reply removed
-                                                             // appending to a nonexistent beat fails
+                                  // appending to a nonexistent beat fails
         assert!(append_messages(9999, vec![serde_json::json!({"a": 1})]).is_err());
         // delete only works on archived beats
         conn.execute("DELETE FROM beat_usage WHERE beat_id = ?1", params![id])

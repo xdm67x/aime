@@ -267,11 +267,7 @@ async fn agentic_loop(
 
         // Path 1: the model called `task_complete` — the only sanctioned way
         // to finish. Its `summary` argument is the final answer.
-        if let Some(done) = r
-            .tool_calls
-            .iter()
-            .find(|tc| tc.name == "task_complete")
-        {
+        if let Some(done) = r.tool_calls.iter().find(|tc| tc.name == "task_complete") {
             let summary = serde_json::from_str::<serde_json::Value>(&done.arguments)
                 .ok()
                 .and_then(|v| v["summary"].as_str().map(str::to_string))
@@ -559,9 +555,10 @@ pub async fn run_task(
 ) -> Result<TaskResult, String> {
     clear_cancel(beat_id);
     let mut sink = |ev: TaskEvent| {
-        let _ = on_event(TaggedEvent { beat_id, ev });
+        on_event(TaggedEvent { beat_id, ev });
     };
-    BEAT.scope(beat_id, run_task_inner(beat_id, prompt, &mut sink)).await
+    BEAT.scope(beat_id, run_task_inner(beat_id, prompt, &mut sink))
+        .await
 }
 async fn run_task_inner(
     beat_id: i64,
@@ -644,8 +641,16 @@ async fn run_task_inner(
                 entries.push(json!({
                     "role": "assistant", "model": model, "content": draft,
                 }));
-                let (final_, u2) =
-                    reflexion(model, on_event, &prompt, &draft, &tool_steps, &brief, &session).await?;
+                let (final_, u2) = reflexion(
+                    model,
+                    on_event,
+                    &prompt,
+                    &draft,
+                    &tool_steps,
+                    &brief,
+                    &session,
+                )
+                .await?;
                 let usage = Usage {
                     prompt_tokens: u1.prompt_tokens + u2.prompt_tokens,
                     completion_tokens: u1.completion_tokens + u2.completion_tokens,
@@ -685,8 +690,7 @@ async fn run_task_inner(
             .iter()
             .rev()
             .find(|e| {
-                e["role"] == "assistant"
-                    && !e["content"].as_str().unwrap_or("").trim().is_empty()
+                e["role"] == "assistant" && !e["content"].as_str().unwrap_or("").trim().is_empty()
             })
             .and_then(|e| e["content"].as_str())
             .unwrap_or("")

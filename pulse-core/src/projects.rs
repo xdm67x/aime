@@ -189,8 +189,8 @@ pub fn working_dir(beat_id: i64) -> Result<Option<String>, String> {
 }
 
 /* ---- git worktrees: a beat spawned from a project works in a dedicated
-   worktree under ~/.pulse/worktrees so its edits never touch the main repo
-   checkout. Created with the beat, dropped when the archived beat is deleted. ---- */
+worktree under ~/.pulse/worktrees so its edits never touch the main repo
+checkout. Created with the beat, dropped when the archived beat is deleted. ---- */
 
 fn worktrees_base() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
@@ -207,7 +207,13 @@ pub fn slug(name: &str) -> String {
     let s: String = name
         .trim()
         .chars()
-        .map(|c| if c.is_whitespace() || c == '/' { '-' } else { c })
+        .map(|c| {
+            if c.is_whitespace() || c == '/' {
+                '-'
+            } else {
+                c
+            }
+        })
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
         .collect();
     let mut s = s
@@ -254,8 +260,11 @@ fn create_worktree_in(base: PathBuf, beat_id: i64, name: &str, project_path: &st
     match create_worktree_git(base, beat_id, name, project_path) {
         Ok((branch, path)) => {
             if let Err(e) = db::open().and_then(|c| {
-                c.execute("UPDATE beats SET worktree = ?1 WHERE id = ?2", params![path, beat_id])
-                    .map_err(|e| e.to_string())
+                c.execute(
+                    "UPDATE beats SET worktree = ?1 WHERE id = ?2",
+                    params![path, beat_id],
+                )
+                .map_err(|e| e.to_string())
             }) {
                 let _ = std::fs::remove_dir_all(&path);
                 return format!("Worktree failed: {e}");
@@ -274,7 +283,9 @@ fn create_worktree_git(
     project_path: &str,
 ) -> Result<(String, String), String> {
     if !Path::new(project_path).join(".git").exists() {
-        return Err(format!("Worktree skipped: {project_path} is not a git repo"));
+        return Err(format!(
+            "Worktree skipped: {project_path} is not a git repo"
+        ));
     }
     let mut branch = slug(name);
     let mut dest = base.join(&branch);
@@ -327,7 +338,9 @@ pub fn remove_worktree(path: &str, project: Option<&str>) -> String {
     match std::fs::remove_dir_all(path) {
         Ok(_) => {
             if let Some(p) = repo {
-                let _ = Command::new("git").args(["-C", p, "worktree", "prune"]).output();
+                let _ = Command::new("git")
+                    .args(["-C", p, "worktree", "prune"])
+                    .output();
             }
             format!("Worktree dropped: {path}")
         }
@@ -395,10 +408,24 @@ mod tests {
                 .args(args)
                 .output()
                 .unwrap();
-            assert!(out.status.success(), "git {:?}: {}", args, String::from_utf8_lossy(&out.stderr));
+            assert!(
+                out.status.success(),
+                "git {:?}: {}",
+                args,
+                String::from_utf8_lossy(&out.stderr)
+            );
         };
         git(&["init", "-q"]);
-        git(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"]);
+        git(&[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "init",
+        ]);
 
         let base = tmp.join("wts");
         let msg = create_worktree_in(base.clone(), 1, "Fix Login Flow", &proj.to_string_lossy());
@@ -408,10 +435,18 @@ mod tests {
         assert!(branch_exists(&proj.to_string_lossy(), "Fix-Login-Flow"));
 
         // drop it: dir gone, git no longer lists the worktree
-        let msg = remove_worktree(&base.join("Fix-Login-Flow").to_string_lossy(), Some(&proj.to_string_lossy()));
+        let msg = remove_worktree(
+            &base.join("Fix-Login-Flow").to_string_lossy(),
+            Some(&proj.to_string_lossy()),
+        );
         assert!(msg.contains("Worktree dropped"), "{msg}");
         assert!(!base.join("Fix-Login-Flow").exists());
-        let listed = Command::new("git").arg("-C").arg(&proj).args(["worktree", "list"]).output().unwrap();
+        let listed = Command::new("git")
+            .arg("-C")
+            .arg(&proj)
+            .args(["worktree", "list"])
+            .output()
+            .unwrap();
         let listed = String::from_utf8_lossy(&listed.stdout);
         assert!(!listed.contains("Fix-Login-Flow"));
 

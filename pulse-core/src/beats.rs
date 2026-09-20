@@ -47,11 +47,7 @@ pub fn list_beats() -> Result<Vec<Beat>, String> {
         .map_err(|e| e.to_string())
 }
 
-pub fn create_beat(
-    name: &str,
-    description: &str,
-    project_id: Option<i64>,
-) -> Result<Beat, String> {
+pub fn create_beat(name: &str, description: &str, project_id: Option<i64>) -> Result<Beat, String> {
     let name = name.trim();
     if name.is_empty() {
         return Err("Beat name cannot be empty".into());
