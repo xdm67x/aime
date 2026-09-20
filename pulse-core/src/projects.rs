@@ -167,16 +167,19 @@ pub fn remove_project(id: i64) -> Result<(), String> {
 /// project was deleted or its directory no longer exists.
 pub fn working_dir(beat_id: i64) -> Result<Option<String>, String> {
     let c = conn()?;
-    // a beat with a worktree runs in the worktree, not the project checkout
-    let path: Option<String> = c
+    let row: Option<(Option<String>, Option<String>)> = c
         .query_row(
-            "SELECT COALESCE(b.worktree, p.path) FROM beats b \
+            "SELECT b.worktree, p.path FROM beats b \
              LEFT JOIN projects p ON p.id = b.project_id WHERE b.id = ?1",
             params![beat_id],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()
         .map_err(|e| e.to_string())?;
+    // a beat with a worktree runs in the worktree, not the project checkout
+    // rusqlite can't read a NULL COALESCE() expression into Option<String>, so
+    // fetch both columns separately and fall back manually
+    let path = row.and_then(|(worktree, project)| worktree.or(project));
     match path {
         Some(p) => {
             if !Path::new(&p).is_dir() {
