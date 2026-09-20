@@ -5,6 +5,10 @@
   "version": "0.1.0",
   "publisher": "pulse",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xdm67x/pulse"
+  },
   "private": true,
   "packageManager": "pnpm@12.4.1",
   "engines": {
@@ -44,7 +48,8 @@
     "format:check": "oxfmt --check .",
     "doctor": "react-doctor src/webview --offline --no-telemetry --no-supply-chain -y",
     "test": "vitest run",
-    "package": "pnpm build && vsce package --no-dependencies"
+    "vendor:native": "node scripts/vendor-native.mjs",
+    "package": "pnpm build && pnpm vendor:native && vsce package --no-dependencies"
   },
   "dependencies": {
     "pulse-node": "workspace:*"
@@ -55,6 +60,7 @@
     "@types/react-dom": "^19.1.0",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "@vscode/vsce": "^3.9.1",
     "oxfmt": "^0.17.0",
     "oxlint": "^1.30.0",
     "react": "^19.3.0",

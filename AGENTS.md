@@ -85,6 +85,13 @@ pnpm --dir vscode doctor        # react-doctor scan of the React webview
 pnpm --dir vscode package       # build .vsix (via vsce)
 ```
 
+Releases: `.github/workflows/release.yml` also builds one platform-specific
+`.vsix` per target (darwin-arm64/x64, linux-x64, win32-x64) and attaches them
+to the GitHub release. Because `vsce package --no-dependencies` strips
+`node_modules`, the pulse-node addon is vendored into `vscode/native/` by
+`vscode/scripts/vendor-native.mjs` and loaded lazily from `src/native.ts`
+(workspace package first, vendored copy in the .vsix second).
+
 ## Conventions & gotchas
 
 - **Keep `pulse-core` UI-agnostic.** New agent features (providers, tools,

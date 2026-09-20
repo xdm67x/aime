@@ -6,7 +6,7 @@
     "suspicious": "warn",
     "perf": "warn"
   },
-  "ignorePatterns": ["node_modules", "out", "webview-dist", "samples"],
+  "ignorePatterns": ["node_modules", "out", "webview-dist", "samples", "native"],
   "rules": {
     "react/react-in-jsx-scope": "off"
   }
