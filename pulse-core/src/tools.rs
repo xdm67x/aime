@@ -324,10 +324,7 @@ fn default_shell() -> String {
     // Fall back to the passwd entry for the current user (Unix).
     #[cfg(unix)]
     {
-        if let Some(passwd) = std::env::var("USER")
-            .ok()
-            .and_then(|u| passwd_shell(&u))
-        {
+        if let Some(passwd) = std::env::var("USER").ok().and_then(|u| passwd_shell(&u)) {
             return passwd;
         }
     }
@@ -339,7 +336,9 @@ fn passwd_shell(user: &str) -> Option<String> {
     let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
     passwd.lines().find_map(|line| {
         let mut fields = line.split(':');
-        (fields.next()? == user).then(|| fields.nth(5).map(|s| s.to_string())).flatten()
+        (fields.next()? == user)
+            .then(|| fields.nth(5).map(|s| s.to_string()))
+            .flatten()
     })
 }
 
