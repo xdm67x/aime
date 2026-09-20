@@ -358,13 +358,42 @@ interface ToolRowMsg {
     error: boolean
 }
 
+// compact one-line summary of a tool call's key arguments, shown in the
+// collapsed header so commands are visible without expanding
+function toolSummary(tool: string, argsJson: string): string {
+    let args: Record<string, unknown> = {}
+    try {
+        const parsed = JSON.parse(argsJson)
+        if (parsed && typeof parsed === 'object') args = parsed as Record<string, unknown>
+    } catch {
+        return ''
+    }
+    const first = (k: string) => (typeof args[k] === 'string' ? (args[k] as string) : '')
+    switch (tool) {
+        case 'bash': {
+            const c = first('command')
+            return c.replace(/\s+/g, ' ').trim()
+        }
+        case 'grep':
+            return `${first('pattern')} → ${first('path') || '.'}`
+        case 'read_file':
+        case 'write_file':
+        case 'edit_file':
+            return first('path')
+        default:
+            return ''
+    }
+}
+
 // tool calls render as light, collapsible full-width rows — not bubbles
 function renderTool(view: HTMLElement, t: ToolRowMsg) {
+    const summary = esc(toolSummary(t.tool, t.arguments))
     const wrap = document.createElement('div')
     wrap.className = 'row-tool' + (t.error ? ' err' : '')
     wrap.innerHTML = `<button class="tool-head">
         <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         <span class="tool-name">${esc(t.tool)}</span>
+        <span class="tool-args">${summary}</span>
         <span class="tool-status">${t.error ? 'failed' : 'done'}</span>
       </button>
       <div class="tool-body" hidden>

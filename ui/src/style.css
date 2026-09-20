@@ -438,7 +438,18 @@ body {
     color: var(--muted);
     font-weight: 600;
 }
+.tool-args {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono, ui-monospace, monospace);
+    color: var(--faint);
+    font-size: 11.5px;
+}
 .tool-status {
+    flex-shrink: 0;
     font-size: 11px;
     color: var(--faint);
 }
