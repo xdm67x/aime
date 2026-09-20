@@ -97,11 +97,7 @@ impl Model {
                 v["max_input_tokens"]
                     .as_u64()
                     .or_else(|| v["max_tokens"].as_u64())
-                    .or_else(|| {
-                        v["max_input_tokens"]
-                            .as_str()
-                            .and_then(|s| s.parse().ok())
-                    })
+                    .or_else(|| v["max_input_tokens"].as_str().and_then(|s| s.parse().ok()))
             }),
             pricing: Pricing {
                 prompt: v["pricing"]["prompt"]
