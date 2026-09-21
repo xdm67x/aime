@@ -40,6 +40,9 @@ export declare function getBaseUrl(provider: string): string | null
 
 export declare function getBeatMessages(id: number): Array<Record<string, unknown>>
 
+/** Id of the workflow new sessions run by default. Empty → classifier routing. */
+export declare function getDefaultWorkflow(): string
+
 export declare function getModelConfig(): ModelConfig
 
 export declare function listBeats(): Array<Beat>
@@ -47,6 +50,8 @@ export declare function listBeats(): Array<Beat>
 export declare function listModels(): Promise<Array<Model>>
 
 export declare function listProjects(): Array<Project>
+
+export declare function listWorkflows(): Array<Workflow>
 
 export interface Model {
   id: string
@@ -86,13 +91,20 @@ export declare function removeProject(id: number): void
  */
 export declare function runTask(beatId: number, prompt: string, images: Array<string>, onEvent: (ev: { beatId: number } & Record<string, unknown>) => void): Promise<TaskResult>
 
+/** Run one explicit workflow by id on the beat, replacing classifier routing. */
+export declare function runWorkflowTask(beatId: number, workflowId: string, prompt: string, images: Array<string>, onEvent: (ev: { beatId: number } & Record<string, unknown>) => void): Promise<TaskResult>
+
 export declare function saveApiKey(provider: string, key: string): void
 
 export declare function saveBaseUrl(provider: string, url: string): void
 
 export declare function saveModelConfig(cfg: ModelConfig): void
 
+export declare function saveWorkflows(wfs: Array<Workflow>): void
+
 export declare function setBeatArchived(id: number, archived: boolean): void
+
+export declare function setDefaultWorkflow(id: string): void
 
 export interface SkillInfo {
   name: string
@@ -137,5 +149,22 @@ export interface UsageTotal {
 }
 
 export declare function usageTotals(beatId: number): Array<UsageTotal>
+
+export interface Workflow {
+  id: string
+  name: string
+  description: string
+  steps: Array<WorkflowStep>
+}
+
+export interface WorkflowStep {
+  /** "agent" | "ask" | "reflexion" */
+  kind: string
+  model: string
+  /** Custom prompt for this step. Empty → built-in default. */
+  prompt: string
+  /** Short label shown in the UI (e.g. "Plan"). */
+  label: string
+}
 
 export declare function workingDir(beatId: number): string | null

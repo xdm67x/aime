@@ -16,7 +16,7 @@
 //! model tier, drives `agentic_loop`, and persists the result onto the beat.
 
 use crate::providers::{self, chat_completion, chat_completion_stream, Usage};
-use crate::{beats, config, db, projects, prompts, skills, tools};
+use crate::{beats, config, db, projects, prompts, skills, tools, workflows};
 use serde::Serialize;
 use serde_json::json;
 use std::sync::Mutex;
@@ -77,6 +77,14 @@ pub enum TaskEvent {
     },
     /// A finished intermediate step (e.g. the high-tier reflexion draft).
     Step { text: String },
+    /// A workflow step began: its label, its model, and its position in the
+    /// workflow (1-based) so the UI can render the pipeline as it runs.
+    StepStart {
+        label: String,
+        model: String,
+        index: u32,
+        total: u32,
+    },
 }
 
 /// Live-event sink for a running task: the UI layer (Tauri, a CLI) supplies
@@ -720,8 +728,35 @@ pub async fn run_task(
     let mut sink = |ev: TaskEvent| {
         on_event(TaggedEvent { beat_id, ev });
     };
-    BEAT.scope(beat_id, run_task_inner(beat_id, prompt, images, &mut sink))
-        .await
+    // a default workflow replaces the classifier routing for this session
+    let wf_id = workflows::default_id().unwrap_or_default();
+    let run = async {
+        if wf_id.is_empty() {
+            run_task_inner(beat_id, prompt, images, &mut sink).await
+        } else {
+            run_workflow_task_inner(beat_id, &wf_id, prompt, images, &mut sink).await
+        }
+    };
+    BEAT.scope(beat_id, run).await
+}
+
+/// Run one explicit workflow by id on the beat, replacing classifier routing.
+pub async fn run_workflow_task(
+    beat_id: i64,
+    workflow_id: String,
+    prompt: String,
+    images: Vec<String>,
+    on_event: OnEvent<'_>,
+) -> Result<TaskResult, String> {
+    clear_cancel(beat_id);
+    let mut sink = |ev: TaskEvent| {
+        on_event(TaggedEvent { beat_id, ev });
+    };
+    BEAT.scope(
+        beat_id,
+        run_workflow_task_inner(beat_id, &workflow_id, prompt, images, &mut sink),
+    )
+    .await
 }
 
 /// The user message sent to the model: plain text normally, but with images
@@ -776,6 +811,250 @@ fn replay_message(m: &serde_json::Value) -> serde_json::Value {
     }
     json!({ "role": role, "content": text })
 }
+
+/* ---- workflows: a user-defined pipeline of models, run in order ---- */
+
+/// The instruction a workflow step carries: its custom prompt when the brick
+/// defines one, else the built-in template filled with the step label, the
+/// original request and the previous step's output.
+fn step_instruction(
+    step: &workflows::WorkflowStep,
+    prompt: &str,
+    previous: &str,
+) -> String {
+    let previous = if previous.trim().is_empty() {
+        "(none — this is the first step)"
+    } else {
+        previous
+    };
+    let label = if step.label.trim().is_empty() {
+        step.kind.as_str()
+    } else {
+        step.label.trim()
+    };
+    if !step.prompt.trim().is_empty() {
+        return prompts::fill(step.prompt.trim(), &[("prompt", prompt)]);
+    }
+    prompts::fill(
+        prompts::WORKFLOW_STEP,
+        &[("step", label), ("prompt", prompt), ("previous", previous)],
+    )
+}
+
+/// Run a workflow: each brick executes with its own model, in order, the
+/// output of one step feeding the next. No classifier — the pipeline is
+/// exactly what the user composed in Settings. Everything lands on the beat's
+/// transcript so it survives reloads.
+async fn run_workflow_task_inner(
+    beat_id: i64,
+    workflow_id: &str,
+    prompt: String,
+    images: Vec<String>,
+    on_event: RawEvent<'_>,
+) -> Result<TaskResult, String> {
+    if session_is_full(beat_id)? && !prompt.trim().eq_ignore_ascii_case("/compact") {
+        return Err(
+            "Session context limit reached. Run /compact to open a new session \
+             holding only a summary of this one."
+                .into(),
+        );
+    }
+    if prompt.trim().eq_ignore_ascii_case("/compact") {
+        return compact_session(beat_id, on_event).await;
+    }
+    let workflow = workflows::get(workflow_id)?
+        .ok_or_else(|| format!("Workflow “{workflow_id}” not found — check Settings."))?;
+    if workflow.steps.is_empty() {
+        return Err(format!("Workflow “{}” has no steps.", workflow.name));
+    }
+
+    let session = session_prompt();
+    let brief = {
+        let cfg = config::ModelConfig::load()?;
+        let classifier = cfg.classifier.trim();
+        if classifier.is_empty() {
+            String::new()
+        } else {
+            let mut mu = ModelUsage::new(classifier);
+            summarize_history(beat_id, classifier, &mut mu).await.unwrap_or_default()
+        }
+    };
+
+    let discovered = skills::discover();
+    let tool_defs = tools::definitions(&discovered);
+    let wd = projects::working_dir(beat_id)?;
+    let mut note = prompts::AGENT_NOTE.to_string();
+    if let Some(dir) = &wd {
+        if !note.is_empty() {
+            note.push_str("\n\n");
+        }
+        note.push_str(&format!(
+            "Working directory: {dir}. Relative tool paths resolve against it, \
+             bash runs inside it.\n\n"
+        ));
+        if let Some(agents) = projects::agents_note(dir) {
+            note.push_str(&agents);
+        }
+    }
+
+    // persisted transcript, built as the steps run
+    let mut entries = vec![user_entry(&prompt, &images)];
+
+    let total = workflow.steps.len() as u32;
+    let mut answer = String::new();
+    let mut steps: Vec<String> = Vec::new();
+    let mut tool_steps: Vec<tools::ToolStep> = Vec::new();
+    let mut per_model: Vec<ModelUsage> = Vec::new();
+    let mut context_full = false;
+    let mut last_prompt_tokens: u64 = 0;
+    let mut last_model = String::new();
+
+    for (i, step) in workflow.steps.iter().enumerate() {
+        let model = step.model.trim();
+        if model.is_empty() {
+            return Err(format!(
+                "Step {} of workflow “{}” has no model — set it in Settings.",
+                i + 1,
+                workflow.name
+            ));
+        }
+        on_event(TaskEvent::StepStart {
+            label: if step.label.trim().is_empty() {
+                step.kind.as_str().to_string()
+            } else {
+                step.label.trim().to_string()
+            },
+            model: model.to_string(),
+            index: i as u32 + 1,
+            total,
+        });
+        let instruction = step_instruction(step, &prompt, &answer);
+        let sys = system_message(&brief, &session, if step.kind == workflows::StepKind::Agent { note.as_str() } else { "" });
+        let mut msgs = vec![sys];
+        msgs.extend(prior_turns(beat_id)?);
+        msgs.push(user_message(&instruction, &images));
+
+        let mut mu = ModelUsage::new(model);
+        let text = match step.kind {
+            workflows::StepKind::Agent => {
+                let (text, tsteps, u, full) = agentic_loop(
+                    model,
+                    on_event,
+                    &mut msgs,
+                    &mut entries,
+                    &tool_defs,
+                    wd.as_deref(),
+                )
+                .await?;
+                tool_steps.extend(tsteps);
+                record_usage(beat_id, &mut mu, &u).await;
+                if full {
+                    context_full = true;
+                }
+                text
+            }
+            workflows::StepKind::Ask => {
+                let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
+                let r = chat_completion_stream(
+                    model,
+                    &msgs,
+                    &[],
+                    Some(0.7),
+                    None,
+                    false,
+                    None,
+                    &mut on_delta,
+                )
+                .await?;
+                record_usage(beat_id, &mut mu, &r.usage).await;
+                r.content
+            }
+            workflows::StepKind::Reflexion => {
+                let (text, u) = reflexion(
+                    model,
+                    on_event,
+                    &prompt,
+                    &answer,
+                    &tool_steps,
+                    &brief,
+                    &session,
+                )
+                .await?;
+                record_usage(beat_id, &mut mu, &u).await;
+                text
+            }
+        };
+        last_prompt_tokens = mu.prompt_tokens;
+        last_model = model.to_string();
+        per_model.push(mu);
+
+        // publish the step's output on the transcript + live stream unless it
+        // is the final answer (persisted once, after the loop)
+        if text.trim().is_empty() {
+            return Err(format!(
+                "Step {} of workflow “{}” returned no output.",
+                i + 1,
+                workflow.name
+            ));
+        }
+        if i + 1 < workflow.steps.len() {
+            on_event(TaskEvent::Step { text: text.clone() });
+            entries.push(json!({
+                "role": "assistant", "model": model, "content": text,
+            }));
+            steps.push(text.clone());
+        }
+        answer = text;
+    }
+
+    let cost_usd = per_model.iter().map(|m| m.cost_usd).sum();
+    let context_percent = context_percent(&last_model, last_prompt_tokens).await;
+    if !context_full {
+        context_full = context_percent
+            .map(|p| p >= CONTEXT_LIMIT_PERCENT)
+            .unwrap_or(false);
+    }
+    if context_full {
+        beats::set_context_full(beat_id, true)?;
+    }
+
+    // a blank answer must not end the run silently
+    let answer = if answer.trim().is_empty() {
+        entries
+            .iter()
+            .rev()
+            .find(|e| {
+                e["role"] == "assistant" && !e["content"].as_str().unwrap_or("").trim().is_empty()
+            })
+            .and_then(|e| e["content"].as_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        answer
+    };
+    let dup = entries
+        .last()
+        .map(|e| e["role"] == "assistant" && e["content"] == answer)
+        .unwrap_or(false);
+    if !dup {
+        entries.push(json!({"role": "assistant", "model": workflow.steps.last().unwrap().model.trim(), "content": &answer}));
+    }
+    db::append_messages(beat_id, entries)?;
+
+    Ok(TaskResult {
+        tier: "workflow".into(),
+        model: workflow.steps.last().unwrap().model.trim().to_string(),
+        steps,
+        tool_steps,
+        answer,
+        usage: per_model,
+        cost_usd,
+        context_percent,
+        context_full,
+        new_beat_id: None,
+    })
+}
+
 
 async fn run_task_inner(
     beat_id: i64,
