@@ -817,11 +817,7 @@ fn replay_message(m: &serde_json::Value) -> serde_json::Value {
 /// The instruction a workflow step carries: its custom prompt when the brick
 /// defines one, else the built-in template filled with the step label, the
 /// original request and the previous step's output.
-fn step_instruction(
-    step: &workflows::WorkflowStep,
-    prompt: &str,
-    previous: &str,
-) -> String {
+fn step_instruction(step: &workflows::WorkflowStep, prompt: &str, previous: &str) -> String {
     let previous = if previous.trim().is_empty() {
         "(none — this is the first step)"
     } else {
@@ -876,7 +872,9 @@ async fn run_workflow_task_inner(
             String::new()
         } else {
             let mut mu = ModelUsage::new(classifier);
-            summarize_history(beat_id, classifier, &mut mu).await.unwrap_or_default()
+            summarize_history(beat_id, classifier, &mut mu)
+                .await
+                .unwrap_or_default()
         }
     };
 
@@ -929,7 +927,15 @@ async fn run_workflow_task_inner(
             total,
         });
         let instruction = step_instruction(step, &prompt, &answer);
-        let sys = system_message(&brief, &session, if step.kind == workflows::StepKind::Agent { note.as_str() } else { "" });
+        let sys = system_message(
+            &brief,
+            &session,
+            if step.kind == workflows::StepKind::Agent {
+                note.as_str()
+            } else {
+                ""
+            },
+        );
         let mut msgs = vec![sys];
         msgs.extend(prior_turns(beat_id)?);
         msgs.push(user_message(&instruction, &images));
@@ -1054,7 +1060,6 @@ async fn run_workflow_task_inner(
         new_beat_id: None,
     })
 }
-
 
 async fn run_task_inner(
     beat_id: i64,

@@ -101,8 +101,8 @@ pub fn list() -> Result<Vec<Workflow>, String> {
     let Some(raw) = raw else {
         return Ok(default_workflows());
     };
-    let workflows: Vec<Workflow> = serde_json::from_str(&raw)
-        .map_err(|e| format!("Corrupted workflow settings: {e}"))?;
+    let workflows: Vec<Workflow> =
+        serde_json::from_str(&raw).map_err(|e| format!("Corrupted workflow settings: {e}"))?;
     Ok(workflows)
 }
 
