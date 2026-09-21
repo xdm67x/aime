@@ -8,6 +8,7 @@
   },
   "ignorePatterns": ["node_modules", "out", "webview-dist", "samples", "native"],
   "rules": {
-    "react/react-in-jsx-scope": "off"
+    "react/react-in-jsx-scope": "off",
+    "unicorn/require-post-message-target-origin": "off"
   }
 }
