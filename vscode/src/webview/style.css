@@ -355,3 +355,118 @@ button:disabled {
   padding: 8px 14px;
   font-size: 12px;
 }
+
+/* ---- workflow editor ---- */
+
+.workflow-hint,
+.workflow-empty {
+  font-size: 12px;
+  opacity: 0.7;
+  margin: 0;
+}
+
+.workflow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workflow-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.workflow-row .workflow-name {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: inherit;
+}
+
+.workflow-steps-count {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.workflow-default {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  opacity: 0.8;
+  cursor: pointer;
+}
+
+.workflow-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-current {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.workflow-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-brick {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto auto auto auto auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  cursor: grab;
+}
+
+.step-brick:active {
+  cursor: grabbing;
+}
+
+.step-index {
+  font-size: 11px;
+  opacity: 0.7;
+  min-width: 16px;
+  text-align: center;
+}
+
+.step-kind-hint {
+  font-size: 11px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.step-brick textarea.step-prompt {
+  grid-column: 1 / -1;
+}
+
+.step-prompt {
+  min-height: 48px;
+  resize: vertical;
+  font-size: 12px;
+}
+
+.step-brick button.danger,
+.workflow-row button.danger {
+  color: #d33;
+}

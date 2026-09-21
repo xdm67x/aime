@@ -264,6 +264,7 @@
                     <nav id="settings-tabs">
                         <button data-tab="providers" class="active">Providers</button>
                         <button data-tab="models">Models</button>
+                        <button data-tab="workflows">Workflows</button>
                         <button data-tab="appearance">Appearance</button>
                     </nav>
                     <div id="settings-content">
@@ -342,6 +343,21 @@
                                 <button class="btn" id="save-models">Save models</button>
                             </div>
                             <p id="models-status"></p>
+                        </div>
+                        <div id="pane-workflows" class="tab-pane" style="display:none">
+                            <p class="field-label">Workflows</p>
+                            <p class="field-hint">
+                                Chain models in order — each brick runs its own model and prompt,
+                                the output of one feeding the next. The default workflow replaces
+                                classifier routing for new messages.
+                            </p>
+                            <div id="workflow-list"></div>
+                            <div class="keyrow" style="margin-top: 10px; gap: 8px">
+                                <button class="btn" id="add-workflow">+ New workflow</button>
+                                <button class="btn" id="save-workflows">Save workflows</button>
+                            </div>
+                            <p id="workflows-status"></p>
+                            <div id="workflow-editor" style="display:none"></div>
                         </div>
                         <div id="pane-appearance" class="tab-pane" style="display:none">
                             <p class="field-label">Theme</p>

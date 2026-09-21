@@ -3,7 +3,7 @@
 // in the `pulse-core` crate; each command below is a thin Tauri wrapper around
 // it (plus the native folder picker, which is UI-only).
 
-use pulse_core::{beats, config, harness, projects, providers};
+use pulse_core::{beats, config, harness, projects, providers, workflows};
 use serde_json::Value;
 use tauri::Emitter;
 
@@ -38,6 +38,26 @@ fn save_model_config(cfg: config::ModelConfig) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn list_workflows() -> Result<Vec<workflows::Workflow>, String> {
+    workflows::list()
+}
+
+#[tauri::command]
+fn save_workflows(wfs: Vec<workflows::Workflow>) -> Result<(), String> {
+    workflows::save_all(&wfs)
+}
+
+#[tauri::command]
+fn get_default_workflow() -> Result<String, String> {
+    workflows::default_id()
+}
+
+#[tauri::command]
+fn set_default_workflow(id: String) -> Result<(), String> {
+    workflows::set_default_id(&id)
+}
+
+#[tauri::command]
 async fn list_models() -> Result<Vec<providers::Model>, String> {
     providers::list_models().await
 }
@@ -52,6 +72,27 @@ async fn run_task(
     harness::run_task(beat_id, prompt, images.unwrap_or_default(), &mut |ev| {
         let _ = app.emit("task-event", ev);
     })
+    .await
+}
+
+/// Run one explicit workflow by id on the beat, replacing classifier routing.
+#[tauri::command]
+async fn run_workflow_task(
+    app: tauri::AppHandle,
+    beat_id: i64,
+    workflow_id: String,
+    prompt: String,
+    images: Option<Vec<String>>,
+) -> Result<harness::TaskResult, String> {
+    harness::run_workflow_task(
+        beat_id,
+        workflow_id,
+        prompt,
+        images.unwrap_or_default(),
+        &mut |ev| {
+            let _ = app.emit("task-event", ev);
+        },
+    )
     .await
 }
 
@@ -154,8 +195,13 @@ fn main() {
             get_base_url,
             get_model_config,
             save_model_config,
+            list_workflows,
+            save_workflows,
+            get_default_workflow,
+            set_default_workflow,
             list_models,
             run_task,
+            run_workflow_task,
             cancel_task,
             list_beats,
             get_beat_messages,

@@ -42,6 +42,13 @@ export function App() {
         case "model-config":
           dispatch({ type: "model-config", config: msg.config });
           break;
+        case "workflows":
+          dispatch({
+            type: "workflows",
+            workflows: msg.workflows,
+            defaultId: msg.defaultId,
+          });
+          break;
         case "task-event":
           dispatch({ type: "task-event", beatId: msg.beatId, ev: msg.ev });
           break;
@@ -92,6 +99,8 @@ export function App() {
             models={state.models}
             projects={state.projects}
             config={state.modelConfig}
+            workflows={state.workflows}
+            defaultWorkflow={state.defaultWorkflow}
           />
         ) : (
           <ChatPanel beat={selected} state={state} />

@@ -7,6 +7,7 @@ import type {
   TaskEvent,
   TaskResult,
   UsageTotal,
+  Workflow,
 } from "../protocol";
 
 export type LiveTurn = {
@@ -21,6 +22,8 @@ export type PulseState = {
   projects: Project[];
   models: Model[];
   modelConfig: ModelConfig | null;
+  workflows: Workflow[];
+  defaultWorkflow: string;
   live: Record<number, LiveTurn>;
   running: Record<number, boolean>;
   usage: Record<number, UsageTotal[]>;
@@ -36,6 +39,8 @@ export const initialState: PulseState = {
   projects: [],
   models: [],
   modelConfig: null,
+  workflows: [],
+  defaultWorkflow: "",
   live: {},
   running: {},
   usage: {},
@@ -51,6 +56,7 @@ export type Action =
   | { type: "projects"; projects: Project[] }
   | { type: "models"; models: Model[] }
   | { type: "model-config"; config: ModelConfig }
+  | { type: "workflows"; workflows: Workflow[]; defaultId: string }
   | { type: "task-event"; beatId: number; ev: TaskEvent }
   | { type: "task-result"; beatId: number; result: TaskResult }
   | { type: "task-error"; beatId: number; error: string }
@@ -82,6 +88,12 @@ export function reducer(state: PulseState, action: Action): PulseState {
       return { ...state, models: action.models };
     case "model-config":
       return { ...state, modelConfig: action.config };
+    case "workflows":
+      return {
+        ...state,
+        workflows: action.workflows,
+        defaultWorkflow: action.defaultId,
+      };
     case "task-event": {
       const turn = state.live[action.beatId] ?? { streaming: "", events: [] };
       const events = [...turn.events, { ...action.ev, key: eventKey++ }];

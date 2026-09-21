@@ -20,6 +20,10 @@ pub const REFLEXION: &str = include_str!("prompts/reflexion.md");
 /// Built-in session instructions, prepended to every model run's system message.
 pub const SYSTEM: &str = include_str!("prompts/system.md");
 
+/// Default instruction for a workflow step (`{{step}}`, `{{prompt}}`,
+/// `{{previous}}`) when the step carries no custom prompt.
+pub const WORKFLOW_STEP: &str = include_str!("prompts/workflow-step.md");
+
 /// Fill `{{key}}` placeholders in a prompt template with values.
 ///
 /// Scans the template once, left to right, so inserted values are never
@@ -92,5 +96,9 @@ mod tests {
             assert!(REFLEXION.contains(&token), "missing {token}");
         }
         assert!(SYSTEM.contains("Session instructions"));
+        for key in ["step", "prompt", "previous"] {
+            let token = format!("{{{{{key}}}}}");
+            assert!(WORKFLOW_STEP.contains(&token), "missing {token}");
+        }
     }
 }
