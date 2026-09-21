@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { HostToWebview, WebviewToHost } from "./protocol";
 import * as native from "./native";
+import { buildWebviewHtml } from "./webview-html";
 
 export class PulsePanel {
   public static current: PulsePanel | undefined;
@@ -32,29 +33,12 @@ export class PulsePanel {
     this.panel = panel;
     const webview = panel.webview;
     const dist = vscode.Uri.joinPath(extensionUri, "webview-dist");
-    const indexUri = webview.asWebviewUri(vscode.Uri.joinPath(dist, "index.html"));
-    const nonce = getNonce();
-    const csp = [
-      "default-src 'none'",
-      `img-src ${webview.cspSource} data: blob:`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src 'strict-dynamic' 'nonce-${nonce}'`,
-      `font-src ${webview.cspSource}`,
-      `connect-src ${webview.cspSource}`,
-    ].join("; ");
-    webview.html = `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="${csp}" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pulse</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="${indexUri}"></script>
-  </body>
-</html>`;
+    webview.html = buildWebviewHtml({
+      cspSource: webview.cspSource,
+      scriptUri: String(webview.asWebviewUri(vscode.Uri.joinPath(dist, "index.js"))),
+      styleUri: String(webview.asWebviewUri(vscode.Uri.joinPath(dist, "index.css"))),
+      nonce: getNonce(),
+    });
     webview.onDidReceiveMessage(
       (m: WebviewToHost) => this.onMessage(m),
       undefined,
