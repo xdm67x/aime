@@ -2,7 +2,7 @@
   "name": "pulse-vscode",
   "displayName": "Pulse",
   "description": "AI agent harness in your editor — classifier-routed model tiers, agentic tools, and persistent sessions (beats).",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "publisher": "pulse",
   "license": "MIT",
   "repository": {
