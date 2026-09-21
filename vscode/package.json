@@ -19,6 +19,7 @@
     "Chat"
   ],
   "activationEvents": [],
+  "icon": "media/icon.png",
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -27,6 +28,24 @@
         "title": "Pulse: Open Harness"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pulse",
+          "title": "Pulse",
+          "icon": "media/sidebar.png"
+        }
+      ]
+    },
+    "views": {
+      "pulse": [
+        {
+          "type": "webview",
+          "id": "pulse.harness.sidebar",
+          "name": "Harness"
+        }
+      ]
+    },
     "configuration": {
       "title": "Pulse",
       "properties": {

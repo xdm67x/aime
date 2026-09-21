@@ -470,3 +470,13 @@ button:disabled {
 .workflow-row button.danger {
   color: #d33;
 }
+
+/* ---- narrow surfaces (activity-bar sidebar view) ---- */
+@media (max-width: 400px) {
+  .sidebar {
+    width: auto;
+    min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
