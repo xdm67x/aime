@@ -1,0 +1,38 @@
+# Pulse — mise dev environment.
+#
+# Client install (macOS ARM only — releases publish aarch64-apple-darwin
+# assets only; `matching` rejects any other asset, so other platforms fail):
+#   export MISE_GITHUB_TOKEN=<token with read access to this private repo>
+#   mise use -g "github:xdm67x/pulse[matching=aarch64-apple-darwin]@latest"
+
+[tools]
+rust = "1.98.1"
+node = "24"
+pnpm = "12.4.1"
+
+[tasks.test]
+description = "Run all workspace tests"
+alias = "t"
+run = "cargo test"
+
+[tasks.build]
+description = "Build the workspace"
+alias = "b"
+run = "cargo build"
+
+[tasks.run]
+description = "Run the terminal app (TUI)"
+run = "cargo run -p pulse"
+
+[tasks.lint]
+description = "Lint and format-check the website"
+alias = "l"
+run = ["pnpm --dir web lint", "pnpm --dir web format:check"]
+
+[tasks.web-build]
+description = "Build the static site"
+run = "pnpm --dir web build"
+
+[tasks.release-build]
+description = "Build the release binary for macOS ARM"
+run = "cargo build --release --target aarch64-apple-darwin -p pulse"
