@@ -172,11 +172,10 @@ fn handle_key(app: &mut App, key: KeyEvent) {
 fn handle_confirm_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Enter => {
-            if let Some(app::Popup::Confirm(_, action)) = app.popup.take() {
-                match action {
-                    app::ConfirmAction::DeleteBeat(id) => app.delete_beat(id),
-                    _ => {}
-                }
+            if let Some(app::Popup::Confirm(_, app::ConfirmAction::DeleteBeat(id))) =
+                app.popup.take()
+            {
+                app.delete_beat(id);
             }
         }
         KeyCode::Esc => app.popup = None,
@@ -396,11 +395,10 @@ fn handle_click(app: &mut App, x: u16, y: u16) {
     // Confirmation popup: click inside to confirm, outside to cancel.
     if let Some(rect) = app.rects.confirm {
         if app::UiRects::contains(rect, x, y) {
-            if let Some(app::Popup::Confirm(_, action)) = app.popup.take() {
-                match action {
-                    app::ConfirmAction::DeleteBeat(id) => app.delete_beat(id),
-                    _ => {}
-                }
+            if let Some(app::Popup::Confirm(_, app::ConfirmAction::DeleteBeat(id))) =
+                app.popup.take()
+            {
+                app.delete_beat(id);
             }
         } else {
             app.popup = None;

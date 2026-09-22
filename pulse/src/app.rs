@@ -197,125 +197,6 @@ pub fn session_name_from_prompt(prompt: &str) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn entry_row_at_finds_tool_entries() {
-        let rows = vec![
-            EntryRow {
-                start: 0,
-                height: 2,
-                tool: None,
-            },
-            EntryRow {
-                start: 2,
-                height: 2,
-                tool: Some(1),
-            },
-            EntryRow {
-                start: 4,
-                height: 6,
-                tool: Some(2),
-            },
-        ];
-        assert_eq!(entry_row_at(&rows, 0), None); // non-tool entry
-        assert_eq!(entry_row_at(&rows, 2), Some(1));
-        assert_eq!(entry_row_at(&rows, 3), Some(1)); // blank row of entry 1
-        assert_eq!(entry_row_at(&rows, 9), Some(2)); // last row of entry 2
-        assert_eq!(entry_row_at(&rows, 10), None); // past the end
-    }
-
-    #[test]
-    fn session_name_skips_mention_and_caps() {
-        assert_eq!(
-            session_name_from_prompt("@pulse fix the login flow now"),
-            "Fix the login flow"
-        );
-        assert_eq!(session_name_from_prompt("add tests"), "Add tests");
-    }
-
-    #[test]
-    fn session_name_caps_length_and_falls_back() {
-        let long = " ".repeat(0) + &"word ".repeat(10);
-        let name = session_name_from_prompt(&long);
-        assert!(name.chars().count() <= 28);
-        assert_eq!(session_name_from_prompt("@project"), "New session");
-    }
-
-    #[test]
-    fn split_mention_separates_project_and_prompt() {
-        let (m, rest) = split_mention("@pulse fix the login flow");
-        assert_eq!(m, "pulse");
-        assert_eq!(rest, "fix the login flow");
-        let (m, rest) = split_mention("@pulse");
-        assert_eq!(m, "pulse");
-        assert_eq!(rest, "");
-        let (m, rest) = split_mention("no mention here");
-        assert_eq!(m, "");
-        assert_eq!(rest, "no mention here");
-        let (m, rest) = split_mention("@");
-        assert_eq!(m, "");
-        assert_eq!(rest, "");
-    }
-
-    #[test]
-    fn remove_mention_fragment_keeps_the_prompt() {
-        // Typing "hey @pu" and picking a project keeps "hey ".
-        let mut input = "hey @pu".to_string();
-        let mut cursor = input.chars().count();
-        remove_mention_fragment(&mut input, &mut cursor);
-        assert_eq!(input, "hey ");
-        assert_eq!(cursor, 4);
-
-        // No `@`: nothing changes.
-        let mut input = "plain prompt".to_string();
-        let mut cursor = 5;
-        remove_mention_fragment(&mut input, &mut cursor);
-        assert_eq!(input, "plain prompt");
-        assert_eq!(cursor, 5);
-
-        // Multi-byte characters before the fragment keep the cursor valid.
-        let mut input = "hé @proj".to_string();
-        let mut cursor = input.chars().count();
-        remove_mention_fragment(&mut input, &mut cursor);
-        assert_eq!(input, "hé ");
-        assert_eq!(cursor, 3);
-    }
-
-    #[test]
-    fn input_editing_is_char_safe() {
-        // Regression: byte-indexed editing panicked (is_char_boundary) as soon
-        // as a multi-byte character was followed by another keypress.
-        let mut input = String::new();
-        let mut cursor = 0;
-        insert_at_cursor(&mut input, &mut cursor, 'é'); // 2 bytes
-        insert_at_cursor(&mut input, &mut cursor, 'a');
-        insert_at_cursor(&mut input, &mut cursor, 'x');
-        assert_eq!(input, "éax");
-        assert_eq!(cursor, 3);
-
-        // Cursor movement lands on character boundaries, never mid-byte.
-        move_cursor(&input, &mut cursor, -3);
-        assert_eq!(cursor, 0);
-        insert_at_cursor(&mut input, &mut cursor, 'z');
-        assert_eq!(input, "zéax");
-
-        // Backspace removes whole characters.
-        assert!(remove_before_cursor(&mut input, &mut cursor));
-        assert_eq!(input, "éax");
-        move_cursor(&input, &mut cursor, 10); // clamped to length
-        assert_eq!(cursor, 3);
-        assert!(remove_before_cursor(&mut input, &mut cursor));
-        assert_eq!(input, "éa");
-        assert_eq!(char_to_byte("éa", 1), 2);
-        while remove_before_cursor(&mut input, &mut cursor) {}
-        assert_eq!(input, "");
-        assert!(!remove_before_cursor(&mut input, &mut cursor));
-    }
-}
-
 pub struct App {
     pub mode: Mode,
     pub beats: Vec<Beat>,
@@ -848,5 +729,124 @@ impl App {
         let tx = self.event_tx.clone();
         let handle = crate::task::spawn_task(beat_id, command, vec![], tx);
         self.task_handle = Some(handle);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn entry_row_at_finds_tool_entries() {
+        let rows = vec![
+            EntryRow {
+                start: 0,
+                height: 2,
+                tool: None,
+            },
+            EntryRow {
+                start: 2,
+                height: 2,
+                tool: Some(1),
+            },
+            EntryRow {
+                start: 4,
+                height: 6,
+                tool: Some(2),
+            },
+        ];
+        assert_eq!(entry_row_at(&rows, 0), None); // non-tool entry
+        assert_eq!(entry_row_at(&rows, 2), Some(1));
+        assert_eq!(entry_row_at(&rows, 3), Some(1)); // blank row of entry 1
+        assert_eq!(entry_row_at(&rows, 9), Some(2)); // last row of entry 2
+        assert_eq!(entry_row_at(&rows, 10), None); // past the end
+    }
+
+    #[test]
+    fn session_name_skips_mention_and_caps() {
+        assert_eq!(
+            session_name_from_prompt("@pulse fix the login flow now"),
+            "Fix the login flow"
+        );
+        assert_eq!(session_name_from_prompt("add tests"), "Add tests");
+    }
+
+    #[test]
+    fn session_name_caps_length_and_falls_back() {
+        let long = " ".repeat(0) + &"word ".repeat(10);
+        let name = session_name_from_prompt(&long);
+        assert!(name.chars().count() <= 28);
+        assert_eq!(session_name_from_prompt("@project"), "New session");
+    }
+
+    #[test]
+    fn split_mention_separates_project_and_prompt() {
+        let (m, rest) = split_mention("@pulse fix the login flow");
+        assert_eq!(m, "pulse");
+        assert_eq!(rest, "fix the login flow");
+        let (m, rest) = split_mention("@pulse");
+        assert_eq!(m, "pulse");
+        assert_eq!(rest, "");
+        let (m, rest) = split_mention("no mention here");
+        assert_eq!(m, "");
+        assert_eq!(rest, "no mention here");
+        let (m, rest) = split_mention("@");
+        assert_eq!(m, "");
+        assert_eq!(rest, "");
+    }
+
+    #[test]
+    fn remove_mention_fragment_keeps_the_prompt() {
+        // Typing "hey @pu" and picking a project keeps "hey ".
+        let mut input = "hey @pu".to_string();
+        let mut cursor = input.chars().count();
+        remove_mention_fragment(&mut input, &mut cursor);
+        assert_eq!(input, "hey ");
+        assert_eq!(cursor, 4);
+
+        // No `@`: nothing changes.
+        let mut input = "plain prompt".to_string();
+        let mut cursor = 5;
+        remove_mention_fragment(&mut input, &mut cursor);
+        assert_eq!(input, "plain prompt");
+        assert_eq!(cursor, 5);
+
+        // Multi-byte characters before the fragment keep the cursor valid.
+        let mut input = "hé @proj".to_string();
+        let mut cursor = input.chars().count();
+        remove_mention_fragment(&mut input, &mut cursor);
+        assert_eq!(input, "hé ");
+        assert_eq!(cursor, 3);
+    }
+
+    #[test]
+    fn input_editing_is_char_safe() {
+        // Regression: byte-indexed editing panicked (is_char_boundary) as soon
+        // as a multi-byte character was followed by another keypress.
+        let mut input = String::new();
+        let mut cursor = 0;
+        insert_at_cursor(&mut input, &mut cursor, 'é'); // 2 bytes
+        insert_at_cursor(&mut input, &mut cursor, 'a');
+        insert_at_cursor(&mut input, &mut cursor, 'x');
+        assert_eq!(input, "éax");
+        assert_eq!(cursor, 3);
+
+        // Cursor movement lands on character boundaries, never mid-byte.
+        move_cursor(&input, &mut cursor, -3);
+        assert_eq!(cursor, 0);
+        insert_at_cursor(&mut input, &mut cursor, 'z');
+        assert_eq!(input, "zéax");
+
+        // Backspace removes whole characters.
+        assert!(remove_before_cursor(&mut input, &mut cursor));
+        assert_eq!(input, "éax");
+        move_cursor(&input, &mut cursor, 10); // clamped to length
+        assert_eq!(cursor, 3);
+        assert!(remove_before_cursor(&mut input, &mut cursor));
+        assert_eq!(input, "éa");
+        assert_eq!(char_to_byte("éa", 1), 2);
+        while remove_before_cursor(&mut input, &mut cursor) {}
+        assert_eq!(input, "");
+        assert!(!remove_before_cursor(&mut input, &mut cursor));
     }
 }
