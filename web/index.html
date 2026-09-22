@@ -17,7 +17,7 @@
                 <a class="logo" href="#"><span class="bolt">⚡</span>PULSE</a>
                 <nav>
                     <a href="#features">Features</a>
-                    <a href="#download" class="nav-cta">Download</a>
+                    <a href="#download" class="nav-cta">Install</a>
                 </nav>
             </div>
         </header>
@@ -31,9 +31,7 @@
                     always know what your models are doing and what they're costing you.
                 </p>
                 <div class="hero-actions">
-                    <a class="btn btn-primary" href="#download">
-                        <span aria-hidden="true">⬇</span> Download for macOS
-                    </a>
+                    <a class="btn btn-primary" href="#download">Install with mise</a>
                     <a class="btn btn-ghost" href="#features">Learn more</a>
                 </div>
                 <p class="platform-note">
@@ -70,20 +68,19 @@
             </section>
 
             <section id="download" class="download">
-                <h2>Download Pulse TUI</h2>
+                <h2>Install Pulse TUI</h2>
                 <p class="sub">
-                    Free to use. Grab the latest build of the Pulse terminal app for macOS — Apple
-                    silicon.
+                    Free to use. Install the latest version of the Pulse terminal app with mise —
+                    macOS, Apple silicon.
                 </p>
-                <a
-                    id="download-btn"
-                    class="btn btn-primary btn-lg"
-                    href="https://github.com/xdm67x/pulse/releases/latest"
-                    rel="noopener"
-                >
-                    <span aria-hidden="true">⬇</span> Download for macOS
-                </a>
-                <p class="hint" id="download-hint">You'll be taken to the latest GitHub release.</p>
+                <div class="install-cmd">
+                    <code id="install-cmd">mise use -g "github:xdm67x/pulse@latest"</code>
+                    <button id="copy-btn" class="btn btn-ghost" type="button">Copy</button>
+                </div>
+                <p class="hint" id="install-hint">
+                    Requires <a href="https://mise.jdx.dev/" rel="noopener">mise</a> and a GitHub
+                    token with read access (<code>MISE_GITHUB_TOKEN</code>).
+                </p>
             </section>
         </main>
 

@@ -148,11 +148,6 @@ h1 {
     color: var(--text);
 }
 
-.btn-lg {
-    font-size: 18px;
-    padding: 16px 32px;
-}
-
 .platform-note {
     margin-top: 20px;
     color: var(--muted);
@@ -230,8 +225,39 @@ h1 {
     margin-bottom: 12px;
 }
 
-.download .btn {
+.install-cmd {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
     margin-top: 8px;
+    padding: 8px 8px 8px 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    max-width: 100%;
+    text-align: left;
+}
+
+.install-cmd code {
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+    color: var(--accent);
+    overflow-wrap: anywhere;
+}
+
+.install-cmd .btn {
+    padding: 8px 16px;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.hint a {
+    color: var(--accent);
+}
+
+.hint code {
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
 }
 
 .hint {

@@ -1,31 +1,19 @@
-const RELEASES_API = 'https://api.github.com/repos/xdm67x/pulse/releases/latest'
-const DOWNLOAD_BTN = document.getElementById('download-btn') as HTMLAnchorElement
-const HINT = document.getElementById('download-hint') as HTMLElement
+const INSTALL_CMD = 'mise use -g "github:xdm67x/pulse@latest"'
+const COPY_BTN = document.getElementById('copy-btn') as HTMLButtonElement
+const HINT = document.getElementById('install-hint') as HTMLElement
 
-interface Asset {
-    name: string
-    browser_download_url: string
-}
+const DEFAULT_HINT = HINT.textContent
 
-interface Release {
-    assets: Asset[]
-}
-
-async function init(): Promise<void> {
+COPY_BTN.addEventListener('click', async () => {
     try {
-        const res = await fetch(RELEASES_API)
-        if (!res.ok) return
-        const release = (await res.json()) as Release
-        const tui = release.assets.find(
-            (a) => a.name.startsWith('pulse-') && a.name.endsWith('aarch64-apple-darwin.tar.gz'),
-        )
-        if (tui) {
-            DOWNLOAD_BTN.href = tui.browser_download_url
-            HINT.textContent = `Downloading ${tui.name} — macOS Apple silicon.`
-        }
+        await navigator.clipboard.writeText(INSTALL_CMD)
+        COPY_BTN.textContent = 'Copied!'
+        HINT.textContent = 'Command copied to clipboard.'
     } catch {
-        // Fallback: keep the releases page links.
+        HINT.textContent = `Copy and run: ${INSTALL_CMD}`
     }
-}
-
-void init()
+    setTimeout(() => {
+        COPY_BTN.textContent = 'Copy'
+        HINT.textContent = DEFAULT_HINT
+    }, 2000)
+})
