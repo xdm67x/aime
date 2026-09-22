@@ -49,22 +49,13 @@ export type {
   SkillInfo,
   TaskResult,
   UsageTotal,
-  Workflow,
-  WorkflowStep,
 } from "pulse-node";
 
 export type TaskEvent =
   | { type: "start"; model: string; tier: string }
   | { type: "delta"; text: string }
   | { type: "tool"; tool: string; arguments: string; result: string; error: boolean }
-  | { type: "step"; text: string }
-  | {
-      type: "step_start";
-      label: string;
-      model: string;
-      index: number;
-      total: number;
-    };
+  | { type: "step"; text: string };
 
 /** Live event streamed from a running task, tagged with its beat. */
 export type TaggedEvent = TaskEvent & { beatId: number };
@@ -76,18 +67,6 @@ export function runTask(
   onEvent: (ev: TaggedEvent) => void,
 ): Promise<PulseNode.TaskResult> {
   return requireNative().runTask(beatId, prompt, images, (ev) => {
-    onEvent(ev as TaggedEvent);
-  });
-}
-
-export function runWorkflowTask(
-  beatId: number,
-  workflowId: string,
-  prompt: string,
-  images: string[],
-  onEvent: (ev: TaggedEvent) => void,
-): Promise<PulseNode.TaskResult> {
-  return requireNative().runWorkflowTask(beatId, workflowId, prompt, images, (ev) => {
     onEvent(ev as TaggedEvent);
   });
 }
@@ -146,22 +125,6 @@ export function listModels(): Promise<PulseNode.Model[]> {
 
 export function listProjects(): PulseNode.Project[] {
   return requireNative().listProjects();
-}
-
-export function listWorkflows(): PulseNode.Workflow[] {
-  return requireNative().listWorkflows();
-}
-
-export function saveWorkflows(wfs: PulseNode.Workflow[]): void {
-  requireNative().saveWorkflows(wfs);
-}
-
-export function getDefaultWorkflow(): string {
-  return requireNative().getDefaultWorkflow();
-}
-
-export function setDefaultWorkflow(id: string): void {
-  requireNative().setDefaultWorkflow(id);
 }
 
 export function saveApiKey(provider: string, key: string): void {

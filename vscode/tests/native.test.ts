@@ -137,41 +137,6 @@ describe("diff", () => {
   });
 });
 
-const wf = (id: string, model = "m") => ({
-  id,
-  name: id,
-  description: "",
-  steps: [
-    { kind: "agent", model, prompt: "", label: "Implement" },
-    { kind: "ask", model, prompt: "", label: "Review" },
-  ],
-});
-
-describe("workflows", () => {
-  it("round-trips the workflow list", () => {
-    native.saveWorkflows([wf("wf-a")]);
-    expect(native.listWorkflows()).toEqual([wf("wf-a")]);
-    expect(native.getDefaultWorkflow()).toBe("");
-    native.setDefaultWorkflow("wf-a");
-    expect(native.getDefaultWorkflow()).toBe("wf-a");
-    native.setDefaultWorkflow("");
-  });
-
-  it("rejects invalid workflow lists", () => {
-    expect(() =>
-      native.saveWorkflows([
-        { ...wf("wf-b"), steps: [{ kind: "agent", model: "", prompt: "", label: "" }] },
-      ]),
-    ).toThrow(/has no model/);
-    expect(() => native.saveWorkflows([{ ...wf("wf-c"), steps: [] }])).toThrow(/has no steps/);
-    expect(() =>
-      native.saveWorkflows([
-        { ...wf("wf-d"), steps: [{ kind: "nope", model: "m", prompt: "", label: "" }] },
-      ]),
-    ).toThrow(/Unknown step kind/);
-  });
-});
-
 describe("skills", () => {
   it("discovers nothing outside a home skills dir", () => {
     expect(native.discoverSkills()).toEqual([]);

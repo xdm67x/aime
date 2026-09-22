@@ -6,10 +6,9 @@ import type {
   TaskEvent,
   TaskResult,
   UsageTotal,
-  Workflow,
 } from "./native";
 
-export type { Beat, Model, ModelConfig, Project, TaskEvent, TaskResult, UsageTotal, Workflow };
+export type { Beat, Model, ModelConfig, Project, TaskEvent, TaskResult, UsageTotal };
 
 export type WebviewToHost =
   | { kind: "ready" }
@@ -26,10 +25,6 @@ export type WebviewToHost =
   | { kind: "list-models" }
   | { kind: "get-model-config" }
   | { kind: "save-model-config"; config: ModelConfig }
-  | { kind: "list-workflows" }
-  | { kind: "save-workflows"; workflows: Workflow[] }
-  | { kind: "set-default-workflow"; id: string }
-  | { kind: "run-workflow"; beatId: number; workflowId: string; prompt: string; images: string[] }
   | { kind: "save-api-key"; provider: string; key: string }
   | { kind: "get-api-key"; provider: string }
   | { kind: "beat-usage-totals"; beatId: number }
@@ -44,7 +39,6 @@ export type HostToWebview =
   | { kind: "projects"; projects: Project[] }
   | { kind: "models"; models: Model[] }
   | { kind: "model-config"; config: ModelConfig }
-  | { kind: "workflows"; workflows: Workflow[]; defaultId: string }
   | { kind: "api-key"; provider: string; key: string | null }
   | { kind: "usage-totals"; beatId: number; totals: UsageTotal[] }
   | { kind: "folder-picked"; path: string | null }

@@ -1,253 +1,212 @@
-//! User-defined workflows: an ordered list of steps, each pinned to a specific
-//! model and optionally a custom prompt. A workflow replaces the classifier
-//! routing for the task it runs — every step is executed in order, and the
-//! models come straight from the step definitions, not the tier slots.
+//! Workflows: YAML-defined multi-step prompts stored in `~/.pulse/workflows/`.
 //!
-//! Workflows live in the `config` table as JSON under `workflows`, and the id
-//! of the workflow new beats default to under `workflow_default`.
+//! Each workflow defines a sequence of steps. A step can specify a model
+//! directly (bypassing the classifier) or fall back to the workflow-level
+//! default model, or to normal classifier routing when neither is set.
+//! Invoked from the harness via `/workflow {name}`.
 
-use crate::db;
-use serde::{Deserialize, Serialize};
+use crate::harness::{self, OnEvent, TaskResult};
+use serde::Deserialize;
 
-/// How one step executes its model.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StepKind {
-    /// Agentic loop with tools (`task_complete` to finish) — implementation work.
-    Agent,
-    /// Single streaming completion, no tools — planning, review, writing.
-    Ask,
-    /// Critique the previous step's output and produce an improved answer.
-    Reflexion,
-}
-
-impl StepKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            StepKind::Agent => "agent",
-            StepKind::Ask => "ask",
-            StepKind::Reflexion => "reflexion",
-        }
-    }
-    pub fn parse(s: &str) -> Option<StepKind> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "agent" => Some(StepKind::Agent),
-            "ask" => Some(StepKind::Ask),
-            "reflexion" => Some(StepKind::Reflexion),
-            _ => None,
-        }
-    }
-}
-
-/// One brick of a workflow: what to do, which model does it, and an optional
-/// custom prompt that replaces the built-in instruction for this step.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WorkflowStep {
-    pub kind: StepKind,
-    /// OpenRouter model id — mandatory, every brick pins its own model.
-    pub model: String,
-    /// User-defined instruction for this step. Empty → built-in default.
-    #[serde(default)]
-    pub prompt: String,
-    /// Short label shown in the UI (e.g. "Plan", "Review").
-    #[serde(default)]
-    pub label: String,
-}
-
-/// A named, ordered workflow the user composes in Settings.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Workflow {
-    /// Stable identifier (slug of the name at creation time, unique).
-    pub id: String,
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// Optional default model for all steps. Overridden by a step-level model.
+    #[serde(default)]
+    pub model: Option<String>,
     pub steps: Vec<WorkflowStep>,
 }
 
-const WORKFLOWS_KEY: &str = "workflows";
-const WORKFLOW_DEFAULT_KEY: &str = "workflow_default";
-
-fn default_workflows() -> Vec<Workflow> {
-    // The pipeline the harness shipped with, expressed as a workflow. Models
-    // stay empty: the user pins them per brick in Settings.
-    vec![Workflow {
-        id: "classify-implement-review".into(),
-        name: "Classify → implement → review".into(),
-        description: "Legacy classifier routing: route by difficulty, then \
-                      implement, then review the result."
-            .into(),
-        steps: vec![
-            WorkflowStep {
-                kind: StepKind::Agent,
-                model: String::new(),
-                prompt: String::new(),
-                label: "Route".into(),
-            },
-            WorkflowStep {
-                kind: StepKind::Reflexion,
-                model: String::new(),
-                prompt: String::new(),
-                label: "Review".into(),
-            },
-        ],
-    }]
+#[derive(Clone, Debug, Deserialize)]
+pub struct WorkflowStep {
+    pub name: String,
+    pub prompt: String,
+    /// Per-step model override. `None` → workflow default → classifier routing.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
-/// Load every saved workflow. The seeded default (an empty-model copy of the
-/// classic routing) is returned on first run, before anything is saved.
-pub fn list() -> Result<Vec<Workflow>, String> {
-    let raw = db::get_setting(WORKFLOWS_KEY)?;
-    let Some(raw) = raw else {
-        return Ok(default_workflows());
-    };
-    let workflows: Vec<Workflow> =
-        serde_json::from_str(&raw).map_err(|e| format!("Corrupted workflow settings: {e}"))?;
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct WorkflowRunResult {
+    pub steps: Vec<WorkflowStepResult>,
+    pub total_cost_usd: f64,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct WorkflowStepResult {
+    pub name: String,
+    pub answer: String,
+    /// Resolved model id, or "classifier" when normal routing was used.
+    pub model: String,
+    pub cost_usd: f64,
+}
+
+fn workflows_dir() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let dir = std::path::PathBuf::from(home)
+        .join(".pulse")
+        .join("workflows");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// Scan `~/.pulse/workflows/*.yml` and `*.yaml`, parse each into a [`Workflow`].
+pub fn discover() -> Result<Vec<Workflow>, String> {
+    let dir = workflows_dir()?;
+    let mut workflows = vec![];
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if ext != "yml" && ext != "yaml" {
+                continue;
+            }
+            let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            let wf: Workflow = serde_yaml::from_str(&content)
+                .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+            workflows.push(wf);
+        }
+    }
+    workflows.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(workflows)
 }
 
-/// Load one workflow by id.
-pub fn get(id: &str) -> Result<Option<Workflow>, String> {
-    Ok(list()?.into_iter().find(|w| w.id == id))
-}
-
-/// Check a workflow list before saving: non-empty unique ids, named, with
-/// at least one step, and every step pinned to a model.
-pub fn validate(workflows: &[Workflow]) -> Result<(), String> {
-    let mut seen = std::collections::HashSet::new();
-    for w in workflows {
-        if w.id.trim().is_empty() {
-            return Err("Workflow ids must not be empty.".into());
-        }
-        if w.name.trim().is_empty() {
-            return Err(format!("Workflow “{}” has no name.", w.id));
-        }
-        if !seen.insert(w.id.trim().to_string()) {
-            return Err(format!("Duplicate workflow id: {}.", w.id));
-        }
-        if w.steps.is_empty() {
-            return Err(format!("Workflow “{}” has no steps.", w.id));
-        }
-        for (i, s) in w.steps.iter().enumerate() {
-            if s.model.trim().is_empty() {
-                return Err(format!(
-                    "Step {} of workflow “{}” has no model.",
-                    i + 1,
-                    w.id
-                ));
-            }
+/// Load a single workflow by name (looks for `{name}.yml` then `{name}.yaml`).
+pub fn load(name: &str) -> Result<Workflow, String> {
+    let dir = workflows_dir()?;
+    for ext in &["yml", "yaml"] {
+        let path = dir.join(format!("{name}.{ext}"));
+        if path.is_file() {
+            let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            return serde_yaml::from_str(&content)
+                .map_err(|e| format!("Failed to parse {}: {e}", path.display()));
         }
     }
-    Ok(())
+    Err(format!("Workflow '{name}' not found in {}", dir.display()))
 }
 
-/// Overwrite the saved workflow list. Validates before saving.
-pub fn save_all(workflows: &[Workflow]) -> Result<(), String> {
-    validate(workflows)?;
-    db::set_setting(
-        WORKFLOWS_KEY,
-        &serde_json::to_string(workflows).map_err(|e| e.to_string())?,
-    )
-}
+/// Execute a workflow against an existing beat. Each step runs as a separate
+/// `run_task` or `run_task_with_model` call on the same `beat_id`, so prior
+/// context accumulates. The `on_event` callback receives live `TaggedEvent`s.
+pub async fn run(
+    beat_id: i64,
+    workflow: &Workflow,
+    on_event: OnEvent<'_>,
+) -> Result<WorkflowRunResult, String> {
+    let mut steps = Vec::with_capacity(workflow.steps.len());
+    let mut total_cost = 0.0;
 
-/// Id of the workflow new sessions run by default. Empty → classifier
-/// routing (no workflow).
-pub fn default_id() -> Result<String, String> {
-    Ok(db::get_setting(WORKFLOW_DEFAULT_KEY)?.unwrap_or_default())
-}
+    for step in &workflow.steps {
+        let model = step.model.as_deref().or(workflow.model.as_deref());
+        let result: TaskResult = match model {
+            Some(m) => {
+                Box::pin(harness::run_task_with_model(
+                    beat_id,
+                    step.prompt.clone(),
+                    m.to_string(),
+                    vec![],
+                    on_event,
+                ))
+                .await?
+            }
+            None => {
+                Box::pin(harness::run_task(
+                    beat_id,
+                    step.prompt.clone(),
+                    vec![],
+                    on_event,
+                ))
+                .await?
+            }
+        };
 
-/// Set the default workflow id. An empty string restores classifier routing.
-pub fn set_default_id(id: &str) -> Result<(), String> {
-    db::set_setting(WORKFLOW_DEFAULT_KEY, id.trim())
+        total_cost += result.cost_usd;
+        steps.push(WorkflowStepResult {
+            name: step.name.clone(),
+            answer: result.answer.clone(),
+            model: result.model.clone(),
+            cost_usd: result.cost_usd,
+        });
+    }
+
+    Ok(WorkflowRunResult {
+        steps,
+        total_cost_usd: total_cost,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn step(kind: StepKind, model: &str) -> WorkflowStep {
-        WorkflowStep {
-            kind,
-            model: model.into(),
-            prompt: String::new(),
-            label: String::new(),
-        }
+    #[test]
+    fn test_parse_workflow_yaml() {
+        let yaml = r#"
+name: code-review
+description: Automated code review
+model: OpenRouter - anthropic/claude-3.5-sonnet
+steps:
+  - name: analyze
+    prompt: |
+      Analyze the codebase structure.
+  - name: report
+    prompt: |
+      Generate a detailed code review report.
+    model: OpenRouter - openai/gpt-4o
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(wf.name, "code-review");
+        assert_eq!(wf.description, "Automated code review");
+        assert_eq!(
+            wf.model.as_deref(),
+            Some("OpenRouter - anthropic/claude-3.5-sonnet")
+        );
+        assert_eq!(wf.steps.len(), 2);
+        assert_eq!(wf.steps[0].name, "analyze");
+        assert!(wf.steps[0].model.is_none());
+        assert_eq!(wf.steps[1].name, "report");
+        assert_eq!(
+            wf.steps[1].model.as_deref(),
+            Some("OpenRouter - openai/gpt-4o")
+        );
     }
 
     #[test]
-    fn test_step_kind_roundtrip() {
-        for k in [StepKind::Agent, StepKind::Ask, StepKind::Reflexion] {
-            assert_eq!(StepKind::parse(k.as_str()), Some(k));
-        }
-        assert_eq!(StepKind::parse("AGENT"), Some(StepKind::Agent));
-        assert_eq!(StepKind::parse(" nope "), None);
+    fn test_parse_workflow_no_model() {
+        let yaml = r#"
+name: simple
+description: A simple workflow
+steps:
+  - name: step1
+    prompt: Do something
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(wf.name, "simple");
+        assert!(wf.model.is_none());
+        assert_eq!(wf.steps.len(), 1);
+        assert!(wf.steps[0].model.is_none());
     }
 
     #[test]
-    fn test_workflow_json_roundtrip() {
-        let w = Workflow {
-            id: "wf".into(),
-            name: "Test".into(),
-            description: String::new(),
-            steps: vec![step(StepKind::Agent, "m1"), step(StepKind::Ask, "m2")],
-        };
-        let json = serde_json::to_string(&w).unwrap();
-        assert!(json.contains("\"kind\":\"agent\""));
-        let back: Workflow = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.steps.len(), 2);
-        assert_eq!(back.steps[0].kind, StepKind::Agent);
-        assert_eq!(back.steps[1].model, "m2");
-        // missing optional fields default
-        let parsed: Workflow =
-            serde_json::from_str(r#"{"id":"w","name":"n","steps":[{"kind":"ask","model":"m"}]}"#)
-                .unwrap();
-        assert_eq!(parsed.steps[0].prompt, "");
-        assert_eq!(parsed.steps[0].label, "");
+    fn test_parse_workflow_missing_name() {
+        let yaml = r#"
+description: No name
+steps:
+  - name: x
+    prompt: y
+"#;
+        let result: Result<Workflow, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_save_all_validation() {
-        let ok = vec![Workflow {
-            id: "a".into(),
-            name: "A".into(),
-            description: String::new(),
-            steps: vec![step(StepKind::Agent, "m")],
-        }];
-        assert!(validate(&ok).is_ok());
-
-        let dupe = vec![
-            Workflow {
-                id: "a".into(),
-                name: "A".into(),
-                description: String::new(),
-                steps: vec![step(StepKind::Agent, "m")],
-            },
-            Workflow {
-                id: "a".into(),
-                name: "B".into(),
-                description: String::new(),
-                steps: vec![step(StepKind::Agent, "m")],
-            },
-        ];
-        let err = validate(&dupe).unwrap_err();
-        assert!(err.contains("Duplicate workflow id"));
-
-        let empty_model = vec![Workflow {
-            id: "c".into(),
-            name: "C".into(),
-            description: String::new(),
-            steps: vec![step(StepKind::Agent, " ")],
-        }];
-        let err = validate(&empty_model).unwrap_err();
-        assert!(err.contains("has no model"));
-
-        let no_steps = vec![Workflow {
-            id: "d".into(),
-            name: "D".into(),
-            description: String::new(),
-            steps: vec![],
-        }];
-        let err = validate(&no_steps).unwrap_err();
-        assert!(err.contains("has no steps"));
+    fn test_discover_empty_dir() {
+        // discover() creates the dir if missing and returns empty when no files exist.
+        // The ~/.pulse/workflows dir may have files from other tests; just check it
+        // doesn't panic and returns a vec.
+        let result = discover();
+        assert!(result.is_ok());
     }
 }

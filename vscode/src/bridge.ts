@@ -54,11 +54,6 @@ export class PulseBridge {
           this.send({ kind: "beats", beats: native.listBeats() });
           this.send({ kind: "projects", projects: native.listProjects() });
           this.send({ kind: "model-config", config: native.getModelConfig() });
-          this.send({
-            kind: "workflows",
-            workflows: native.listWorkflows(),
-            defaultId: native.getDefaultWorkflow(),
-          });
           try {
             this.send({ kind: "models", models: await native.listModels() });
           } catch (e) {
@@ -116,33 +111,6 @@ export class PulseBridge {
           native.saveModelConfig(msg.config);
           this.send({ kind: "toast", text: "Model slots saved" });
           return;
-        case "list-workflows":
-          this.send({
-            kind: "workflows",
-            workflows: native.listWorkflows(),
-            defaultId: native.getDefaultWorkflow(),
-          });
-          return;
-        case "save-workflows":
-          native.saveWorkflows(msg.workflows);
-          this.send({
-            kind: "workflows",
-            workflows: native.listWorkflows(),
-            defaultId: native.getDefaultWorkflow(),
-          });
-          this.send({ kind: "toast", text: "Workflows saved" });
-          return;
-        case "set-default-workflow":
-          native.setDefaultWorkflow(msg.id);
-          this.send({
-            kind: "workflows",
-            workflows: native.listWorkflows(),
-            defaultId: native.getDefaultWorkflow(),
-          });
-          return;
-        case "run-workflow":
-          this.startWorkflow(msg.beatId, msg.workflowId, msg.prompt, msg.images);
-          return;
         case "save-api-key":
           native.saveApiKey(msg.provider, msg.key);
           this.send({ kind: "toast", text: "API key saved" });
@@ -180,31 +148,6 @@ export class PulseBridge {
     this.running.add(beatId);
     native
       .runTask(beatId, prompt, images, (ev) => {
-        const { beatId: _tag, ...event } = ev;
-        this.send({ kind: "task-event", beatId: ev.beatId, ev: event });
-      })
-      .then((result) => {
-        this.send({ kind: "task-result", beatId, result });
-        this.send({ kind: "beats", beats: native.listBeats() });
-        this.send({ kind: "usage-totals", beatId, totals: native.usageTotals(beatId) });
-      })
-      .catch((e: unknown) => {
-        this.send({ kind: "task-error", beatId, error: String(e) });
-      })
-      .finally(() => {
-        this.running.delete(beatId);
-      });
-  }
-
-  private startWorkflow(
-    beatId: number,
-    workflowId: string,
-    prompt: string,
-    images: string[],
-  ): void {
-    this.running.add(beatId);
-    native
-      .runWorkflowTask(beatId, workflowId, prompt, images, (ev) => {
         const { beatId: _tag, ...event } = ev;
         this.send({ kind: "task-event", beatId: ev.beatId, ev: event });
       })

@@ -12,7 +12,7 @@ use napi::{
     Error,
 };
 use napi_derive::napi;
-use pulse_core::{beats, config, diff, harness, projects, providers, skills, tools, workflows};
+use pulse_core::{beats, config, diff, harness, projects, providers, skills, tools};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -152,97 +152,6 @@ pub fn usage_totals(beat_id: i64) -> Result<Vec<UsageTotal>> {
             })
             .collect()
     })
-}
-
-/* ---- workflows ---- */
-
-#[napi(object)]
-pub struct WorkflowStep {
-    /// "agent" | "ask" | "reflexion"
-    pub kind: String,
-    pub model: String,
-    /// Custom prompt for this step. Empty → built-in default.
-    pub prompt: String,
-    /// Short label shown in the UI (e.g. "Plan").
-    pub label: String,
-}
-
-#[napi(object)]
-pub struct Workflow {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub steps: Vec<WorkflowStep>,
-}
-
-fn to_step(s: workflows::WorkflowStep) -> WorkflowStep {
-    WorkflowStep {
-        kind: s.kind.as_str().into(),
-        model: s.model,
-        prompt: s.prompt,
-        label: s.label,
-    }
-}
-
-fn from_step(s: WorkflowStep) -> std::result::Result<workflows::WorkflowStep, String> {
-    let kind = workflows::StepKind::parse(&s.kind)
-        .ok_or_else(|| format!("Unknown step kind: {}", s.kind))?;
-    Ok(workflows::WorkflowStep {
-        kind,
-        model: s.model,
-        prompt: s.prompt,
-        label: s.label,
-    })
-}
-
-fn to_workflow(w: workflows::Workflow) -> Workflow {
-    Workflow {
-        id: w.id,
-        name: w.name,
-        description: w.description,
-        steps: w.steps.into_iter().map(to_step).collect(),
-    }
-}
-
-fn from_workflow(w: Workflow) -> std::result::Result<workflows::Workflow, String> {
-    Ok(workflows::Workflow {
-        id: w.id,
-        name: w.name,
-        description: w.description,
-        steps: w
-            .steps
-            .into_iter()
-            .map(from_step)
-            .collect::<std::result::Result<Vec<_>, String>>()?,
-    })
-}
-
-#[napi]
-pub fn list_workflows() -> Result<Vec<Workflow>> {
-    workflows::list()
-        .map_err(to_err)
-        .map(|v| v.into_iter().map(to_workflow).collect())
-}
-
-#[napi]
-pub fn save_workflows(wfs: Vec<Workflow>) -> Result<()> {
-    let parsed: Vec<_> = wfs
-        .into_iter()
-        .map(from_workflow)
-        .collect::<std::result::Result<Vec<_>, String>>()
-        .map_err(to_err)?;
-    workflows::save_all(&parsed).map_err(to_err)
-}
-
-/// Id of the workflow new sessions run by default. Empty → classifier routing.
-#[napi]
-pub fn get_default_workflow() -> Result<String> {
-    workflows::default_id().map_err(to_err)
-}
-
-#[napi]
-pub fn set_default_workflow(id: String) -> Result<()> {
-    workflows::set_default_id(&id).map_err(to_err)
 }
 
 /* ---- projects ---- */
@@ -468,29 +377,6 @@ pub async fn run_task(
         .map_err(to_err)
 }
 
-/// Run one explicit workflow by id on the beat, replacing classifier routing.
-#[napi]
-pub async fn run_workflow_task(
-    beat_id: i64,
-    workflow_id: String,
-    prompt: String,
-    images: Vec<String>,
-    #[napi(ts_arg_type = "(ev: { beatId: number } & Record<string, unknown>) => void")]
-    on_event: Arc<ThreadsafeFunction<serde_json::Value, ()>>,
-) -> Result<TaskResult> {
-    let mut sink = {
-        let on_event = on_event.clone();
-        move |ev: harness::TaggedEvent| {
-            let tagged = tagged_event_json(&ev);
-            on_event.call(Ok(tagged), ThreadsafeFunctionCallMode::NonBlocking);
-        }
-    };
-    harness::run_workflow_task(beat_id, workflow_id, prompt, images, &mut sink)
-        .await
-        .map(to_task_result)
-        .map_err(to_err)
-}
-
 /// Serialize a `TaggedEvent` for the JS callback, flattening the event fields
 /// into one camelCase object (napi objects are camelCase, task events are not).
 fn tagged_event_json(ev: &harness::TaggedEvent) -> serde_json::Value {
@@ -501,7 +387,6 @@ fn tagged_event_json(ev: &harness::TaggedEvent) -> serde_json::Value {
         harness::TaskEvent::Delta { .. } => "delta",
         harness::TaskEvent::Tool { .. } => "tool",
         harness::TaskEvent::Step { .. } => "step",
-        harness::TaskEvent::StepStart { .. } => "step_start",
       },
     });
     match &ev.ev {
@@ -525,17 +410,6 @@ fn tagged_event_json(ev: &harness::TaggedEvent) -> serde_json::Value {
         }
         harness::TaskEvent::Step { text } => {
             tagged["text"] = json!(text);
-        }
-        harness::TaskEvent::StepStart {
-            label,
-            model,
-            index,
-            total,
-        } => {
-            tagged["label"] = json!(label);
-            tagged["model"] = json!(model);
-            tagged["index"] = json!(index);
-            tagged["total"] = json!(total);
         }
     }
     tagged
