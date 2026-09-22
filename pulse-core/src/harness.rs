@@ -79,8 +79,8 @@ pub enum TaskEvent {
     Step { text: String },
 }
 
-/// Live-event sink for a running task: the UI layer (Tauri, a CLI) supplies
-/// one callback that receives every tagged `TaggedEvent` as the task
+/// Live-event sink for a running task: the UI layer (the TUI, a future CLI)
+/// supplies one callback that receives every tagged `TaggedEvent` as the task
 /// progresses.
 pub type OnEvent<'a> = &'a mut (dyn FnMut(TaggedEvent) + Send);
 type RawEvent<'a> = &'a mut (dyn FnMut(TaskEvent) + Send);

@@ -63,7 +63,7 @@ pub enum Popup {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
+#[allow(dead_code, clippy::enum_variant_names)]
 pub enum ConfirmAction {
     DeleteBeat(i64),
     DeleteProject(i64),
@@ -195,10 +195,8 @@ impl App {
                                 error,
                             });
                         }
-                        "system" => {
-                            if !content.trim().is_empty() {
-                                self.transcript.push(TranscriptLine::System(content));
-                            }
+                        "system" if !content.trim().is_empty() => {
+                            self.transcript.push(TranscriptLine::System(content));
                         }
                         _ => {}
                     }

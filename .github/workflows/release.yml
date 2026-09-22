@@ -13,77 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
-        with:
-          package_json_file: ui/package.json
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: ui/pnpm-lock.yaml
-
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2.9.2
-      - run: pnpm --dir ui install --frozen-lockfile
 
-      - uses: tauri-apps/tauri-action@v1.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Pulse ${{ github.ref_name }}"
-          releaseBody: "See the assets to download this version and install."
-          releaseDraft: false
-          prerelease: false
+      - run: cargo build --release --target aarch64-apple-darwin -p pulse-tui
 
-  vscode:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            target: darwin-arm64
-          - os: ubuntu-latest
-            target: linux-x64
-          - os: windows-latest
-            target: win32-x64
-    steps:
-      - uses: actions/checkout@v7
+      - name: Package
+        run: |
+          tar -czf pulse-tui-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz \
+            -C target/aarch64-apple-darwin/release pulse-tui
 
-      - uses: pnpm/action-setup@v6
-        with:
-          package_json_file: vscode/package.json
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2.9.2
-      - run: pnpm install --frozen-lockfile
-      # the extension runs the pulse-core harness through the pulse-node addon
-      - run: pnpm --dir pulse-node run build
-      - run: bash vscode/scripts/package-vsix.sh ${{ matrix.target }} ${{ github.ref_name }}
-      - uses: actions/upload-artifact@v7
-        with:
-          name: vsix-${{ matrix.target }}
-          path: vscode/*.vsix
-          if-no-files-found: error
-
-  vscode-release:
-    needs: [release, vscode]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: vsix-*
-          merge-multiple: true
-          path: dist
       - uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
-          files: dist/*.vsix
+          name: "Pulse ${{ github.ref_name }}"
+          body: "See the assets to download this version and install."
+          files: pulse-tui-*.tar.gz

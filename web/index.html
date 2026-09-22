@@ -6,7 +6,7 @@
         <title>Pulse — Feel the model's heartbeat</title>
         <meta
             name="description"
-            content="Pulse is a desktop companion that lets you feel your AI model's heartbeat. Track beats, costs and tokens in real time."
+            content="Pulse is a terminal companion that lets you feel your AI model's heartbeat. Track beats, costs and tokens in real time."
         />
         <link rel="stylesheet" href="/src/style.css" />
     </head>
@@ -17,7 +17,6 @@
                 <a class="logo" href="#"><span class="bolt">⚡</span>PULSE</a>
                 <nav>
                     <a href="#features">Features</a>
-                    <a href="#vscode">VS Code</a>
                     <a href="#download" class="nav-cta">Download</a>
                 </nav>
             </div>
@@ -25,7 +24,7 @@
 
         <main>
             <section class="hero">
-                <p class="eyebrow">Desktop companion for AI workflows</p>
+                <p class="eyebrow">Terminal companion for AI workflows</p>
                 <h1>Feel the model's <span class="grad">heartbeat</span>.</h1>
                 <p class="sub">
                     Pulse keeps a live pulse on your AI sessions — beats, tokens and costs — so you
@@ -39,7 +38,7 @@
                 </div>
                 <p class="platform-note">
                     <span class="apple" aria-hidden="true"></span>
-                    Desktop app for macOS — VS Code extension on macOS, Linux &amp; Windows.
+                    Pulse TUI — a terminal app for macOS, Apple silicon.
                 </p>
             </section>
 
@@ -70,62 +69,11 @@
                 </div>
             </section>
 
-            <section id="vscode" class="vscode">
-                <p class="eyebrow">Same harness, inside your editor</p>
-                <h2>Pulse for VS Code</h2>
-                <p class="sub">
-                    The full Pulse harness as a VS Code extension — classifier-routed model tiers,
-                    agentic tools and persistent beats, right next to your code. Shares the same
-                    sessions and settings as the desktop app.
-                </p>
-                <ul class="vsix-list">
-                    <li class="card">
-                        <div class="icon i-cyan">💻</div>
-                        <h3>macOS — Apple silicon</h3>
-                        <a
-                            id="vsix-darwin-arm64"
-                            class="btn btn-ghost"
-                            href="https://github.com/xdm67x/pulse/releases/latest"
-                            rel="noopener"
-                        >
-                            <span aria-hidden="true">⬇</span> .vsix
-                        </a>
-                    </li>
-                    <li class="card">
-                        <div class="icon i-green">💻</div>
-                        <h3>Linux — x64</h3>
-                        <a
-                            id="vsix-linux-x64"
-                            class="btn btn-ghost"
-                            href="https://github.com/xdm67x/pulse/releases/latest"
-                            rel="noopener"
-                        >
-                            <span aria-hidden="true">⬇</span> .vsix
-                        </a>
-                    </li>
-                    <li class="card">
-                        <div class="icon i-orange">💻</div>
-                        <h3>Windows — x64</h3>
-                        <a
-                            id="vsix-win32-x64"
-                            class="btn btn-ghost"
-                            href="https://github.com/xdm67x/pulse/releases/latest"
-                            rel="noopener"
-                        >
-                            <span aria-hidden="true">⬇</span> .vsix
-                        </a>
-                    </li>
-                </ul>
-                <p class="hint" id="vscode-hint">
-                    Install from the Extensions view → “Install from VSIX…”.
-                </p>
-            </section>
-
             <section id="download" class="download">
-                <h2>Download Pulse</h2>
+                <h2>Download Pulse TUI</h2>
                 <p class="sub">
-                    Free to use. Grab the latest build for macOS — Apple silicon and Intel are both
-                    supported.
+                    Free to use. Grab the latest build of the Pulse terminal app for macOS — Apple
+                    silicon.
                 </p>
                 <a
                     id="download-btn"
@@ -140,7 +88,7 @@
         </main>
 
         <footer>
-            <p>Pulse — built with Tauri. © 2026</p>
+            <p>Pulse — built with Rust. © 2026</p>
         </footer>
 
         <script type="module" src="/src/main.ts"></script>

@@ -63,11 +63,7 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
             } else {
                 " "
             };
-            let name = if b.archived {
-                format!(" {} {}", prefix, b.name)
-            } else {
-                format!(" {} {}", prefix, b.name)
-            };
+            let name = format!(" {} {}", prefix, b.name);
             let style = if Some(b.id) == app.active_beat_id {
                 Style::default()
                     .fg(Color::Yellow)

@@ -20,7 +20,7 @@ const FIELD_LABELS: [&str; 7] = [
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
-    let main_h = if area.height > 1 { area.height - 1 } else { 0 };
+    let main_h = area.height.saturating_sub(1);
     let main = Rect::new(area.x, area.y, area.width, main_h);
 
     let chunks = Layout::default()

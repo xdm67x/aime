@@ -592,7 +592,7 @@ pub async fn list_models() -> Result<Vec<Model>, String> {
 
 /// Background loop refreshing the models cache every 15 minutes. Returns a
 /// future that never completes — the host runtime decides how to drive it
-/// (`tauri::async_runtime::spawn`, `tokio::spawn`, …).
+/// (`tokio::spawn`, …).
 pub async fn refresh_loop() {
     loop {
         tokio::time::sleep(MODELS_TTL).await;

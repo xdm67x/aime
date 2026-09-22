@@ -73,9 +73,8 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
     if app.error.is_some() {
-        match key.code {
-            KeyCode::Esc => app.error = None,
-            _ => {}
+        if key.code == KeyCode::Esc {
+            app.error = None;
         }
         return;
     }
