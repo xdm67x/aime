@@ -32,15 +32,25 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         main
     };
 
-    // Split chat into transcript + input bar
-    let input_h = 3;
+    // Split chat into transcript + (queued prompts +) input bar
+    let queue_h = app.queue.len().min(5) as u16;
+    let input_h = 3 + queue_h;
     let chat_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(input_h)])
         .split(chat);
 
     render_transcript(frame, app, chat_chunks[0]);
-    render_input(frame, app, chat_chunks[1]);
+    if queue_h > 0 {
+        let bottom = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(queue_h), Constraint::Length(3)])
+            .split(chat_chunks[1]);
+        render_queue(frame, app, bottom[0]);
+        render_input(frame, app, bottom[1]);
+    } else {
+        render_input(frame, app, chat_chunks[1]);
+    }
 
     // Floating overlays
     render_at_popup(frame, app, chat_chunks[1]);
@@ -53,7 +63,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 fn render_sidebar(frame: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" Sessions (j/k, Enter, click) ")
+        .title(" Sessions (Up/Down, Enter, click) ")
         .border_style(Style::default().fg(Color::Cyan));
 
     let items: Vec<ListItem> = app
@@ -251,23 +261,42 @@ fn build_entry_lines(
     (out, is_tool)
 }
 
+/// Queued prompts waiting for the running task to finish, dimmed rows above
+/// the input bar.
+fn render_queue(frame: &mut Frame, app: &App, area: Rect) {
+    let max = area.width.saturating_sub(11) as usize;
+    let lines: Vec<Line> = app
+        .queue
+        .iter()
+        .take(area.height as usize)
+        .map(|p| {
+            Line::styled(
+                format!("  queued: {}", truncate_str(p, max)),
+                Style::default().fg(Color::DarkGray),
+            )
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
 fn render_input(frame: &mut Frame, app: &App, area: Rect) {
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
+    if app.task_running {
+        block = block.title(" running — Enter queues ");
+    }
     let inner_w = area.width.saturating_sub(2) as usize;
-    let prompt_text = if app.task_running {
-        "(task running — Ctrl+K to cancel)".to_string()
-    } else {
-        let mut shown = format!("> {}", app.input);
-        if app.input_cursor >= app.input.chars().count() {
-            shown.push('_');
-        }
-        // Show the tail of the input when it overflows the bar.
-        let chars: Vec<char> = shown.chars().collect();
-        let start = chars.len().saturating_sub(inner_w);
-        chars[start..].iter().collect()
-    };
+    // The input stays visible while a task runs, so queued prompts can be
+    // typed and edited.
+    let mut shown = format!("> {}", app.input);
+    if app.input_cursor >= app.input.chars().count() {
+        shown.push('_');
+    }
+    // Show the tail of the input when it overflows the bar.
+    let chars: Vec<char> = shown.chars().collect();
+    let start = chars.len().saturating_sub(inner_w);
+    let prompt_text: String = chars[start..].iter().collect();
     let p = Paragraph::new(prompt_text)
         .block(block)
         .alignment(Alignment::Left);

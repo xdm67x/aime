@@ -112,6 +112,12 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // The confirmation popup captures all keys
+    if app.popup.is_some() {
+        handle_confirm_key(app, key);
+        return;
+    }
+
     // Input popup (add local project / clone GitHub repo) captures all keys
     if app.input_popup.is_some() {
         handle_input_popup_key(app, key);
@@ -160,6 +166,21 @@ fn handle_key(app: &mut App, key: KeyEvent) {
     match app.mode {
         Mode::Chat => handle_chat_key(app, key),
         Mode::Sessions => handle_sessions_key(app, key),
+    }
+}
+
+fn handle_confirm_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Enter => {
+            if let Some(app::Popup::Confirm(_, action)) = app.popup.take() {
+                match action {
+                    app::ConfirmAction::DeleteBeat(id) => app.delete_beat(id),
+                    _ => {}
+                }
+            }
+        }
+        KeyCode::Esc => app.popup = None,
+        _ => {}
     }
 }
 
@@ -220,8 +241,8 @@ fn handle_at_popup_key(app: &mut App, key: KeyEvent) {
             // Close the popup, keep the raw `@` text in the input.
             app.at_popup = None;
         }
-        KeyCode::Char('j') | KeyCode::Down => app.at_move(1),
-        KeyCode::Char('k') | KeyCode::Up => app.at_move(-1),
+        KeyCode::Down => app.at_move(1),
+        KeyCode::Up => app.at_move(-1),
         KeyCode::Enter => select_at_entry(app),
         KeyCode::Backspace => {
             if app::remove_before_cursor(&mut app.input, &mut app.input_cursor) {
@@ -257,6 +278,9 @@ fn select_at_entry(app: &mut App) {
         None => return,
     };
     app.at_popup = None;
+    // Keep whatever the user typed around the `@` fragment: the prompt stays
+    // in the input and the session is only created when it is sent.
+    app::remove_mention_fragment(&mut app.input, &mut app.input_cursor);
 
     match selection {
         Selection::Project(id, name) => app.attach_pending_project(id, &name),
@@ -317,8 +341,8 @@ fn handle_input_popup_key(app: &mut App, key: KeyEvent) {
 
 fn handle_sessions_key(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down => app.session_move(1),
-        KeyCode::Char('k') | KeyCode::Up => app.session_move(-1),
+        KeyCode::Down => app.session_move(1),
+        KeyCode::Up => app.session_move(-1),
         KeyCode::Right => {
             app.mode = Mode::Chat;
         }
@@ -335,10 +359,14 @@ fn handle_sessions_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('d') => {
             if let Some(beat) = app.beats.get(app.session_selected()) {
-                if beat.archived {
-                    let _ = pulse_core::beats::delete_beat(beat.id);
-                    app.refresh_beats();
-                    app.session_move(-1);
+                if Some(beat.id) == app.active_beat_id && app.task_running {
+                    app.error =
+                        Some("Cancel the running task before deleting this session.".into());
+                } else {
+                    app.popup = Some(app::Popup::Confirm(
+                        format!("Delete \"{}\"? Its worktree is removed too.", beat.name),
+                        app::ConfirmAction::DeleteBeat(beat.id),
+                    ));
                 }
             }
         }
@@ -363,6 +391,20 @@ fn handle_click(app: &mut App, x: u16, y: u16) {
     }
     if app.error.is_some() {
         app.error = None;
+        return;
+    }
+    // Confirmation popup: click inside to confirm, outside to cancel.
+    if let Some(rect) = app.rects.confirm {
+        if app::UiRects::contains(rect, x, y) {
+            if let Some(app::Popup::Confirm(_, action)) = app.popup.take() {
+                match action {
+                    app::ConfirmAction::DeleteBeat(id) => app.delete_beat(id),
+                    _ => {}
+                }
+            }
+        } else {
+            app.popup = None;
+        }
         return;
     }
     if let Some(rect) = app.rects.input_popup {

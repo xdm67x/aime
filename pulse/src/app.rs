@@ -92,6 +92,8 @@ pub struct UiRects {
     pub at_popup: Option<Rect>,
     /// Rect of the input popup, when open.
     pub input_popup: Option<Rect>,
+    /// Rect of the confirmation popup, when open.
+    pub confirm: Option<Rect>,
 }
 
 impl UiRects {
@@ -149,6 +151,18 @@ pub fn split_mention(input: &str) -> (&str, &str) {
             None => (rest, ""),
         },
         None => ("", input),
+    }
+}
+
+/// Remove the `@mention` fragment being completed: from the last `@` before
+/// the cursor up to the cursor. Any text typed before the `@` is kept, so a
+/// prompt survives picking a project from the `@` popup.
+pub fn remove_mention_fragment(input: &mut String, cursor: &mut usize) {
+    let end = char_to_byte(input, *cursor);
+    if let Some(pos) = input[..end].rfind('@') {
+        let new_cursor = input[..pos].chars().count();
+        input.replace_range(pos..end, "");
+        *cursor = new_cursor;
     }
 }
 
@@ -247,6 +261,30 @@ mod tests {
     }
 
     #[test]
+    fn remove_mention_fragment_keeps_the_prompt() {
+        // Typing "hey @pu" and picking a project keeps "hey ".
+        let mut input = "hey @pu".to_string();
+        let mut cursor = input.chars().count();
+        remove_mention_fragment(&mut input, &mut cursor);
+        assert_eq!(input, "hey ");
+        assert_eq!(cursor, 4);
+
+        // No `@`: nothing changes.
+        let mut input = "plain prompt".to_string();
+        let mut cursor = 5;
+        remove_mention_fragment(&mut input, &mut cursor);
+        assert_eq!(input, "plain prompt");
+        assert_eq!(cursor, 5);
+
+        // Multi-byte characters before the fragment keep the cursor valid.
+        let mut input = "hé @proj".to_string();
+        let mut cursor = input.chars().count();
+        remove_mention_fragment(&mut input, &mut cursor);
+        assert_eq!(input, "hé ");
+        assert_eq!(cursor, 3);
+    }
+
+    #[test]
     fn input_editing_is_char_safe() {
         // Regression: byte-indexed editing panicked (is_char_boundary) as soon
         // as a multi-byte character was followed by another keypress.
@@ -312,6 +350,9 @@ pub struct App {
     /// Project picked via `@`: the session (and its worktree) is only created
     /// when the next prompt is sent. Holds (project id, project name).
     pub pending_project: Option<(i64, String)>,
+    /// Prompts typed while a task was running. The first one is sent when
+    /// the current task finishes.
+    pub queue: Vec<String>,
     /// Keep the transcript pinned to the bottom as new output arrives.
     pub follow: bool,
     pub current_model: String,
@@ -353,6 +394,7 @@ impl App {
             entry_rows: Vec::new(),
             rects: UiRects::default(),
             pending_project: None,
+            queue: Vec::new(),
             follow: true,
             current_model: String::new(),
             current_tier: String::new(),
@@ -464,15 +506,14 @@ impl App {
         }
     }
 
-    /// Attach a project picked via `@`: no session is created yet. The beat
+    /// Attach a project picked via `@`: no session is created yet, and the
+    /// input is preserved (callers strip only the `@` fragment). The beat
     /// (with its git worktree) is created when the next prompt is sent, and
     /// the prompt text names the session. The project itself is never part of
     /// the prompt — the session runs inside the project directory.
     pub fn attach_pending_project(&mut self, project_id: i64, name: &str) {
         self.pending_project = Some((project_id, name.to_string()));
         self.mode = Mode::Chat;
-        self.input.clear();
-        self.input_cursor = 0;
         self.transcript.push(TranscriptLine::System(format!(
             "→ next prompt starts a new session in {name}"
         )));
@@ -560,6 +601,28 @@ impl App {
         }
     }
 
+    /// Delete a beat and its worktree. When the active session is deleted,
+    /// fall back to the first remaining one (or an empty view if none).
+    pub fn delete_beat(&mut self, beat_id: i64) {
+        match pulse_core::beats::delete_beat(beat_id) {
+            Ok(_) => {
+                if self.active_beat_id == Some(beat_id) {
+                    self.active_beat_id = None;
+                    self.pending_project = None;
+                    self.transcript.clear();
+                }
+                self.refresh_beats();
+                if self.active_beat_id.is_none() {
+                    if let Some(beat) = self.beats.first() {
+                        self.switch_beat(beat.id);
+                    }
+                }
+                self.session_select(self.session_selected());
+            }
+            Err(e) => self.error = Some(e),
+        }
+    }
+
     /// Drain all pending task events from the channel and append to transcript.
     pub fn drain_events(&mut self) {
         while let Ok(ev) = self.event_rx.try_recv() {
@@ -604,7 +667,8 @@ impl App {
         }
     }
 
-    /// Mark the task as finished and refresh state.
+    /// Mark the task as finished and refresh state. If prompts were queued
+    /// while it ran, send the first one.
     pub fn task_finished(&mut self) {
         self.task_running = false;
         self.task_handle = None;
@@ -612,6 +676,10 @@ impl App {
             self.load_transcript(id);
         }
         self.refresh_beats();
+        if let Some(prompt) = self.queue.first().cloned() {
+            self.queue.remove(0);
+            self.dispatch_prompt(&prompt);
+        }
     }
 
     /// Cancel the running task.
@@ -638,7 +706,8 @@ impl App {
             .map(|p| (p.id, p.name.clone()))
     }
 
-    /// Send the current input as a prompt.
+    /// Send the current input as a prompt. While a task runs, plain prompts
+    /// are queued instead and sent when it finishes.
     pub fn send_input(&mut self) {
         let input = self.input.trim().to_string();
         if input.is_empty() {
@@ -653,22 +722,31 @@ impl App {
             return;
         }
 
-        // Errors below keep the prompt in the input bar so it is not lost.
         if self.task_running {
-            self.error = Some("A task is already running. Cancel with Ctrl+K.".into());
+            self.queue.push(input);
+            self.input.clear();
+            self.input_cursor = 0;
             return;
         }
 
+        self.dispatch_prompt(&input);
+    }
+
+    /// Process a prompt that is ready to run now: resolve a leading `@project`
+    /// mention, create the pending project session if any, and start the task.
+    fn dispatch_prompt(&mut self, input: &str) {
         // A leading `@project` mention binds the next session to that project
         // and is never part of the prompt sent to the model.
-        let mut prompt = input;
-        let (mention, rest) = split_mention(&prompt);
+        let mut prompt = input.to_string();
+        let (mention, rest) = split_mention(input);
         if !mention.is_empty() {
             match self.find_project_by_mention(mention) {
                 Some((id, name)) => {
                     if rest.is_empty() {
                         // Just the mention: attach and wait for the prompt.
                         self.attach_pending_project(id, &name);
+                        self.input.clear();
+                        self.input_cursor = 0;
                         return;
                     }
                     prompt = rest.to_string();
@@ -676,6 +754,7 @@ impl App {
                 }
                 None => {
                     self.error = Some(format!("Unknown project: @{mention}"));
+                    self.restore_input(input);
                     return;
                 }
             }
@@ -706,6 +785,7 @@ impl App {
             Some(id) => id,
             None => {
                 self.error = Some("No active session. Create one with /new {name}.".into());
+                self.restore_input(input);
                 return;
             }
         };
@@ -717,6 +797,16 @@ impl App {
         let tx = self.event_tx.clone();
         let handle = crate::task::spawn_task(beat_id, prompt, vec![], tx);
         self.task_handle = Some(handle);
+    }
+
+    /// Put a prompt that failed to dispatch back into the input bar so it is
+    /// not lost. No-op when the bar already holds text (the interactive path
+    /// keeps it there).
+    fn restore_input(&mut self, text: &str) {
+        if self.input.is_empty() {
+            self.input = text.to_string();
+            self.input_cursor = self.input.chars().count();
+        }
     }
 
     fn handle_slash_command(&mut self, input: &str) {

@@ -180,8 +180,8 @@ pub fn get_beat_messages(id: i64) -> Result<Vec<serde_json::Value>, String> {
     serde_json::from_str(&current).map_err(|e| e.to_string())
 }
 
-/// Permanently delete an archived beat and its usage rows. Its worktree, if
-/// any, is dropped from disk.
+/// Permanently delete a beat and its usage rows. Its worktree, if any, is
+/// dropped from disk.
 pub fn delete_beat(id: i64) -> Result<String, String> {
     let conn = db::open()?;
     // fetch the worktree + parent repo before the row is gone
@@ -198,13 +198,10 @@ pub fn delete_beat(id: i64) -> Result<String, String> {
     conn.execute("DELETE FROM beat_usage WHERE beat_id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     let n = conn
-        .execute(
-            "DELETE FROM beats WHERE id = ?1 AND archived = 1",
-            params![id],
-        )
+        .execute("DELETE FROM beats WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     if n == 0 {
-        return Err("Beat not found or not archived".into());
+        return Err("Beat not found".into());
     }
     Ok(match worktree {
         Some(wt) => projects::remove_worktree(&wt, project.as_deref()),
