@@ -15,7 +15,7 @@ model tier, an agentic tool loop executes work, and results persist as "beats".
 ## Layout
 
 - `pulse-core/` — the agent harness as a pure Rust library. **No UI
-  dependencies.** Consumed today by the TUI app (`pulse-tui`); designed to also
+  dependencies.** Consumed today by the `pulse` binary; designed to also
   back other runtimes. Progress flows through a caller-supplied `harness::OnEvent`
   callback, so any runtime can drive it.
   - `harness.rs` — agentic loop, tier routing (`Tier::High/Base/Low`), task
@@ -36,39 +36,46 @@ model tier, an agentic tool loop executes work, and results persist as "beats".
   - `beats.rs` / `projects.rs` — beat + project persistence. Beats born from a
     project get their own git worktree under `~/.pulse/worktrees/<beat>-<name>`.
   - `workflows.rs` — the workflow engine.
-- `pulse-tui/` — the terminal app: ratatui + crossterm on top of `pulse-core`.
-  - `src/main.rs` — terminal entry point, event loop, key dispatch.
+- `pulse/` — the terminal app: a CLI + TUI hybrid on top of `pulse-core`.
+  - `src/main.rs` — entry point: CLI subcommand dispatch, TUI event loop, key
+    dispatch.
+  - `src/cli.rs` — CLI subcommands: `pulse settings list|set` (API keys,
+    model slots) and `pulse workflow list|new|edit`. These run headless,
+    before any terminal setup.
   - `src/app.rs` — application state and modes; `src/task.rs` runs harness
     tasks; `src/event.rs` bridges input events.
-  - `src/ui/` — views: chat, projects, sessions, settings, workflows.
+  - `src/ui/` — the chat view: transcript + input bar, with the sessions
+    sidebar (opened with Left/Tab) and the `@` project picker popup.
 - `web/` — static GitHub Pages site (project landing page + release
   downloads). Deployed under `/pulse/`, so `vite.config.ts` uses `base: './'`.
 
 ## Toolchains & commands
 
-- Rust workspace (`Cargo.toml`): members are `pulse-core` and `pulse-tui`.
+- Rust workspace (`Cargo.toml`): members are `pulse-core` and `pulse`.
 - JS: pnpm 12.4.1, only for `web/` (which has its own workspace + lockfile).
 - Frontend lint/format: **oxlint** and **oxfmt** (not eslint/prettier).
 
 ```sh
 cargo test                      # all workspace tests
 cargo build                     # workspace
-cargo run -p pulse-tui          # run the terminal app
+cargo run -p pulse              # run the terminal app (TUI)
+cargo run -p pulse -- settings list
+cargo run -p pulse -- workflow list
 pnpm --dir web lint && pnpm --dir web format:check
 pnpm --dir web build            # static site (base: './')
 ```
 
-Releases: `.github/workflows/release.yml` builds the `pulse-tui` binary for
+Releases: `.github/workflows/release.yml` builds the `pulse` binary for
 `aarch64-apple-darwin` on tag push, packages it as
-`pulse-tui-<tag>-aarch64-apple-darwin.tar.gz`, and attaches it to the GitHub
+`pulse-<tag>-aarch64-apple-darwin.tar.gz`, and attaches it to the GitHub
 release. The website's download button links to the latest such asset — keep
 the naming in sync when changing it.
 
 ## Conventions & gotchas
 
 - **Keep `pulse-core` UI-agnostic.** New agent features (providers, tools,
-  skills, routing, persistence, workflows) go in `pulse-core`; `pulse-tui`
-  only adds terminal views and input handling.
+  skills, routing, persistence, workflows) go in `pulse-core`; `pulse`
+  only adds the CLI, terminal views, and input handling.
 - **Errors** are `Result<_, String>` throughout the core — follow that
   pattern; don't introduce a custom error type piecemeal.
 - **Async**: core uses tokio (`rt`, `time`, `process`, `macros` features).

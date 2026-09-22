@@ -17,8 +17,7 @@ async function init(): Promise<void> {
         if (!res.ok) return
         const release = (await res.json()) as Release
         const tui = release.assets.find(
-            (a) =>
-                a.name.startsWith('pulse-tui-') && a.name.endsWith('aarch64-apple-darwin.tar.gz'),
+            (a) => a.name.startsWith('pulse-') && a.name.endsWith('aarch64-apple-darwin.tar.gz'),
         )
         if (tui) {
             DOWNLOAD_BTN.href = tui.browser_download_url

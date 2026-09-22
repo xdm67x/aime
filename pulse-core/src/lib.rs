@@ -1,7 +1,7 @@
 //! Pulse core: the agent harness — provider dispatch, tiered model routing,
 //! agentic tool loop, beats/projects persistence — with no UI dependencies.
 //!
-//! Consumed today by the TUI app (`pulse-tui`); designed to also back other
+//! Consumed today by the `pulse` binary; designed to also back other
 //! runtimes. Live progress flows through a caller-supplied [`harness::OnEvent`]
 //! callback instead of a UI handle, so any runtime can drive it.
 

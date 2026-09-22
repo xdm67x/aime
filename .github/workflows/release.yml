@@ -18,16 +18,16 @@ jobs:
           targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2.9.2
 
-      - run: cargo build --release --target aarch64-apple-darwin -p pulse-tui
+      - run: cargo build --release --target aarch64-apple-darwin -p pulse
 
       - name: Package
         run: |
-          tar -czf pulse-tui-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz \
-            -C target/aarch64-apple-darwin/release pulse-tui
+          tar -czf pulse-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz \
+            -C target/aarch64-apple-darwin/release pulse
 
       - uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           name: "Pulse ${{ github.ref_name }}"
           body: "See the assets to download this version and install."
-          files: pulse-tui-*.tar.gz
+          files: pulse-*.tar.gz
