@@ -1,14 +1,14 @@
 //! Render dispatch: routes to the active view.
 
 pub mod chat;
-pub mod sessions;
 pub mod projects;
+pub mod sessions;
 pub mod settings;
 pub mod workflows;
 
-use ratatui::Frame;
-use ratatui::style::Stylize;
 use crate::app::App;
+use ratatui::style::Stylize;
+use ratatui::Frame;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     match app.mode {

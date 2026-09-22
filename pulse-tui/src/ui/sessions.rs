@@ -23,7 +23,11 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         .beats
         .iter()
         .map(|b| {
-            let prefix = if Some(b.id) == app.active_beat_id { ">" } else { " " };
+            let prefix = if Some(b.id) == app.active_beat_id {
+                ">"
+            } else {
+                " "
+            };
             let archived = if b.archived { " [archived]" } else { "" };
             let cost = if b.cost_usd > 0.0 {
                 format!("  ${:.4}", b.cost_usd)
@@ -35,7 +39,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 Span::styled(
                     b.name.clone(),
                     if Some(b.id) == app.active_beat_id {
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
                     },
@@ -48,7 +54,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         .collect();
 
     let mut state = ListState::default();
-    state.select(Some(app.selected_session.min(app.beats.len().saturating_sub(1))));
+    state.select(Some(
+        app.selected_session.min(app.beats.len().saturating_sub(1)),
+    ));
     frame.render_stateful_widget(List::new(items).block(block), main, &mut state);
 
     let status = Rect::new(area.x, area.y + main_h, area.width, 1);

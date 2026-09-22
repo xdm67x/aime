@@ -5,8 +5,8 @@ use pulse_core::config::ModelConfig;
 use pulse_core::harness::{TaggedEvent, TaskEvent};
 use pulse_core::projects::Project;
 use pulse_core::workflows::Workflow;
-use tokio::task::JoinHandle;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -175,22 +175,17 @@ impl App {
                     match role {
                         "user" => {
                             if !content.trim().is_empty() {
-                                self.transcript
-                                    .push(TranscriptLine::User(content));
+                                self.transcript.push(TranscriptLine::User(content));
                             }
                         }
                         "assistant" => {
                             if !content.trim().is_empty() {
-                                self.transcript
-                                    .push(TranscriptLine::Assistant(content));
+                                self.transcript.push(TranscriptLine::Assistant(content));
                             }
                         }
                         "tool" => {
                             let tool = m["model"].as_str().unwrap_or("tool").to_string();
-                            let arguments = m["arguments"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string();
+                            let arguments = m["arguments"].as_str().unwrap_or("").to_string();
                             let result = content.clone();
                             let error = m["error"].as_bool().unwrap_or(false);
                             self.transcript.push(TranscriptLine::Tool {
@@ -202,8 +197,7 @@ impl App {
                         }
                         "system" => {
                             if !content.trim().is_empty() {
-                                self.transcript
-                                    .push(TranscriptLine::System(content));
+                                self.transcript.push(TranscriptLine::System(content));
                             }
                         }
                         _ => {}
@@ -211,8 +205,9 @@ impl App {
                 }
             }
             Err(e) => {
-                self.transcript
-                    .push(TranscriptLine::Error(format!("Failed to load messages: {e}")));
+                self.transcript.push(TranscriptLine::Error(format!(
+                    "Failed to load messages: {e}"
+                )));
             }
         }
     }
@@ -252,18 +247,14 @@ impl App {
             TaskEvent::Start { model, tier } => {
                 self.current_model = model.clone();
                 self.current_tier = tier.clone();
-                self.transcript.push(TranscriptLine::System(format!(
-                    "→ {model} ({tier})"
-                )));
+                self.transcript
+                    .push(TranscriptLine::System(format!("→ {model} ({tier})")));
             }
             TaskEvent::Delta { text } => {
-                if let Some(TranscriptLine::Assistant(existing)) =
-                    self.transcript.last_mut()
-                {
+                if let Some(TranscriptLine::Assistant(existing)) = self.transcript.last_mut() {
                     existing.push_str(&text);
                 } else {
-                    self.transcript
-                        .push(TranscriptLine::Assistant(text));
+                    self.transcript.push(TranscriptLine::Assistant(text));
                 }
             }
             TaskEvent::Tool {

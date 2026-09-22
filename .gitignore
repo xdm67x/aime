@@ -1,1 +1,7 @@
-/target
+target
+node_modules
+dist
+out
+webview-dist
+*.vsix
+vscode/native/

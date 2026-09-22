@@ -342,9 +342,7 @@ fn handle_workflows_key(app: &mut App, key: KeyEvent) {
                     let path = format!("{dir}/{}.{}", wf.name, ext);
                     if std::path::Path::new(&path).is_file() {
                         let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".into());
-                        let _ = std::process::Command::new(&editor)
-                            .arg(&path)
-                            .status();
+                        let _ = std::process::Command::new(&editor).arg(&path).status();
                         app.refresh_workflows();
                         break;
                     }
@@ -368,9 +366,7 @@ fn handle_workflows_key(app: &mut App, key: KeyEvent) {
             );
             if std::fs::write(&path, template).is_ok() {
                 let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".into());
-                let _ = std::process::Command::new(&editor)
-                    .arg(&path)
-                    .status();
+                let _ = std::process::Command::new(&editor).arg(&path).status();
                 app.refresh_workflows();
             }
         }

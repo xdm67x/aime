@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "lib": ["ES2022"],
+    "types": ["node", "vscode"],
+    "noEmit": false,
+    "outDir": "out",
+    "jsx": "preserve",
+    "sourceMap": true,
+  },
+  "include": ["src"],
+  "exclude": ["src/webview"],
+}

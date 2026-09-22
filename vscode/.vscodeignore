@@ -1,0 +1,13 @@
+node_modules
+samples
+tests
+src
+harness*.ts
+tsconfig*.json
+vite.webview.config.ts
+.oxlintrc.json
+pnpm-lock.yaml
+scripts
+native/pulse-node/index.d.ts
+webview-dist/*.map
+out/*.map

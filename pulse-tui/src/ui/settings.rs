@@ -25,7 +25,11 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     let chunks = Layout::default()
         .direction(ratatui::layout::Direction::Vertical)
-        .constraints([Constraint::Length(6), Constraint::Length(1), Constraint::Min(1)])
+        .constraints([
+            Constraint::Length(6),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
         .split(main);
 
     // API Keys section
@@ -116,10 +120,7 @@ fn render_models(app: &App) -> Vec<Line<'_>> {
     lines.push(Line::raw(""));
     lines.push(Line::from(vec![
         Span::raw("  "),
-        Span::styled(
-            "LiteLLM Base URL:  ",
-            Style::default().fg(Color::White),
-        ),
+        Span::styled("LiteLLM Base URL:  ", Style::default().fg(Color::White)),
         Span::styled(base_url, Style::default().fg(Color::Green)),
     ]));
     lines

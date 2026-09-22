@@ -26,11 +26,11 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             let prefix = if i == app.selected_project { ">" } else { " " };
             ListItem::new(Line::from(vec![
                 Span::raw(format!("{prefix} ")),
+                Span::styled(format!("[{}] ", i + 1), Style::default().fg(Color::Cyan)),
                 Span::styled(
-                    format!("[{}] ", i + 1),
-                    Style::default().fg(Color::Cyan),
+                    p.name.clone(),
+                    Style::default().add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(p.name.clone(), Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(format!("  {}", p.path)),
                 Span::styled(
                     format!("  ({})", p.source),
@@ -42,13 +42,18 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     if items.is_empty() {
         frame.render_widget(
-            Paragraph::new(Line::raw("  No projects. Press 'a' to add a local directory."))
-                .block(block),
+            Paragraph::new(Line::raw(
+                "  No projects. Press 'a' to add a local directory.",
+            ))
+            .block(block),
             main,
         );
     } else {
         let mut state = ListState::default();
-        state.select(Some(app.selected_project.min(app.projects.len().saturating_sub(1))));
+        state.select(Some(
+            app.selected_project
+                .min(app.projects.len().saturating_sub(1)),
+        ));
         frame.render_stateful_widget(List::new(items).block(block), main, &mut state);
     }
 

@@ -45,7 +45,9 @@ pub struct WorkflowStepResult {
 
 fn workflows_dir() -> Result<std::path::PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let dir = std::path::PathBuf::from(home).join(".pulse").join("workflows");
+    let dir = std::path::PathBuf::from(home)
+        .join(".pulse")
+        .join("workflows");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
@@ -110,8 +112,13 @@ pub async fn run(
                 .await?
             }
             None => {
-                Box::pin(harness::run_task(beat_id, step.prompt.clone(), vec![], on_event))
-                    .await?
+                Box::pin(harness::run_task(
+                    beat_id,
+                    step.prompt.clone(),
+                    vec![],
+                    on_event,
+                ))
+                .await?
             }
         };
 

@@ -774,7 +774,11 @@ async fn run_task_with_model_inner(
 
     // Use the classifier for summarization when available (cheap); fall back
     // to the specified model when no classifier is configured.
-    let summarizer = if classifier.is_empty() { &model } else { classifier };
+    let summarizer = if classifier.is_empty() {
+        &model
+    } else {
+        classifier
+    };
     let mut summarizer_usage = ModelUsage::new(summarizer);
     let brief = summarize_history(beat_id, summarizer, &mut summarizer_usage).await?;
 
@@ -821,8 +825,10 @@ async fn run_task_with_model_inner(
     let usage = main_usage.clone();
     let cost_usd = usage.cost_usd;
     let context_percent = context_percent(&model, main_usage.prompt_tokens).await;
-    let context_full =
-        ctx_full || context_percent.map(|p| p >= CONTEXT_LIMIT_PERCENT).unwrap_or(false);
+    let context_full = ctx_full
+        || context_percent
+            .map(|p| p >= CONTEXT_LIMIT_PERCENT)
+            .unwrap_or(false);
     if context_full {
         beats::set_context_full(beat_id, true)?;
     }

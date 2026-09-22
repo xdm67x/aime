@@ -69,7 +69,9 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
                 format!(" {} {}", prefix, b.name)
             };
             let style = if Some(b.id) == app.active_beat_id {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else if b.archived {
                 Style::default().fg(Color::DarkGray)
             } else {
@@ -81,12 +83,10 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
 
     if app.mode == Mode::Sessions {
         let mut state = ListState::default();
-        state.select(Some(app.selected_session.min(app.beats.len().saturating_sub(1))));
-        frame.render_stateful_widget(
-            List::new(items).block(block),
-            area,
-            &mut state,
-        );
+        state.select(Some(
+            app.selected_session.min(app.beats.len().saturating_sub(1)),
+        ));
+        frame.render_stateful_widget(List::new(items).block(block), area, &mut state);
     } else {
         frame.render_widget(List::new(items).block(block), area);
     }
@@ -115,7 +115,9 @@ fn build_transcript_lines(app: &App) -> Vec<Line<'_>> {
                 out.push(Line::from(vec![
                     Span::styled(
                         "User: ".to_string(),
-                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw(text),
                 ]));
@@ -125,7 +127,9 @@ fn build_transcript_lines(app: &App) -> Vec<Line<'_>> {
                 out.push(Line::from(vec![
                     Span::styled(
                         "Assistant: ".to_string(),
-                        Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Blue)
+                            .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw(text),
                 ]));
@@ -140,10 +144,7 @@ fn build_transcript_lines(app: &App) -> Vec<Line<'_>> {
                 let indicator = if *error { "[!]" } else { "   " };
                 let color = if *error { Color::Red } else { Color::Magenta };
                 out.push(Line::from(vec![
-                    Span::styled(
-                        format!("  {indicator} "),
-                        Style::default().fg(color),
-                    ),
+                    Span::styled(format!("  {indicator} "), Style::default().fg(color)),
                     Span::styled(format!("[{tool}] "), Style::default().fg(color)),
                     Span::styled(arguments.clone(), Style::default().fg(Color::DarkGray)),
                 ]));
@@ -202,12 +203,12 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_status(frame: &mut Frame, app: &App, area: Rect) {
     let mode_str = app.mode.label();
-    let mut parts = vec![
-        Span::styled(
-            format!(" [{mode_str}] "),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        ),
-    ];
+    let mut parts = vec![Span::styled(
+        format!(" [{mode_str}] "),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )];
     if !app.current_model.is_empty() {
         parts.push(Span::raw(format!(
             "Model: {} ({})  ",
