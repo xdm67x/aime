@@ -260,7 +260,7 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect) {
         "(task running — Ctrl+K to cancel)".to_string()
     } else {
         let mut shown = format!("> {}", app.input);
-        if app.input_cursor >= app.input.len() {
+        if app.input_cursor >= app.input.chars().count() {
             shown.push('_');
         }
         // Show the tail of the input when it overflows the bar.

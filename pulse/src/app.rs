@@ -107,6 +107,51 @@ pub fn entry_row_at(rows: &[EntryRow], content_row: usize) -> Option<usize> {
         .and_then(|r| r.tool)
 }
 
+/// Byte offset of the `char_idx`-th character of `s`, or the end of `s` when
+/// `char_idx` is past the last character.
+pub fn char_to_byte(s: &str, char_idx: usize) -> usize {
+    match s.char_indices().nth(char_idx) {
+        Some((i, _)) => i,
+        None => s.len(),
+    }
+}
+
+/// Insert `c` at the cursor (a character index) and step the cursor forward.
+pub fn insert_at_cursor(input: &mut String, cursor: &mut usize, c: char) {
+    let pos = char_to_byte(input, *cursor);
+    input.insert(pos, c);
+    *cursor += 1;
+}
+
+/// Delete the character before the cursor. Returns false at the very start.
+pub fn remove_before_cursor(input: &mut String, cursor: &mut usize) -> bool {
+    if *cursor == 0 {
+        return false;
+    }
+    *cursor -= 1;
+    let pos = char_to_byte(input, *cursor);
+    input.remove(pos);
+    true
+}
+
+/// Move the cursor by `delta` characters, clamped to the input length.
+pub fn move_cursor(input: &str, cursor: &mut usize, delta: i32) {
+    let len = input.chars().count() as i32;
+    *cursor = (*cursor as i32 + delta).clamp(0, len.max(0)) as usize;
+}
+
+/// Split a leading `@mention` off a prompt: returns (mention, rest). The
+/// mention is empty when the input does not start with `@word`.
+pub fn split_mention(input: &str) -> (&str, &str) {
+    match input.strip_prefix('@') {
+        Some(rest) => match rest.find(char::is_whitespace) {
+            Some(i) => (&rest[..i], rest[i..].trim_start()),
+            None => (rest, ""),
+        },
+        None => ("", input),
+    }
+}
+
 /// Derive a short session name from a prompt: drop any leading `@project`
 /// mentions, then keep the first few words.
 pub fn session_name_from_prompt(prompt: &str) -> String {
@@ -184,6 +229,53 @@ mod tests {
         assert!(name.chars().count() <= 28);
         assert_eq!(session_name_from_prompt("@project"), "New session");
     }
+
+    #[test]
+    fn split_mention_separates_project_and_prompt() {
+        let (m, rest) = split_mention("@pulse fix the login flow");
+        assert_eq!(m, "pulse");
+        assert_eq!(rest, "fix the login flow");
+        let (m, rest) = split_mention("@pulse");
+        assert_eq!(m, "pulse");
+        assert_eq!(rest, "");
+        let (m, rest) = split_mention("no mention here");
+        assert_eq!(m, "");
+        assert_eq!(rest, "no mention here");
+        let (m, rest) = split_mention("@");
+        assert_eq!(m, "");
+        assert_eq!(rest, "");
+    }
+
+    #[test]
+    fn input_editing_is_char_safe() {
+        // Regression: byte-indexed editing panicked (is_char_boundary) as soon
+        // as a multi-byte character was followed by another keypress.
+        let mut input = String::new();
+        let mut cursor = 0;
+        insert_at_cursor(&mut input, &mut cursor, 'é'); // 2 bytes
+        insert_at_cursor(&mut input, &mut cursor, 'a');
+        insert_at_cursor(&mut input, &mut cursor, 'x');
+        assert_eq!(input, "éax");
+        assert_eq!(cursor, 3);
+
+        // Cursor movement lands on character boundaries, never mid-byte.
+        move_cursor(&input, &mut cursor, -3);
+        assert_eq!(cursor, 0);
+        insert_at_cursor(&mut input, &mut cursor, 'z');
+        assert_eq!(input, "zéax");
+
+        // Backspace removes whole characters.
+        assert!(remove_before_cursor(&mut input, &mut cursor));
+        assert_eq!(input, "éax");
+        move_cursor(&input, &mut cursor, 10); // clamped to length
+        assert_eq!(cursor, 3);
+        assert!(remove_before_cursor(&mut input, &mut cursor));
+        assert_eq!(input, "éa");
+        assert_eq!(char_to_byte("éa", 1), 2);
+        while remove_before_cursor(&mut input, &mut cursor) {}
+        assert_eq!(input, "");
+        assert!(!remove_before_cursor(&mut input, &mut cursor));
+    }
 }
 
 pub struct App {
@@ -192,6 +284,8 @@ pub struct App {
     pub active_beat_id: Option<i64>,
     pub transcript: Vec<TranscriptLine>,
     pub input: String,
+    /// Cursor position in the input, counted in characters (not bytes) so
+    /// multi-byte characters can be typed and edited safely.
     pub input_cursor: usize,
     pub projects: Vec<Project>,
     pub running: bool,
@@ -341,7 +435,7 @@ impl App {
             Some(AtPopup::Projects { selected, .. }) => *selected,
             None => return,
         };
-        let upto = &self.input[..self.input_cursor];
+        let upto = &self.input[..char_to_byte(&self.input, self.input_cursor)];
         let Some(pos) = upto.rfind('@') else {
             self.at_popup = None;
             return;
@@ -527,6 +621,23 @@ impl App {
         }
     }
 
+    /// Resolve a typed `@mention` to a project: exact (case-insensitive)
+    /// name match, else a unique prefix match. Returns (id, name).
+    pub fn find_project_by_mention(&self, mention: &str) -> Option<(i64, String)> {
+        let m = mention.to_lowercase();
+        if let Some(p) = self.projects.iter().find(|p| p.name.to_lowercase() == m) {
+            return Some((p.id, p.name.clone()));
+        }
+        let mut prefix = self
+            .projects
+            .iter()
+            .filter(|p| p.name.to_lowercase().starts_with(&m));
+        prefix
+            .next()
+            .filter(|_| prefix.next().is_none())
+            .map(|p| (p.id, p.name.clone()))
+    }
+
     /// Send the current input as a prompt.
     pub fn send_input(&mut self) {
         let input = self.input.trim().to_string();
@@ -548,10 +659,32 @@ impl App {
             return;
         }
 
-        // A project picked via `@`: create the session (and its worktree) now,
-        // named after the prompt.
+        // A leading `@project` mention binds the next session to that project
+        // and is never part of the prompt sent to the model.
+        let mut prompt = input;
+        let (mention, rest) = split_mention(&prompt);
+        if !mention.is_empty() {
+            match self.find_project_by_mention(mention) {
+                Some((id, name)) => {
+                    if rest.is_empty() {
+                        // Just the mention: attach and wait for the prompt.
+                        self.attach_pending_project(id, &name);
+                        return;
+                    }
+                    prompt = rest.to_string();
+                    self.pending_project = Some((id, name));
+                }
+                None => {
+                    self.error = Some(format!("Unknown project: @{mention}"));
+                    return;
+                }
+            }
+        }
+
+        // A project picked via `@` (popup or mention): create the session (and
+        // its worktree) now, named after the prompt.
         if let Some((project_id, _)) = self.pending_project.take() {
-            let name = session_name_from_prompt(&input);
+            let name = session_name_from_prompt(&prompt);
             match pulse_core::beats::create_beat(&name, "", Some(project_id)) {
                 Ok(beat) => {
                     self.refresh_beats();
@@ -579,10 +712,10 @@ impl App {
 
         self.input.clear();
         self.input_cursor = 0;
-        self.transcript.push(TranscriptLine::User(input.clone()));
+        self.transcript.push(TranscriptLine::User(prompt.clone()));
         self.task_running = true;
         let tx = self.event_tx.clone();
-        let handle = crate::task::spawn_task(beat_id, input, vec![], tx);
+        let handle = crate::task::spawn_task(beat_id, prompt, vec![], tx);
         self.task_handle = Some(handle);
     }
 

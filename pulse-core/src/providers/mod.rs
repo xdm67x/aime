@@ -223,14 +223,14 @@ async fn send_chat(p: &dyn Provider, req: &ChatRequest, key: &str) -> Result<Cha
     for (k, v) in headers {
         r = r.header(k, v);
     }
-    eprintln!(
+    crate::log::log(format!(
         "[{}] chat request: model={} messages={} json_mode={} tools={}",
         p.name(),
         body["model"],
         body["messages"].as_array().map_or(0, Vec::len),
         body.get("response_format").is_some(),
         body.get("tools").is_some(),
-    );
+    ));
     let resp = r
         .json(&body)
         .send()
@@ -245,13 +245,13 @@ async fn send_chat(p: &dyn Provider, req: &ChatRequest, key: &str) -> Result<Cha
         .map_err(|e| format!("{}: reading response failed: {e}", p.name()))?;
     if !status.is_success() {
         let snippet = text.get(..2000).unwrap_or(&text);
-        eprintln!("[{}] HTTP {status}: {snippet}", p.name());
+        crate::log::log(format!("[{}] HTTP {status}: {snippet}", p.name()));
         return Err(format!(
             "{} request failed: HTTP {status}: {snippet}",
             p.name()
         ));
     }
-    eprintln!("[{}] HTTP {status}", p.name());
+    crate::log::log(format!("[{}] HTTP {status}", p.name()));
     let resp: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("Unexpected {} response: {text} ({e})", p.name()))?;
     let message = &resp["choices"][0]["message"];
@@ -353,13 +353,13 @@ async fn send_chat_stream(
     let (url, headers, mut body) = p.chat_setup(req, key);
     body["stream"] = serde_json::json!(true);
     body["stream_options"] = serde_json::json!({ "include_usage": true });
-    eprintln!(
+    crate::log::log(format!(
         "[{}] stream request: model={} messages={} tools={}",
         p.name(),
         body["model"],
         body["messages"].as_array().map_or(0, Vec::len),
         body.get("tools").is_some(),
-    );
+    ));
     let mut r = reqwest::Client::new().post(url);
     for (k, v) in headers {
         r = r.header(k, v);
@@ -376,7 +376,7 @@ async fn send_chat_stream(
             .await
             .map_err(|e| format!("{}: reading response failed: {e}", p.name()))?;
         let snippet = text.get(..2000).unwrap_or(&text);
-        eprintln!("[{}] HTTP {status}: {snippet}", p.name());
+        crate::log::log(format!("[{}] HTTP {status}: {snippet}", p.name()));
         return Err(format!(
             "{} request failed: HTTP {status}: {snippet}",
             p.name()
@@ -437,13 +437,13 @@ async fn send_chat_stream(
         }
     }
     let tool_calls: Vec<ToolCall> = calls.into_values().collect();
-    eprintln!(
+    crate::log::log(format!(
         "[{}] stream done: {} chars, {} tool calls, finish_reason={:?}",
         p.name(),
         content.len(),
         tool_calls.len(),
         finish_reason,
-    );
+    ));
     Ok(ChatResult {
         content,
         tool_calls,
@@ -532,7 +532,7 @@ pub(crate) async fn fetch_model_list(
         .map_err(|e| format!("{name}: reading response failed: {e}"))?;
     if !status.is_success() {
         let snippet = text.get(..2000).unwrap_or(&text);
-        eprintln!("[{name} models] HTTP {status}: {snippet}");
+        crate::log::log(format!("[{name} models] HTTP {status}: {snippet}"));
         return Err(format!("{name} request failed: HTTP {status}: {snippet}"));
     }
     let resp: ModelsResp = serde_json::from_str(&text)
@@ -567,7 +567,7 @@ async fn fetch_models() -> Result<Vec<Model>, String> {
         return Err(errors.join("; "));
     }
     for e in &errors {
-        eprintln!("models fetch failed: {e}");
+        crate::log::log(format!("models fetch failed: {e}"));
     }
     models.sort_by(|a, b| a.id.cmp(&b.id));
     *MODELS_CACHE.lock().unwrap() = Some((Instant::now(), models.clone()));
@@ -597,7 +597,7 @@ pub async fn refresh_loop() {
     loop {
         tokio::time::sleep(MODELS_TTL).await;
         if let Err(e) = fetch_models().await {
-            eprintln!("models refresh failed: {e}");
+            crate::log::log(format!("models refresh failed: {e}"));
         }
     }
 }

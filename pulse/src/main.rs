@@ -169,22 +169,17 @@ fn handle_chat_key(app: &mut App, key: KeyEvent) {
             app.send_input();
         }
         KeyCode::Backspace => {
-            if app.input_cursor > 0 {
-                app.input_cursor -= 1;
-                app.input.remove(app.input_cursor);
-            }
+            app::remove_before_cursor(&mut app.input, &mut app.input_cursor);
         }
         KeyCode::Left => {
             if app.input_cursor == 0 {
                 app.mode = Mode::Sessions;
             } else {
-                app.input_cursor -= 1;
+                app::move_cursor(&app.input, &mut app.input_cursor, -1);
             }
         }
         KeyCode::Right => {
-            if app.input_cursor < app.input.len() {
-                app.input_cursor += 1;
-            }
+            app::move_cursor(&app.input, &mut app.input_cursor, 1);
         }
         KeyCode::Up => {
             app.follow = false;
@@ -205,8 +200,7 @@ fn handle_chat_key(app: &mut App, key: KeyEvent) {
             app.refresh_beats();
         }
         KeyCode::Char('@') => {
-            app.input.insert(app.input_cursor, '@');
-            app.input_cursor += 1;
+            app::insert_at_cursor(&mut app.input, &mut app.input_cursor, '@');
             app.refresh_projects();
             app.at_popup = Some(app::AtPopup::Projects {
                 filter: String::new(),
@@ -214,8 +208,7 @@ fn handle_chat_key(app: &mut App, key: KeyEvent) {
             });
         }
         KeyCode::Char(c) => {
-            app.input.insert(app.input_cursor, c);
-            app.input_cursor += 1;
+            app::insert_at_cursor(&mut app.input, &mut app.input_cursor, c);
         }
         _ => {}
     }
@@ -231,15 +224,12 @@ fn handle_at_popup_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('k') | KeyCode::Up => app.at_move(-1),
         KeyCode::Enter => select_at_entry(app),
         KeyCode::Backspace => {
-            if app.input_cursor > 0 {
-                app.input_cursor -= 1;
-                app.input.remove(app.input_cursor);
+            if app::remove_before_cursor(&mut app.input, &mut app.input_cursor) {
                 app.update_at_popup();
             }
         }
         KeyCode::Char(c) => {
-            app.input.insert(app.input_cursor, c);
-            app.input_cursor += 1;
+            app::insert_at_cursor(&mut app.input, &mut app.input_cursor, c);
             app.update_at_popup();
         }
         _ => {}

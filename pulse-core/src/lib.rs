@@ -10,6 +10,7 @@ pub mod config;
 pub mod db;
 pub mod diff;
 pub mod harness;
+pub mod log;
 pub mod projects;
 pub mod prompts;
 pub mod providers;

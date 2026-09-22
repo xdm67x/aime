@@ -419,7 +419,7 @@ async fn agentic_loop(
         // model may legitimately be done) and flag the session as full: only
         // `/compact` can continue it afterwards.
         if context_limit_reached(model, last_prompt_tokens).await {
-            eprintln!("agentic loop hit the session context limit; forcing a final answer");
+            crate::log::log("agentic loop hit the session context limit; forcing a final answer");
             let r = {
                 let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
                 chat_completion_stream(
@@ -651,7 +651,7 @@ async fn record_usage(beat_id: i64, mu: &mut ModelUsage, u: &Usage) {
     )
     .await
     {
-        eprintln!("usage record failed: {e}");
+        crate::log::log(format!("usage record failed: {e}"));
     }
 }
 
