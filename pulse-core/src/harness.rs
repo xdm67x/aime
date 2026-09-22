@@ -724,6 +724,145 @@ pub async fn run_task(
         .await
 }
 
+/// Run a single prompt on a beat with a specific model, bypassing the
+/// classifier. Always uses the agentic loop (tools enabled), like the base
+/// tier path in `run_task_inner`. Used by the workflow engine for steps that
+/// specify a model.
+pub async fn run_task_with_model(
+    beat_id: i64,
+    prompt: String,
+    model: String,
+    images: Vec<String>,
+    on_event: OnEvent<'_>,
+) -> Result<TaskResult, String> {
+    clear_cancel(beat_id);
+    let mut sink = |ev: TaskEvent| {
+        on_event(TaggedEvent { beat_id, ev });
+    };
+    BEAT.scope(
+        beat_id,
+        run_task_with_model_inner(beat_id, prompt, model, images, &mut sink),
+    )
+    .await
+}
+
+/// Inner implementation of `run_task_with_model`: runs the agentic loop with a
+/// specified model, skipping classifier routing and reflexion. Reuses the same
+/// setup (system message, prior turns, working dir, persistence) as the base
+/// tier path in `run_task_inner`.
+async fn run_task_with_model_inner(
+    beat_id: i64,
+    prompt: String,
+    model: String,
+    images: Vec<String>,
+    on_event: RawEvent<'_>,
+) -> Result<TaskResult, String> {
+    if session_is_full(beat_id)? && !prompt.trim().eq_ignore_ascii_case("/compact") {
+        return Err(
+            "Session context limit reached. Run /compact to open a new session \
+             holding only a summary of this one."
+                .to_string(),
+        );
+    }
+    if prompt.trim().eq_ignore_ascii_case("/compact") {
+        return compact_session(beat_id, on_event).await;
+    }
+
+    let cfg = config::ModelConfig::load()?;
+    let classifier = cfg.classifier.trim();
+    let session = session_prompt();
+
+    // Use the classifier for summarization when available (cheap); fall back
+    // to the specified model when no classifier is configured.
+    let summarizer = if classifier.is_empty() { &model } else { classifier };
+    let mut summarizer_usage = ModelUsage::new(summarizer);
+    let brief = summarize_history(beat_id, summarizer, &mut summarizer_usage).await?;
+
+    let mut main_usage = ModelUsage::new(&model);
+    on_event(TaskEvent::Start {
+        model: model.to_string(),
+        tier: "workflow".to_string(),
+    });
+
+    let discovered = skills::discover();
+    let tool_defs = tools::definitions(&discovered);
+    let mut entries = vec![user_entry(&prompt, &images)];
+
+    // Agentic loop (base-tier path: tools, no reflexion)
+    let wd = projects::working_dir(beat_id)?;
+    let mut note = prompts::AGENT_NOTE.to_string();
+    if let Some(dir) = &wd {
+        if !note.is_empty() {
+            note.push_str("\n\n");
+        }
+        note.push_str(&format!(
+            "Working directory: {dir}. Relative tool paths resolve against it, \
+             bash runs inside it.\n\n"
+        ));
+        if let Some(agents) = projects::agents_note(dir) {
+            note.push_str(&agents);
+        }
+    }
+    let sys = system_message(&brief, &session, &note);
+    let mut msgs = vec![sys];
+    msgs.extend(prior_turns(beat_id)?);
+    msgs.push(user_message(&prompt, &images));
+    let (answer, tool_steps, u1, ctx_full) = agentic_loop(
+        &model,
+        on_event,
+        &mut msgs,
+        &mut entries,
+        &tool_defs,
+        wd.as_deref(),
+    )
+    .await?;
+    record_usage(beat_id, &mut main_usage, &u1).await;
+
+    let usage = main_usage.clone();
+    let cost_usd = usage.cost_usd;
+    let context_percent = context_percent(&model, main_usage.prompt_tokens).await;
+    let context_full =
+        ctx_full || context_percent.map(|p| p >= CONTEXT_LIMIT_PERCENT).unwrap_or(false);
+    if context_full {
+        beats::set_context_full(beat_id, true)?;
+    }
+
+    let answer = if answer.trim().is_empty() {
+        entries
+            .iter()
+            .rev()
+            .find(|e| {
+                e["role"] == "assistant" && !e["content"].as_str().unwrap_or("").trim().is_empty()
+            })
+            .and_then(|e| e["content"].as_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        answer
+    };
+    let dup = entries
+        .last()
+        .map(|e| e["role"] == "assistant" && e["content"] == answer)
+        .unwrap_or(false);
+    if !dup {
+        entries.push(json!({"role": "assistant", "model": &model, "content": &answer}));
+    }
+    db::append_messages(beat_id, entries)?;
+
+    Ok(TaskResult {
+        tier: "workflow".to_string(),
+        model: model.to_string(),
+        steps: vec![],
+        tool_steps,
+        answer,
+        usage: vec![usage],
+        cost_usd,
+        context_percent,
+        context_full,
+        new_beat_id: None,
+    })
+}
+
 /// The user message sent to the model: plain text normally, but with images
 /// attached it becomes an OpenAI-style multimodal content-parts array
 /// (image_url parts first, then the text). Data URLs (data:image/...;base64)
@@ -794,6 +933,31 @@ async fn run_task_inner(
     }
     if prompt.trim().eq_ignore_ascii_case("/compact") {
         return compact_session(beat_id, on_event).await;
+    }
+    if let Some(wf_name) = prompt.trim().strip_prefix("/workflow ") {
+        let wf = crate::workflows::load(wf_name.trim())?;
+        let mut tagged = |te: TaggedEvent| {
+            on_event(te.ev);
+        };
+        let result = crate::workflows::run(beat_id, &wf, &mut tagged).await?;
+        let answer = result
+            .steps
+            .iter()
+            .map(|s| format!("## {}\n\n{}", s.name, s.answer))
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+        return Ok(TaskResult {
+            tier: "workflow".into(),
+            model: wf.model.unwrap_or_else(|| "classifier".into()),
+            steps: result.steps.iter().map(|s| s.name.clone()).collect(),
+            tool_steps: vec![],
+            answer,
+            usage: vec![],
+            cost_usd: result.total_cost_usd,
+            context_percent: None,
+            context_full: false,
+            new_beat_id: None,
+        });
     }
     let cfg = config::ModelConfig::load()?;
     let classifier = cfg.classifier.trim();
