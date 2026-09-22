@@ -1,9 +1,10 @@
 # Pulse — mise dev environment.
 #
-# Client install (macOS ARM only — releases publish aarch64-apple-darwin
-# assets only; `matching` rejects any other asset, so other platforms fail):
+# Client install (macOS ARM only — releases publish a single
+# aarch64-apple-darwin asset, so installs on other platforms find no
+# matching asset):
 #   export MISE_GITHUB_TOKEN=<token with read access to this private repo>
-#   mise use -g "github:xdm67x/pulse[matching=aarch64-apple-darwin]@latest"
+#   mise use -g "github:xdm67x/pulse@latest"
 
 [tools]
 rust = "1.98.1"

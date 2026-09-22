@@ -52,13 +52,13 @@ it (fine-grained token with **Contents: read** is enough):
 
 ```sh
 export MISE_GITHUB_TOKEN=<token with read access to the repo>
-mise use -g "github:xdm67x/pulse[matching=aarch64-apple-darwin]@latest"
+mise use -g "github:xdm67x/pulse@latest"
 ```
 
-The `matching=aarch64-apple-darwin` option selects only the macOS ARM CLI
-tarball; install attempts on any other platform or architecture fail with no
-matching asset. To pin a version instead of tracking the latest release,
-replace `@latest` with a version (`@0.5.1`, …).
+Each release publishes a single `aarch64-apple-darwin` asset, which mise
+auto-detects on macOS ARM; install attempts on any other platform or
+architecture fail with no matching asset. To pin a version instead of
+tracking the latest release, replace `@latest` with a version (`@0.6.0`, …).
 
 Alternatively, build from source on any macOS ARM machine with the repo
 checked out:
