@@ -268,8 +268,15 @@ async fn agentic_loop(
             crate::log::info("agentic loop cancelled");
             return Err(STOPPED.into());
         }
+        // Whether this round's text was already streamed to the UI live via
+        // deltas. When it was, emitting a `Step` for the same text would show
+        // the reply twice.
+        let mut streamed = false;
         let r = {
-            let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
+            let mut on_delta = |t: &str| {
+                streamed = true;
+                on_event(TaskEvent::Delta { text: t.into() })
+            };
             chat_completion_stream(
                 model,
                 messages,
@@ -308,7 +315,7 @@ async fn agentic_loop(
                 crate::log::warn(
                     "task_complete called with an empty summary; asking the model to restate",
                 );
-                persist_round(model, &r, messages, entries, on_event);
+                persist_round(model, &r, messages, entries, on_event, streamed);
                 for tc in &r.tool_calls {
                     messages.push(
                         json!({"role": "tool", "tool_call_id": tc.id,
@@ -317,12 +324,23 @@ async fn agentic_loop(
                 }
                 continue;
             }
-            on_event(TaskEvent::Step {
-                text: summary.clone(),
-            });
-            entries.push(json!({
-                "role": "assistant", "model": model, "content": summary,
-            }));
+            // The model often restates, as the summary, the narration it
+            // already produced on a previous round (or answers in plain text,
+            // gets the reminder, then calls `task_complete` with the same
+            // words). That identical reply is already the last transcript
+            // entry — don't emit or persist a second copy of it.
+            let dup = entries
+                .last()
+                .map(|e| e["role"] == "assistant" && e["content"] == summary)
+                .unwrap_or(false);
+            if !dup {
+                on_event(TaskEvent::Step {
+                    text: summary.clone(),
+                });
+                entries.push(json!({
+                    "role": "assistant", "model": model, "content": summary,
+                }));
+            }
             return Ok((summary, steps, usage, false));
         }
 
@@ -344,9 +362,11 @@ async fn agentic_loop(
                     .map(|e| e["role"] == "assistant" && e["content"] == r.content)
                     .unwrap_or(false);
                 if !dup {
-                    on_event(TaskEvent::Step {
-                        text: r.content.clone(),
-                    });
+                    if !streamed {
+                        on_event(TaskEvent::Step {
+                            text: r.content.clone(),
+                        });
+                    }
                     entries.push(json!({
                         "role": "assistant", "model": model, "content": r.content,
                     }));
@@ -359,9 +379,11 @@ async fn agentic_loop(
                 continue;
             }
             if !blank {
-                on_event(TaskEvent::Step {
-                    text: r.content.clone(),
-                });
+                if !streamed {
+                    on_event(TaskEvent::Step {
+                        text: r.content.clone(),
+                    });
+                }
                 entries.push(json!({
                     "role": "assistant", "model": model, "content": r.content,
                 }));
@@ -375,11 +397,14 @@ async fn agentic_loop(
         }
 
         // the model's narration for this round is a message in its own right:
-        // emit it live (the frontend seals the streaming bubble) and persist it
+        // it was already streamed live (or, on a non-streaming fallback,
+        // reaches the UI as a Step) and is persisted as a transcript entry
         if !r.content.trim().is_empty() {
-            on_event(TaskEvent::Step {
-                text: r.content.clone(),
-            });
+            if !streamed {
+                on_event(TaskEvent::Step {
+                    text: r.content.clone(),
+                });
+            }
             entries.push(json!({
                 "role": "assistant", "model": model, "content": r.content,
             }));
@@ -494,20 +519,24 @@ async fn context_limit_reached(model_id: &str, prompt_tokens: Option<u64>) -> bo
     tokens as f64 / len as f64 * 100.0 >= CONTEXT_LIMIT_PERCENT
 }
 
-/// Persist one model round's narration + tool-call turn: emit the text live,
-/// append it to `entries`, and push the assistant turn (with tool calls) onto
-/// `messages` so follow-up `tool` messages stay valid.
+/// Persist one model round's narration + tool-call turn: emit the text live
+/// unless it already reached the UI as streaming deltas, append it to
+/// `entries`, and push the assistant turn (with tool calls) onto `messages`
+/// so follow-up `tool` messages stay valid.
 fn persist_round(
     model: &str,
     r: &crate::providers::ChatResult,
     messages: &mut Vec<serde_json::Value>,
     entries: &mut Vec<serde_json::Value>,
     on_event: RawEvent<'_>,
+    streamed: bool,
 ) {
     if !r.content.trim().is_empty() {
-        on_event(TaskEvent::Step {
-            text: r.content.clone(),
-        });
+        if !streamed {
+            on_event(TaskEvent::Step {
+                text: r.content.clone(),
+            });
+        }
         entries.push(json!({
             "role": "assistant", "model": model, "content": r.content,
         }));
@@ -1128,16 +1157,11 @@ async fn run_task_inner(
             .await?;
             // for base the draft IS the final answer, already emitted by
             // `agentic_loop` when `task_complete` fired — don't show it twice.
-            // For high tier the draft is a distinct intermediate message: emit
-            // and persist it before reflexion refines it into the final answer.
+            // For high tier the draft is a distinct intermediate message: it
+            // was already emitted and persisted by the loop's `task_complete`
+            // handling, so don't duplicate it — reflexion refines it next.
             if tier == Tier::High {
                 crate::log::debug("high tier: running reflexion pass over the agentic draft");
-                on_event(TaskEvent::Step {
-                    text: draft.clone(),
-                });
-                entries.push(json!({
-                    "role": "assistant", "model": model, "content": draft,
-                }));
                 let (final_, u2) = reflexion(
                     model,
                     on_event,
