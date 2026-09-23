@@ -157,6 +157,12 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // The `/` command popup captures typing in chat
+    if app.mode == Mode::Chat && app.cmd_popup.is_some() {
+        handle_cmd_popup_key(app, key);
+        return;
+    }
+
     // Global keys. In Chat mode the input owns plain characters (so prompts
     // can contain 'q' or '?'); they only act globally in Sessions mode.
     match key.code {
@@ -254,6 +260,13 @@ fn handle_chat_key(app: &mut App, key: KeyEvent) {
                 selected: 0,
             });
         }
+        KeyCode::Char('/') => {
+            app::insert_at_cursor(&mut app.input, &mut app.input_cursor, '/');
+            // The popup opens only when `/` starts the input (slash commands).
+            if app.input.starts_with('/') {
+                app.cmd_popup = Some(app::CmdPopup { selected: 0 });
+            }
+        }
         KeyCode::Char(c) => {
             app::insert_at_cursor(&mut app.input, &mut app.input_cursor, c);
         }
@@ -318,6 +331,43 @@ fn select_at_entry(app: &mut App) {
             app.input_popup_text.clear();
             app.input_popup = Some(app::InputPopup::CloneRepo);
         }
+    }
+}
+
+/// Keys for the `/` command autocomplete popup. Enter or Tab completes the
+/// selected command; Enter on a fully typed command runs it right away.
+fn handle_cmd_popup_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.cmd_popup = None,
+        KeyCode::Down => app.cmd_move(1),
+        KeyCode::Up => app.cmd_move(-1),
+        KeyCode::Tab | KeyCode::Enter => {
+            let selected = app.cmd_popup.as_ref().map(|p| p.selected);
+            let name = selected
+                .and_then(|s| app::matching_commands(&app.input).get(s).copied())
+                .map(|(name, _)| name);
+            match name {
+                Some(name) if app.input.trim() == name => {
+                    app.cmd_popup = None;
+                    app.send_input();
+                }
+                Some(name) => app.complete_command(name),
+                None => app.cmd_popup = None,
+            }
+        }
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.running = false;
+        }
+        KeyCode::Backspace => {
+            if app::remove_before_cursor(&mut app.input, &mut app.input_cursor) {
+                app.update_cmd_popup();
+            }
+        }
+        KeyCode::Char(c) => {
+            app::insert_at_cursor(&mut app.input, &mut app.input_cursor, c);
+            app.update_cmd_popup();
+        }
+        _ => {}
     }
 }
 
@@ -452,6 +502,24 @@ fn handle_click(app: &mut App, x: u16, y: u16) {
             select_at_entry(app);
         } else {
             app.at_popup = None;
+        }
+        return;
+    }
+
+    if let Some(rect) = app.rects.cmd_popup {
+        if app::UiRects::contains(rect, x, y) {
+            // Row inside the popup (minus its top border), clamped to matches.
+            let idx = (y - rect.y).saturating_sub(1) as usize;
+            let matches = app::matching_commands(&app.input);
+            let Some((name, _)) = matches.get(idx) else {
+                return; // clicked the bottom border or empty space
+            };
+            if let Some(popup) = &mut app.cmd_popup {
+                popup.selected = idx;
+            }
+            app.complete_command(name);
+        } else {
+            app.cmd_popup = None;
         }
         return;
     }

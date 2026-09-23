@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, AtPopup, EntryRow, InputPopup, Mode, TranscriptLine};
+use crate::app::{matching_commands, App, AtPopup, CmdPopup, EntryRow, InputPopup, Mode, TranscriptLine};
 
 /// Width of the sessions sidebar when the sessions window is open.
 const SESSIONS_WIDTH: u16 = 32;
@@ -67,6 +67,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     // Floating overlays
     render_at_popup(frame, app, chat_chunks[1]);
+    render_cmd_popup(frame, app, chat_chunks[1]);
     render_input_popup(frame, app);
     render_cloning(frame, app);
 
@@ -349,6 +350,39 @@ fn render_at_popup(frame: &mut Frame, app: &mut App, input_area: Rect) {
     );
 }
 
+/// `/` command autocomplete, floating above the input bar.
+fn render_cmd_popup(frame: &mut Frame, app: &mut App, input_area: Rect) {
+    let Some(CmdPopup { selected }) = &app.cmd_popup else {
+        app.rects.cmd_popup = None;
+        return;
+    };
+    let items: Vec<ListItem> = matching_commands(&app.input)
+        .iter()
+        .map(|(name, desc)| ListItem::new(format!(" {name:<10} {desc}")))
+        .collect();
+
+    let w = 46.min(input_area.width);
+    let h = (items.len() as u16 + 2).clamp(3, 10);
+    let popup = Rect::new(input_area.x, input_area.y.saturating_sub(h), w, h);
+    app.rects.cmd_popup = Some(popup);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Commands ")
+        .border_style(Style::default().fg(Color::Cyan));
+    let mut state = ListState::default();
+    state.select(Some(*selected));
+    // Erase the chat text underneath so the popup is opaque.
+    frame.render_widget(ratatui::widgets::Clear, popup);
+    frame.render_stateful_widget(
+        List::new(items)
+            .block(block)
+            .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black)),
+        popup,
+        &mut state,
+    );
+}
+
 /// Small centered text input for add-local-project / clone-repo.
 fn render_input_popup(frame: &mut Frame, app: &mut App) {
     let Some(popup) = app.input_popup else {
@@ -434,7 +468,7 @@ fn render_status(frame: &mut Frame, app: &App, area: Rect) {
         parts.push(Span::raw(format!("Ctx: {:.0}%", ctx)));
     }
     parts.push(Span::raw(
-        "  Tab/Left: sessions  @: project  wheel: scroll  Ctrl+C: quit",
+        "  Tab/Left: sessions  @: project  /: commands  wheel: scroll  Ctrl+C: quit",
     ));
 
     let line = Line::from(parts);

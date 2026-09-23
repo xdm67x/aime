@@ -40,6 +40,7 @@ fn render_help(frame: &mut Frame) {
         ratatui::text::Line::raw("  Enter     Send prompt (queued while a task runs)"),
         ratatui::text::Line::raw("  Left      Open sessions (cursor at start)"),
         ratatui::text::Line::raw("  @         Project picker (prompt kept, session on send)"),
+        ratatui::text::Line::raw("  /         Command autocomplete"),
         ratatui::text::Line::raw("  Ctrl+K    Cancel running task"),
         ratatui::text::Line::raw("  Ctrl+L    Clear transcript"),
         ratatui::text::Line::raw("  Ctrl+R    Refresh sessions"),

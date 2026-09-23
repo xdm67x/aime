@@ -61,6 +61,59 @@ pub enum AtPopup {
     Projects { filter: String, selected: usize },
 }
 
+/// Autocomplete popup opened by typing `/` at the start of the chat input.
+/// The filter is always the input itself (the slash word being typed), so
+/// only the selection needs persisting.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CmdPopup {
+    pub selected: usize,
+}
+
+/// The TUI slash commands offered by the `/` autocomplete.
+pub const COMMANDS: &[(&str, &str)] = &[
+    ("/new", "start a new session"),
+    ("/cancel", "cancel the running task"),
+    ("/clear", "clear the transcript"),
+    ("/compact", "compact the session context"),
+    ("/workflow", "run a workflow"),
+    ("/model", "show or set model slots"),
+    ("/models", "list available models"),
+    ("/key", "set an API key"),
+    ("/keys", "show configured API keys"),
+    ("/help", "show key bindings"),
+];
+
+/// The fragment being completed for the `/` command popup: the text after
+/// the leading `/` while the input is a single word starting with `/`.
+pub fn command_fragment(input: &str) -> Option<&str> {
+    let rest = input.strip_prefix('/')?;
+    if rest.contains(char::is_whitespace) {
+        None
+    } else {
+        Some(rest)
+    }
+}
+
+/// Commands matching the input's slash fragment (prefix, case-insensitive),
+/// in registry order. Empty for input that is not a leading slash word.
+pub fn matching_commands(input: &str) -> Vec<(&'static str, &'static str)> {
+    match command_fragment(input) {
+        Some(f) => {
+            let f = f.to_lowercase();
+            COMMANDS
+                .iter()
+                .filter(|(name, _)| {
+                    name.to_lowercase()
+                        .strip_prefix('/')
+                        .is_some_and(|n| n.starts_with(&f))
+                })
+                .copied()
+                .collect()
+        }
+        None => Vec::new(),
+    }
+}
+
 /// Small centered text input (add local project / clone GitHub repo).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum InputPopup {
@@ -90,6 +143,8 @@ pub struct UiRects {
     pub transcript: Option<Rect>,
     /// Rect of the `@` project popup, when open.
     pub at_popup: Option<Rect>,
+    /// Rect of the `/` command popup, when open.
+    pub cmd_popup: Option<Rect>,
     /// Rect of the input popup, when open.
     pub input_popup: Option<Rect>,
     /// Rect of the confirmation popup, when open.
@@ -267,6 +322,7 @@ pub struct App {
     pub show_help: bool,
     pub session_list: ListState,
     pub at_popup: Option<AtPopup>,
+    pub cmd_popup: Option<CmdPopup>,
     pub input_popup: Option<InputPopup>,
     pub input_popup_text: String,
     pub clone_handle: Option<JoinHandle<Result<Project, String>>>,
@@ -318,6 +374,7 @@ impl App {
             show_help: false,
             session_list: ListState::default(),
             at_popup: None,
+            cmd_popup: None,
             input_popup: None,
             input_popup_text: String::new(),
             clone_handle: None,
@@ -436,6 +493,41 @@ impl App {
             let next = (*selected as i32 + delta).clamp(0, (entries - 1).max(0));
             *selected = next as usize;
         }
+    }
+
+    /// Recompute the `/` command popup from the input. Closes it once the
+    /// command word is finished (whitespace after the name) or the input no
+    /// longer starts with `/`.
+    pub fn update_cmd_popup(&mut self) {
+        if self.cmd_popup.is_none() {
+            return;
+        }
+        if command_fragment(&self.input).is_none() {
+            self.cmd_popup = None;
+            return;
+        }
+        let entries = matching_commands(&self.input).len();
+        if let Some(CmdPopup { selected }) = &mut self.cmd_popup {
+            if *selected >= entries {
+                *selected = entries.saturating_sub(1);
+            }
+        }
+    }
+
+    /// Move the `/` popup selection, clamped to the match count.
+    pub fn cmd_move(&mut self, delta: i32) {
+        let entries = matching_commands(&self.input).len() as i32;
+        if let Some(CmdPopup { selected }) = &mut self.cmd_popup {
+            *selected = (*selected as i32 + delta).clamp(0, (entries - 1).max(0)) as usize;
+        }
+    }
+
+    /// Complete the selected command into the input bar: `/name ` with the
+    /// cursor ready for arguments.
+    pub fn complete_command(&mut self, name: &str) {
+        self.input = format!("{name} ");
+        self.input_cursor = self.input.chars().count();
+        self.cmd_popup = None;
     }
 
     /// Attach a project picked via `@`: no session is created yet, and the
@@ -1107,6 +1199,73 @@ mod tests {
         while remove_before_cursor(&mut input, &mut cursor) {}
         assert_eq!(input, "");
         assert!(!remove_before_cursor(&mut input, &mut cursor));
+    }
+
+    #[test]
+    fn command_fragment_only_for_leading_slash_word() {
+        assert_eq!(command_fragment("/"), Some(""));
+        assert_eq!(command_fragment("/mo"), Some("mo"));
+        assert_eq!(command_fragment("/new session"), None);
+        assert_eq!(command_fragment("plain /mo"), None);
+        assert_eq!(command_fragment(""), None);
+    }
+
+    #[test]
+    fn matching_commands_prefix_and_case_insensitive() {
+        let names = |input: &str| {
+            matching_commands(input)
+                .iter()
+                .map(|(n, _)| *n)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names("/mo"), vec!["/model", "/models"]);
+        assert_eq!(names("/MO"), vec!["/model", "/models"]);
+        assert_eq!(names("/new"), vec!["/new"]);
+        assert!(names("/zzz").is_empty());
+        assert!(names("plain").is_empty());
+        // The bare slash lists the whole registry.
+        assert_eq!(names("/").len(), COMMANDS.len());
+    }
+
+    #[test]
+    fn cmd_popup_updates_and_completes() {
+        let mut app = App::new();
+        app.input = "/mo".into();
+        app.input_cursor = app.input.chars().count();
+        app.cmd_popup = Some(CmdPopup { selected: 0 });
+        app.update_cmd_popup();
+        assert_eq!(matching_commands(&app.input).len(), 2);
+        assert_eq!(app.cmd_popup, Some(CmdPopup { selected: 0 }));
+
+        // Completing rewrites the input with the command and a trailing space.
+        app.complete_command("/models");
+        assert_eq!(app.input, "/models ");
+        assert_eq!(app.input_cursor, app.input.chars().count());
+        assert!(app.cmd_popup.is_none());
+
+        // Whitespace after the command name closes the popup.
+        app.cmd_popup = Some(CmdPopup { selected: 0 });
+        app.input = "/new session".into();
+        app.update_cmd_popup();
+        assert!(app.cmd_popup.is_none());
+
+        // So does input that no longer starts with `/`.
+        app.cmd_popup = Some(CmdPopup { selected: 0 });
+        app.input = "plain".into();
+        app.update_cmd_popup();
+        assert!(app.cmd_popup.is_none());
+
+        // The selection is clamped when the filter narrows (/key, /keys).
+        app.input = "/ke".into();
+        app.cmd_popup = Some(CmdPopup { selected: 5 });
+        app.update_cmd_popup();
+        assert_eq!(app.cmd_popup, Some(CmdPopup { selected: 1 }));
+
+        // Moving the selection stays within the match count.
+        app.cmd_move(-5);
+        assert_eq!(app.cmd_popup, Some(CmdPopup { selected: 0 }));
+        app.cmd_move(10);
+        assert_eq!(app.cmd_popup, Some(CmdPopup { selected: 1 }));
     }
 
     #[test]
