@@ -299,7 +299,7 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect) {
             Some(started) => spinner_at(started.elapsed()),
             None => SPINNER_FRAMES[0].to_string(),
         };
-        block = block.title(format!(" {text} — Enter queues "));
+        block = block.title(format!(" {text} "));
     }
     let inner_w = area.width.saturating_sub(2) as usize;
     // The input stays visible while a task runs, so queued prompts can be
