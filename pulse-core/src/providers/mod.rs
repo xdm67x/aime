@@ -207,6 +207,10 @@ pub async fn chat_completion(
         match send_chat(p, &req, &key).await {
             Ok(out) => return Ok(out),
             Err(e) if attempt == 0 => {
+                crate::log::warn(format!(
+                    "[{}] chat completion failed, retrying without json_mode: {e}",
+                    p.name()
+                ));
                 req.json_mode = false;
                 tokio::time::sleep(Duration::from_millis(400)).await;
                 let _ = e;
@@ -223,7 +227,7 @@ async fn send_chat(p: &dyn Provider, req: &ChatRequest, key: &str) -> Result<Cha
     for (k, v) in headers {
         r = r.header(k, v);
     }
-    crate::log::log(format!(
+    crate::log::info(format!(
         "[{}] chat request: model={} messages={} json_mode={} tools={}",
         p.name(),
         body["model"],
@@ -245,13 +249,13 @@ async fn send_chat(p: &dyn Provider, req: &ChatRequest, key: &str) -> Result<Cha
         .map_err(|e| format!("{}: reading response failed: {e}", p.name()))?;
     if !status.is_success() {
         let snippet = text.get(..2000).unwrap_or(&text);
-        crate::log::log(format!("[{}] HTTP {status}: {snippet}", p.name()));
+        crate::log::warn(format!("[{}] HTTP {status}: {snippet}", p.name()));
         return Err(format!(
             "{} request failed: HTTP {status}: {snippet}",
             p.name()
         ));
     }
-    crate::log::log(format!("[{}] HTTP {status}", p.name()));
+    crate::log::info(format!("[{}] HTTP {status}", p.name()));
     let resp: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("Unexpected {} response: {text} ({e})", p.name()))?;
     let message = &resp["choices"][0]["message"];
@@ -326,6 +330,10 @@ pub async fn chat_completion_stream(
     // a cancelled stream must not fall back to the (slower, whole-request)
     // non-streaming retry — that would undo the stop
     if res.is_err() && deltas == 0 && !crate::harness::cancelled() {
+        crate::log::warn(format!(
+            "[{}] stream failed before any delta; falling back to non-streaming completion",
+            p.name()
+        ));
         return chat_completion(
             model,
             messages,
@@ -353,7 +361,7 @@ async fn send_chat_stream(
     let (url, headers, mut body) = p.chat_setup(req, key);
     body["stream"] = serde_json::json!(true);
     body["stream_options"] = serde_json::json!({ "include_usage": true });
-    crate::log::log(format!(
+    crate::log::info(format!(
         "[{}] stream request: model={} messages={} tools={}",
         p.name(),
         body["model"],
@@ -376,7 +384,7 @@ async fn send_chat_stream(
             .await
             .map_err(|e| format!("{}: reading response failed: {e}", p.name()))?;
         let snippet = text.get(..2000).unwrap_or(&text);
-        crate::log::log(format!("[{}] HTTP {status}: {snippet}", p.name()));
+        crate::log::warn(format!("[{}] HTTP {status}: {snippet}", p.name()));
         return Err(format!(
             "{} request failed: HTTP {status}: {snippet}",
             p.name()
@@ -437,7 +445,7 @@ async fn send_chat_stream(
         }
     }
     let tool_calls: Vec<ToolCall> = calls.into_values().collect();
-    crate::log::log(format!(
+    crate::log::info(format!(
         "[{}] stream done: {} chars, {} tool calls, finish_reason={:?}",
         p.name(),
         content.len(),
@@ -532,7 +540,7 @@ pub(crate) async fn fetch_model_list(
         .map_err(|e| format!("{name}: reading response failed: {e}"))?;
     if !status.is_success() {
         let snippet = text.get(..2000).unwrap_or(&text);
-        crate::log::log(format!("[{name} models] HTTP {status}: {snippet}"));
+        crate::log::warn(format!("[{name} models] HTTP {status}: {snippet}"));
         return Err(format!("{name} request failed: HTTP {status}: {snippet}"));
     }
     let resp: ModelsResp = serde_json::from_str(&text)
@@ -567,8 +575,13 @@ async fn fetch_models() -> Result<Vec<Model>, String> {
         return Err(errors.join("; "));
     }
     for e in &errors {
-        crate::log::log(format!("models fetch failed: {e}"));
+        crate::log::warn(format!("models fetch partially failed: {e}"));
     }
+    crate::log::info(format!(
+        "fetched {} models from {} provider(s)",
+        models.len(),
+        providers().len()
+    ));
     models.sort_by(|a, b| a.id.cmp(&b.id));
     *MODELS_CACHE.lock().unwrap() = Some((Instant::now(), models.clone()));
     Ok(models)
@@ -597,7 +610,7 @@ pub async fn refresh_loop() {
     loop {
         tokio::time::sleep(MODELS_TTL).await;
         if let Err(e) = fetch_models().await {
-            crate::log::log(format!("models refresh failed: {e}"));
+            crate::log::warn(format!("models refresh failed: {e}"));
         }
     }
 }

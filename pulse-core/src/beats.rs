@@ -91,6 +91,13 @@ pub fn create_beat(name: &str, description: &str, project_id: Option<i64>) -> Re
     let worktree_status = project_name
         .as_deref()
         .map(|path| projects::create_worktree(id, name, path));
+    crate::log::info(format!(
+        "created beat {id} ({name}){}",
+        project_name
+            .as_deref()
+            .map(|p| format!(", project at {p}"))
+            .unwrap_or_default()
+    ));
     Ok(Beat {
         id,
         name: name.into(),
@@ -184,6 +191,7 @@ pub fn get_beat_messages(id: i64) -> Result<Vec<serde_json::Value>, String> {
 /// dropped from disk.
 pub fn delete_beat(id: i64) -> Result<String, String> {
     let conn = db::open()?;
+    crate::log::info(format!("deleting beat {id}"));
     // fetch the worktree + parent repo before the row is gone
     let (worktree, project): (Option<String>, Option<String>) = conn
         .query_row(

@@ -136,8 +136,12 @@ pub fn definitions(skills: &[skills::SkillInfo]) -> Vec<serde_json::Value> {
 /// relative paths resolve against it and `bash`/`grep` run inside it.
 /// Returns the output string (Err for failures).
 pub async fn execute(name: &str, arguments: &str, cwd: Option<&str>) -> Result<String, String> {
+    crate::log::debug(format!(
+        "tool execute: {name} args={arguments} cwd={:?}",
+        cwd
+    ));
     let args: serde_json::Value = serde_json::from_str(arguments).unwrap_or_default();
-    match name {
+    let res = match name {
         "read_file" => read_file(&args, cwd),
         "write_file" => write_file(&args, cwd),
         "edit_file" => edit_file(&args, cwd),
@@ -148,7 +152,11 @@ pub async fn execute(name: &str, arguments: &str, cwd: Option<&str>) -> Result<S
             skills::load_content(skill_name)
         }
         _ => Err(format!("Unknown tool: {name}")),
+    };
+    if let Err(e) = &res {
+        crate::log::warn(format!("tool {name} failed: {e}"));
     }
+    res
 }
 
 /// Resolve a tool path against the working directory when it's relative.

@@ -63,6 +63,7 @@ pub fn list_projects() -> Result<Vec<Project>, String> {
 pub fn add_project(path: &str) -> Result<Project, String> {
     let path = path.trim().trim_end_matches('/').to_string();
     validate_dir(&path)?;
+    crate::log::info(format!("adding local project {path}"));
     let name = Path::new(&path)
         .file_name()
         .and_then(|n| n.to_str())
@@ -137,6 +138,7 @@ pub async fn clone_project(repo: &str) -> Result<Project, String> {
         ));
     }
     let path = dest.to_string_lossy().to_string();
+    crate::log::info(format!("cloned {repo} into {path}"));
     let c = conn()?;
     c.execute(
         "INSERT INTO projects (name, path, source) VALUES (?1, ?2, 'github')",
@@ -160,6 +162,7 @@ pub fn remove_project(id: i64) -> Result<(), String> {
     let c = conn()?;
     c.execute("DELETE FROM projects WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
+    crate::log::info(format!("removed project {id}"));
     Ok(())
 }
 
@@ -262,6 +265,9 @@ pub fn create_worktree(beat_id: i64, name: &str, project_path: &str) -> String {
 fn create_worktree_in(base: PathBuf, beat_id: i64, name: &str, project_path: &str) -> String {
     match create_worktree_git(base, beat_id, name, project_path) {
         Ok((branch, path)) => {
+            crate::log::info(format!(
+                "beat {beat_id}: worktree created at {path} (branch {branch})"
+            ));
             if let Err(e) = db::open().and_then(|c| {
                 c.execute(
                     "UPDATE beats SET worktree = ?1 WHERE id = ?2",
@@ -270,11 +276,15 @@ fn create_worktree_in(base: PathBuf, beat_id: i64, name: &str, project_path: &st
                 .map_err(|e| e.to_string())
             }) {
                 let _ = std::fs::remove_dir_all(&path);
+                crate::log::warn(format!("beat {beat_id}: worktree db update failed: {e}"));
                 return format!("Worktree failed: {e}");
             }
             format!("Worktree ready: {path} (branch {branch})")
         }
-        Err(e) => e,
+        Err(e) => {
+            crate::log::warn(format!("beat {beat_id}: worktree failed: {e}"));
+            e
+        }
     }
 }
 

@@ -43,6 +43,16 @@ pub enum WorkflowAction {
     Edit { name: String },
 }
 
+impl Command {
+    /// Short name for logging: which subcommand ran, without arguments.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Command::Settings { .. } => "settings",
+            Command::Workflow { .. } => "workflow",
+        }
+    }
+}
+
 pub fn run(command: Command) -> Result<(), String> {
     match command {
         Command::Settings { action } => run_settings(action),
@@ -100,6 +110,7 @@ fn run_settings(action: SettingsAction) -> Result<(), String> {
                      litellm-key, litellm-base-url, classifier, high, base, low"
                 )),
             }?;
+            pulse_core::log::info(format!("settings set: {field}"));
             println!("Saved {field}");
             Ok(())
         }
@@ -146,6 +157,7 @@ fn run_workflow(action: WorkflowAction) -> Result<(), String> {
                  \x20     Do something useful.\n"
             );
             std::fs::write(&path, template).map_err(|e| format!("Failed to write {path}: {e}"))?;
+            pulse_core::log::info(format!("workflow created: {path}"));
             open_editor(&path);
             println!("Created {path}");
             Ok(())

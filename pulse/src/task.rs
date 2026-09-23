@@ -13,8 +13,13 @@ pub fn spawn_task(
     tx: UnboundedSender<TaggedEvent>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
+        pulse_core::log::debug(format!("beat {beat_id}: task spawned"));
         let mut callback = move |ev: TaggedEvent| {
-            let _ = tx.send(ev);
+            if tx.send(ev).is_err() {
+                pulse_core::log::warn(format!(
+                    "beat {beat_id}: task event dropped — receiver gone"
+                ));
+            }
         };
         let _ = harness::run_task(beat_id, prompt, images, &mut callback).await;
     })

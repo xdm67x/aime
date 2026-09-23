@@ -23,7 +23,13 @@ use std::io::stdout;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = cli::Cli::parse();
     if let Some(command) = cli.command {
+        pulse_core::log::info(format!(
+            "pulse {} (CLI): {}",
+            env!("CARGO_PKG_VERSION"),
+            command.label()
+        ));
         if let Err(e) = cli::run(command) {
+            pulse_core::log::error(format!("cli command failed: {e}"));
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
@@ -34,6 +40,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
+    pulse_core::log::info(format!(
+        "pulse {} starting (TUI)",
+        env!("CARGO_PKG_VERSION")
+    ));
     // Terminal setup
     stdout().execute(EnterAlternateScreen)?;
     terminal::enable_raw_mode()?;
@@ -64,11 +74,21 @@ async fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(handle) = app.clone_handle.take_if(|h| h.is_finished()) {
             match handle.await {
                 Ok(Ok(project)) => {
+                    pulse_core::log::info(format!(
+                        "clone finished: project {} at {}",
+                        project.name, project.path
+                    ));
                     app.refresh_projects();
                     app.attach_pending_project(project.id, &project.name);
                 }
-                Ok(Err(e)) => app.error = Some(format!("Clone failed: {e}")),
-                Err(e) => app.error = Some(format!("Clone task failed: {e}")),
+                Ok(Err(e)) => {
+                    pulse_core::log::error(format!("clone failed: {e}"));
+                    app.error = Some(format!("Clone failed: {e}"));
+                }
+                Err(e) => {
+                    pulse_core::log::error(format!("clone task failed: {e}"));
+                    app.error = Some(format!("Clone task failed: {e}"));
+                }
             }
         }
 
@@ -93,6 +113,7 @@ async fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
     terminal::disable_raw_mode()?;
     stdout().execute(DisableMouseCapture)?;
     stdout().execute(LeaveAlternateScreen)?;
+    pulse_core::log::info("TUI exited cleanly");
     Ok(())
 }
 

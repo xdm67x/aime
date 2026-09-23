@@ -463,6 +463,7 @@ impl App {
 
     /// Switch to a different beat/session.
     pub fn switch_beat(&mut self, beat_id: i64) {
+        pulse_core::log::info(format!("switched to session beat {beat_id}"));
         self.pending_project = None;
         self.active_beat_id = Some(beat_id);
         self.load_transcript(beat_id);
@@ -473,10 +474,12 @@ impl App {
     pub fn new_beat(&mut self, name: &str) {
         match pulse_core::beats::create_beat(name, "", None) {
             Ok(beat) => {
+                pulse_core::log::info(format!("created session {name} (beat {})", beat.id));
                 self.refresh_beats();
                 self.switch_beat(beat.id);
             }
             Err(e) => {
+                pulse_core::log::warn(format!("session creation failed: {e}"));
                 self.error = Some(e);
             }
         }
@@ -485,6 +488,7 @@ impl App {
     /// Delete a beat and its worktree. When the active session is deleted,
     /// fall back to the first remaining one (or an empty view if none).
     pub fn delete_beat(&mut self, beat_id: i64) {
+        pulse_core::log::info(format!("deleting session beat {beat_id}"));
         match pulse_core::beats::delete_beat(beat_id) {
             Ok(_) => {
                 if self.active_beat_id == Some(beat_id) {
@@ -553,6 +557,10 @@ impl App {
     pub fn task_finished(&mut self) {
         self.task_running = false;
         self.task_handle = None;
+        pulse_core::log::info(format!(
+            "task finished ({} prompt(s) queued)",
+            self.queue.len()
+        ));
         if let Some(id) = self.active_beat_id {
             self.load_transcript(id);
         }
@@ -566,6 +574,7 @@ impl App {
     /// Cancel the running task.
     pub fn cancel_task(&mut self) {
         if let Some(id) = self.active_beat_id {
+            pulse_core::log::info(format!("beat {id}: cancel requested from the UI"));
             pulse_core::harness::cancel_current(id);
         }
     }
@@ -647,6 +656,10 @@ impl App {
             let name = session_name_from_prompt(&prompt);
             match pulse_core::beats::create_beat(&name, "", Some(project_id)) {
                 Ok(beat) => {
+                    pulse_core::log::info(format!(
+                        "beat {}: created project session {name} (project {project_id})",
+                        beat.id
+                    ));
                     self.refresh_beats();
                     self.active_beat_id = Some(beat.id);
                     self.load_transcript(beat.id);
@@ -655,6 +668,7 @@ impl App {
                     }
                 }
                 Err(e) => {
+                    pulse_core::log::warn(format!("project session creation failed: {e}"));
                     self.pending_project = Some((project_id, String::new()));
                     self.error = Some(e);
                     return;
@@ -675,6 +689,10 @@ impl App {
         self.input_cursor = 0;
         self.transcript.push(TranscriptLine::User(prompt.clone()));
         self.task_running = true;
+        pulse_core::log::info(format!(
+            "beat {beat_id}: prompt dispatched ({} chars)",
+            prompt.len()
+        ));
         let tx = self.event_tx.clone();
         let handle = crate::task::spawn_task(beat_id, prompt, vec![], tx);
         self.task_handle = Some(handle);
@@ -692,6 +710,7 @@ impl App {
 
     fn handle_slash_command(&mut self, input: &str) {
         let cmd = input.trim();
+        pulse_core::log::info(format!("slash command: {cmd}"));
         if let Some(name) = cmd.strip_prefix("/new ") {
             self.new_beat(name.trim());
         } else if cmd == "/new" {
@@ -726,6 +745,7 @@ impl App {
         self.transcript
             .push(TranscriptLine::System(command.clone()));
         self.task_running = true;
+        pulse_core::log::info(format!("beat {beat_id}: task command dispatched"));
         let tx = self.event_tx.clone();
         let handle = crate::task::spawn_task(beat_id, command, vec![], tx);
         self.task_handle = Some(handle);
