@@ -41,6 +41,25 @@ cargo run -p pulse -- settings list
 cargo run -p pulse -- workflow list
 ```
 
+## Updating
+
+`pulse update` checks GitHub releases for a newer version; `pulse update
+--apply` downloads the latest release asset and replaces the running binary
+in place (restart pulse afterwards to run the new version):
+
+```sh
+pulse update          # show the latest release when one is newer
+pulse update --apply  # download and install it
+```
+
+The TUI also checks at startup and shows a notice in the transcript when a
+new release exists. The repository is private, so the updater needs a token:
+the `github-key` setting or `GITHUB_TOKEN`/`MISE_GITHUB_TOKEN`:
+
+```sh
+pulse settings set github-key <token with Contents: read>
+```
+
 ## Install (clients, macOS ARM only)
 
 Releases are built by CI on tag push and publish a single asset per version:

@@ -16,4 +16,5 @@ pub mod prompts;
 pub mod providers;
 pub mod skills;
 pub mod tools;
+pub mod update;
 pub mod workflows;

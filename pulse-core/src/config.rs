@@ -6,7 +6,7 @@ pub fn api_key(provider: &str) -> Result<Option<String>, String> {
 }
 
 pub fn save_api_key(provider: &str, key: &str) -> Result<(), String> {
-    if !matches!(provider, "openrouter" | "opencode" | "litellm") {
+    if !matches!(provider, "openrouter" | "opencode" | "litellm" | "github") {
         return Err(format!("Unknown provider: {provider}"));
     }
     db::set_setting(&format!("{}_api_key", provider), key.trim())
