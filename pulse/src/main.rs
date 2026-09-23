@@ -145,6 +145,12 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // The listing popup (/keys, /models) captures all keys
+    if app.list_popup.is_some() {
+        handle_list_popup_key(app, key);
+        return;
+    }
+
     // Input popup (add local project / clone GitHub repo) captures all keys
     if app.input_popup.is_some() {
         handle_input_popup_key(app, key);
@@ -334,6 +340,20 @@ fn select_at_entry(app: &mut App) {
     }
 }
 
+/// Keys for the listing popup (`/keys`, `/models`): Up/Down scroll,
+/// Esc/Enter closes.
+fn handle_list_popup_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc | KeyCode::Enter => app.list_popup = None,
+        KeyCode::Down => app.list_scroll(1),
+        KeyCode::Up => app.list_scroll(-1),
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.running = false;
+        }
+        _ => {}
+    }
+}
+
 /// Keys for the `/` command autocomplete popup. Enter or Tab completes the
 /// selected command; Enter on a fully typed command runs it right away.
 fn handle_cmd_popup_key(app: &mut App, key: KeyEvent) {
@@ -465,6 +485,10 @@ fn handle_click(app: &mut App, x: u16, y: u16) {
         app.show_help = false;
         return;
     }
+    if app.list_popup.is_some() {
+        app.list_popup = None;
+        return;
+    }
     if app.error.is_some() {
         app.error = None;
         return;
@@ -554,6 +578,11 @@ fn handle_click(app: &mut App, x: u16, y: u16) {
 }
 
 fn handle_scroll(app: &mut App, x: u16, y: u16, delta: i32) {
+    // While the listing popup is open, the wheel scrolls it.
+    if app.list_popup.is_some() {
+        app.list_scroll(delta);
+        return;
+    }
     // Over the sidebar, the wheel moves the session selection.
     if let Some(rect) = app.rects.sidebar {
         if app::UiRects::contains(rect, x, y) {

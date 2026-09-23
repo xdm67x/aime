@@ -69,6 +69,15 @@ pub struct CmdPopup {
     pub selected: usize,
 }
 
+/// Scrollable listing popup (e.g. the `/keys` and `/models` output), shown
+/// over the chat instead of the transcript. One entry per line.
+#[derive(Clone)]
+pub struct ListPopup {
+    pub title: String,
+    pub lines: Vec<String>,
+    pub scroll: u16,
+}
+
 /// The TUI slash commands offered by the `/` autocomplete.
 pub const COMMANDS: &[(&str, &str)] = &[
     ("/new", "start a new session"),
@@ -245,6 +254,12 @@ fn mask_key(key: &str) -> String {
     }
 }
 
+/// The `/keys` popup lists entries like `mistral-key: …`, so `/key` accepts
+/// that displayed `-key` suffix as the provider name.
+fn key_provider_name(name: &str) -> &str {
+    name.strip_suffix("-key").unwrap_or(name)
+}
+
 /// Split a leading `@mention` off a prompt: returns (mention, rest). The
 /// mention is empty when the input does not start with `@word`.
 pub fn split_mention(input: &str) -> (&str, &str) {
@@ -323,6 +338,7 @@ pub struct App {
     pub session_list: ListState,
     pub at_popup: Option<AtPopup>,
     pub cmd_popup: Option<CmdPopup>,
+    pub list_popup: Option<ListPopup>,
     pub input_popup: Option<InputPopup>,
     pub input_popup_text: String,
     pub clone_handle: Option<JoinHandle<Result<Project, String>>>,
@@ -375,6 +391,7 @@ impl App {
             session_list: ListState::default(),
             at_popup: None,
             cmd_popup: None,
+            list_popup: None,
             input_popup: None,
             input_popup_text: String::new(),
             clone_handle: None,
@@ -528,6 +545,14 @@ impl App {
         self.input = format!("{name} ");
         self.input_cursor = self.input.chars().count();
         self.cmd_popup = None;
+    }
+
+    /// Scroll the listing popup by `delta` lines. The upper bound is clamped
+    /// during render, where the popup height is known.
+    pub fn list_scroll(&mut self, delta: i32) {
+        if let Some(popup) = &mut self.list_popup {
+            popup.scroll = (popup.scroll as i32 + delta).max(0) as u16;
+        }
     }
 
     /// Attach a project picked via `@`: no session is created yet, and the
@@ -690,13 +715,19 @@ impl App {
                 });
             }
             TaskEvent::Step { text } => {
-                // Transient transcript replies (model lists) carry a sentinel
-                // prefix so they replace their placeholder instead of stacking.
+                // Transient replies (model lists) carry a sentinel prefix so
+                // they fill the listing popup that requested them, or replace
+                // their transcript placeholder instead of stacking.
                 if let Some(rest) = text.strip_prefix(TRANSCRIPT_EVENT_PREFIX) {
                     let Some((_, payload)) = rest.split_once(TRANSCRIPT_EVENT_SEP) else {
                         self.transcript.push(TranscriptLine::Step(text));
                         return;
                     };
+                    if let Some(popup) = &mut self.list_popup {
+                        popup.lines = payload.lines().map(str::to_string).collect();
+                        popup.scroll = 0;
+                        return;
+                    }
                     match self.transcript.last_mut() {
                         Some(TranscriptLine::Step(existing)) => *existing = payload.to_string(),
                         _ => self
@@ -968,8 +999,8 @@ impl App {
         }
     }
 
-    /// `/models [provider]` — list available models, for one provider or all
-    /// configured ones (ids are prefixed, ready for `/model`).
+    /// `/models [provider]` — list available models in a popup, for one
+    /// provider or all configured ones (ids are prefixed, ready for `/model`).
     fn handle_models_command(&mut self, args: &str) {
         let args = args.trim().to_string();
         let tx = self.event_tx.clone();
@@ -978,28 +1009,34 @@ impl App {
         } else {
             format!(" from {args}")
         };
-        self.transcript
-            .push(TranscriptLine::Step(format!("Fetching models{from}…")));
+        self.list_popup = Some(ListPopup {
+            title: "Models".into(),
+            lines: vec![format!("Fetching models{from}…")],
+            scroll: 0,
+        });
         tokio::spawn(async move {
             let res = if args.is_empty() {
                 pulse_core::providers::list_models().await
             } else {
                 pulse_core::providers::list_models_of(&args).await
             };
-            let text = match res {
+            let lines = match res {
                 Ok(models) => {
-                    let mut text = format!("{} model(s) available:", models.len());
+                    let mut lines = vec![format!("{} model(s) available", models.len())];
                     for m in models.iter().take(200) {
-                        text.push_str(&format!("\n  {} — {}", m.id, m.name));
+                        lines.push(format!("{} — {}", m.id, m.name));
                     }
                     if models.len() > 200 {
-                        text.push_str(&format!("\n  … and {} more", models.len() - 200));
+                        lines.push(format!("… and {} more", models.len() - 200));
                     }
-                    text
+                    lines
                 }
-                Err(e) => format!("Failed to list models: {e}"),
+                Err(e) => vec![format!("Failed to list models: {e}")],
             };
-            let tagged = format!("{TRANSCRIPT_EVENT_PREFIX}0{TRANSCRIPT_EVENT_SEP}{text}");
+            let tagged = format!(
+                "{TRANSCRIPT_EVENT_PREFIX}0{TRANSCRIPT_EVENT_SEP}{}",
+                lines.join("\n")
+            );
             let _ = tx.send(TaggedEvent {
                 beat_id: TRANSCRIPT_EVENT_BEAT,
                 ev: TaskEvent::Step { text: tagged },
@@ -1016,6 +1053,7 @@ impl App {
             self.error = Some("Usage: /key <name> <value> — list keys with: /keys".into());
             return;
         };
+        let name = key_provider_name(name);
         let value = words.next().map(str::trim);
         match value {
             Some(value) => match pulse_core::config::save_api_key(name, value) {
@@ -1039,9 +1077,10 @@ impl App {
         }
     }
 
-    /// `/keys` — show every provider's key status and the litellm base URL.
+    /// `/keys` — show every provider's key status and the litellm base URL
+    /// in a popup, one entry per line.
     fn handle_keys_command(&mut self) {
-        let mut text = String::from("Keys:");
+        let mut lines = Vec::new();
         for name in ["openrouter", "opencode", "litellm", "mistral", "github"] {
             let status = pulse_core::config::get_api_key(name)
                 .ok()
@@ -1049,15 +1088,20 @@ impl App {
                 .filter(|k| !k.trim().is_empty())
                 .map(|k| mask_key(&k))
                 .unwrap_or_else(|| "(not set)".into());
-            text.push_str(&format!("\n  {name}-key: {status}"));
+            lines.push(format!("{name}-key: {status}"));
         }
         if let Ok(Some(url)) = pulse_core::config::get_base_url("litellm") {
             if !url.trim().is_empty() {
-                text.push_str(&format!("\n  litellm-base-url: {url}"));
+                lines.push(format!("litellm-base-url: {url}"));
             }
         }
-        text.push_str("\nSet with: /key <name> <value>");
-        self.transcript.push(TranscriptLine::System(text));
+        lines.push(String::new());
+        lines.push("Set with: /key <name> <value>".into());
+        self.list_popup = Some(ListPopup {
+            title: "Keys".into(),
+            lines,
+            scroll: 0,
+        });
     }
 
     fn send_slash_to_task(&mut self, command: String) {
@@ -1287,6 +1331,16 @@ mod tests {
     }
 
     #[test]
+    fn key_provider_name_strips_displayed_suffix() {
+        // The /keys popup shows "mistral-key", so /key accepts that too.
+        assert_eq!(key_provider_name("mistral-key"), "mistral");
+        assert_eq!(key_provider_name("github-key"), "github");
+        // Bare provider names pass through unchanged.
+        assert_eq!(key_provider_name("mistral"), "mistral");
+        assert_eq!(key_provider_name("openrouter"), "openrouter");
+    }
+
+    #[test]
     fn transcript_event_marker_replaces_placeholder() {
         let mut app = App::new();
         app.transcript
@@ -1310,5 +1364,59 @@ mod tests {
             },
         });
         assert_eq!(app.transcript.len(), 2);
+    }
+
+    #[test]
+    fn transcript_event_fills_open_list_popup() {
+        let mut app = App::new();
+        app.list_popup = Some(ListPopup {
+            title: "Models".into(),
+            lines: vec!["Fetching models…".into()],
+            scroll: 9,
+        });
+        let tagged = format!(
+            "{TRANSCRIPT_EVENT_PREFIX}0{TRANSCRIPT_EVENT_SEP}{}",
+            "3 model(s) available\na — A\nb — B\nc — C"
+        );
+        app.handle_task_event(TaggedEvent {
+            beat_id: TRANSCRIPT_EVENT_BEAT,
+            ev: TaskEvent::Step { text: tagged },
+        });
+        let popup = app.list_popup.as_ref().expect("popup stays open");
+        assert_eq!(
+            popup.lines,
+            vec!["3 model(s) available", "a — A", "b — B", "c — C"]
+        );
+        assert_eq!(popup.scroll, 0);
+
+        // With no popup open, the same event still falls back to the
+        // transcript (placeholder replacement).
+        app.list_popup = None;
+        app.transcript
+            .push(TranscriptLine::Step("Fetching models…".into()));
+        let tagged = format!("{TRANSCRIPT_EVENT_PREFIX}0{TRANSCRIPT_EVENT_SEP}1 model(s) available\na — A");
+        app.handle_task_event(TaggedEvent {
+            beat_id: TRANSCRIPT_EVENT_BEAT,
+            ev: TaskEvent::Step { text: tagged },
+        });
+        let TranscriptLine::Step(text) = app.transcript.last().expect("step entry") else {
+            panic!("expected a step entry");
+        };
+        assert_eq!(text, "1 model(s) available\na — A");
+    }
+
+    #[test]
+    fn keys_command_opens_popup_one_line_per_key() {
+        let mut app = App::new();
+        app.handle_slash_command("/keys");
+        let popup = app.list_popup.as_ref().expect("popup opens");
+        assert_eq!(popup.title, "Keys");
+        assert_eq!(popup.scroll, 0);
+        // One line per provider key, plus the litellm base URL, a blank
+        // separator, and the footer.
+        assert!(popup.lines.len() >= 7, "got: {:?}", popup.lines);
+        assert!(popup.lines.iter().any(|l| l.starts_with("openrouter-key:")));
+        assert!(popup.lines.iter().any(|l| l.starts_with("github-key:")));
+        assert_eq!(popup.lines.last().unwrap(), "Set with: /key <name> <value>");
     }
 }

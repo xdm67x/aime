@@ -11,6 +11,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     chat::render(frame, app);
 
     // Popups overlay on top of any view
+    if app.list_popup.is_some() {
+        render_list_popup(frame, app);
+    }
     if app.show_help {
         render_help(frame);
     }
@@ -72,6 +75,42 @@ fn render_help(frame: &mut Frame) {
         .alignment(ratatui::layout::Alignment::Left);
     frame.render_widget(ratatui::widgets::Clear, popup);
     frame.render_widget(p, popup);
+}
+
+/// Scrollable listing popup (`/keys`, `/models`): one entry per line,
+/// centered over the chat. Up/Down and the wheel scroll; Esc/Enter/click
+/// closes (see `main.rs` key handling).
+fn render_list_popup(frame: &mut Frame, app: &mut App) {
+    let Some(popup) = &mut app.list_popup else {
+        return;
+    };
+    let area = frame.area();
+    let w = 80.min(area.width);
+    let max_h = area.height.saturating_sub(1).max(3);
+    let h = (popup.lines.len() as u16 + 2).clamp(3, max_h);
+    let x = area.x + (area.width - w) / 2;
+    let y = area.y + (area.height - h) / 2;
+    let popup_area = ratatui::layout::Rect::new(x, y, w, h);
+
+    // Keep the scroll within the list once the height is known.
+    let visible = h.saturating_sub(2) as usize;
+    let max_scroll = popup.lines.len().saturating_sub(visible) as u16;
+    popup.scroll = popup.scroll.min(max_scroll);
+
+    let block = ratatui::widgets::Block::default()
+        .borders(ratatui::widgets::Borders::ALL)
+        .title(format!(" {} ", popup.title))
+        .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan));
+    let text: Vec<ratatui::text::Line> = popup
+        .lines
+        .iter()
+        .map(|l| ratatui::text::Line::raw(l.clone()))
+        .collect();
+    let p = ratatui::widgets::Paragraph::new(text)
+        .block(block)
+        .scroll((popup.scroll, 0));
+    frame.render_widget(ratatui::widgets::Clear, popup_area);
+    frame.render_widget(p, popup_area);
 }
 
 fn render_error(frame: &mut Frame, msg: &str) {
