@@ -29,7 +29,7 @@ pub enum SettingsAction {
     /// List providers and model slots
     List,
     /// Set a field: openrouter-key, opencode-key, litellm-key,
-    /// classifier, high, base, low
+    /// litellm-base-url, classifier, high, base, low
     Set { field: String, value: String },
 }
 
@@ -63,6 +63,12 @@ fn run_settings(action: SettingsAction) -> Result<(), String> {
                 };
                 println!("{provider}-key: {display}");
             }
+            let litellm_base_url = pulse_core::config::get_base_url("litellm")
+                .map_err(|e| format!("Failed to read settings: {e}"))?;
+            match litellm_base_url {
+                Some(url) if !url.is_empty() => println!("litellm-base-url: {url}"),
+                _ => println!("litellm-base-url: (not set)"),
+            }
             let config = pulse_core::config::ModelConfig::load()
                 .map_err(|e| format!("Failed to read settings: {e}"))?;
             println!("classifier: {}", or_unset(&config.classifier));
@@ -76,6 +82,7 @@ fn run_settings(action: SettingsAction) -> Result<(), String> {
                 "openrouter-key" => pulse_core::config::save_api_key("openrouter", &value),
                 "opencode-key" => pulse_core::config::save_api_key("opencode", &value),
                 "litellm-key" => pulse_core::config::save_api_key("litellm", &value),
+                "litellm-base-url" => pulse_core::config::save_base_url("litellm", &value),
                 "classifier" | "high" | "base" | "low" => {
                     let mut config = pulse_core::config::ModelConfig::load()
                         .map_err(|e| format!("Failed to read settings: {e}"))?;
@@ -90,7 +97,7 @@ fn run_settings(action: SettingsAction) -> Result<(), String> {
                 }
                 _ => Err(format!(
                     "Unknown field: {field}\nValid fields: openrouter-key, opencode-key, \
-                     litellm-key, classifier, high, base, low"
+                     litellm-key, litellm-base-url, classifier, high, base, low"
                 )),
             }?;
             println!("Saved {field}");
