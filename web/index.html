@@ -3,217 +3,290 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Pulse — Every prompt runs a workflow</title>
+        <title>Pulse: Every prompt runs a workflow</title>
         <meta
             name="description"
-            content="Pulse is a terminal-native AI agent harness built around workflows. Every prompt runs through a YAML workflow that names the model and the steps, an agentic loop does the work, and every run persists as a beat — live status, tokens and cost, straight from your terminal. macOS, Apple silicon."
+            content="Pulse is a terminal-native AI agent harness built around workflows. Every prompt runs through a YAML workflow that names the model and the steps, an agentic loop does the work, and every run persists as a beat: live status, tokens and cost, straight from your terminal. macOS, Apple silicon."
         />
-        <meta name="theme-color" content="#f8f7f3" />
+        <meta name="theme-color" content="#f4f6f5" />
+        <meta property="og:title" content="Pulse: Every prompt runs a workflow" />
+        <meta
+            property="og:description"
+            content="A terminal-native AI agent harness. A YAML workflow names the model and the steps, an agentic loop runs the tools, every run persists as a beat."
+        />
+        <meta property="og:type" content="website" />
         <link
             rel="icon"
-            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 80'%3E%3Cpath d='M0 48H88c7 0 11-10 18-10c7 0 11 10 18 10H136l5 5 7-44 6 50 5-11c8-8 16-8 24 0H300' fill='none' stroke='%23b45309' stroke-width='10'/%3E%3C/svg%3E"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 80'%3E%3Cpath d='M0 48H88c7 0 11-10 18-10c7 0 11 10 18 10H136l5 5 7-44 6 50 5-11c8-8 16-8 24 0H300' fill='none' stroke='%23047857' stroke-width='10'/%3E%3C/svg%3E"
         />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
-            href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
-            rel="stylesheet"
+            rel="preload"
+            href="./src/fonts/geist-latin.woff2"
+            as="font"
+            type="font/woff2"
+            crossorigin
+        />
+        <link
+            rel="preload"
+            href="./src/fonts/geist-mono-latin.woff2"
+            as="font"
+            type="font/woff2"
+            crossorigin
         />
         <link rel="stylesheet" href="/src/style.css" />
     </head>
 
     <body>
-        <main class="page">
+        <main>
             <div class="deck" id="deck">
                 <div class="deck-viewport">
                     <div class="deck-track">
                         <!-- 01 · HERO -->
-                        <section class="slide s-hero" aria-label="Pulse, an AI agent harness">
-                            <div class="wrap">
-                                <p class="eyebrow anim" style="--sd: 0.05s">
-                                    <span class="live-dot" aria-hidden="true"></span>AI agent
-                                    harness · terminal native
-                                </p>
-
-                                <h1 class="hero-h1" aria-label="Every prompt runs a workflow.">
-                                    <span class="anim" style="--sd: 0.12s">Every</span>
-                                    <span class="anim" style="--sd: 0.2s">prompt</span><br />
-                                    <span class="anim" style="--sd: 0.28s">runs</span>
-                                    <span class="anim" style="--sd: 0.36s">a</span>
-                                    <span class="hl anim" style="--sd: 0.44s"
-                                        >workflow.
-                                        <svg
-                                            class="hl-ecg"
-                                            viewBox="0 0 240 22"
-                                            preserveAspectRatio="none"
-                                            aria-hidden="true"
-                                        >
-                                            <path
-                                                pathLength="1000"
-                                                d="M0 11 H60 c6 0 9 -9 15 -9 c6 0 9 9 15 9 H108 l4 4 6 -36 5 41 4 -9 c7 -7 14 -7 21 0 H240"
-                                                fill="none"
-                                            /></svg
-                                    ></span>
-                                </h1>
-
-                                <p class="sub anim" style="--sd: 0.55s">
-                                    Pulse is the terminal-native agent harness built around one
-                                    routine: your prompt goes in, a YAML workflow wakes up, an
-                                    agentic loop runs the tools — and every run persists as a beat
-                                    you can watch live.
-                                </p>
-
-                                <div class="install anim" style="--sd: 0.68s">
-                                    <div class="install-cmd">
-                                        <span class="dollar" aria-hidden="true">$</span>
-                                        <code data-install
-                                            >mise use -g "github:xdm67x/pulse@latest"</code
-                                        >
-                                        <button class="btn btn-dark" data-copy type="button">
-                                            Copy
-                                        </button>
-                                    </div>
-                                    <p class="hint">
-                                        Requires
-                                        <a href="https://mise.jdx.dev/" rel="noopener">mise</a>
-                                        and a GitHub token with read access
-                                        (<code>MISE_GITHUB_TOKEN</code>). macOS, Apple silicon.
-                                    </p>
-                                </div>
-
-                                <p class="scroll-hint anim" style="--sd: 0.95s">
-                                    scroll<span aria-hidden="true">→</span>
-                                </p>
-                            </div>
-                        </section>
-
-                        <!-- 02 · THE ROUTINE -->
                         <section
-                            class="slide s-routine"
-                            aria-label="The routine, from prompt to beat"
+                            class="hero slide"
+                            id="top"
+                            aria-label="Pulse, an AI agent harness"
                         >
-                            <div class="wrap routine-grid">
-                                <div class="r-left">
-                                    <h2 class="anim" style="--sd: 0.05s">
-                                        One prompt.<br />
-                                        <span class="dim">Five moves.</span>
-                                    </h2>
-                                    <ol class="r-steps">
-                                        <li class="anim" style="--sd: 0.2s; --sgd: 0s">
-                                            <b>prompt</b><span>you type it</span>
-                                        </li>
-                                        <li class="anim" style="--sd: 0.3s; --sgd: 2s">
-                                            <b>workflow</b><span>the YAML wakes up</span>
-                                        </li>
-                                        <li class="anim" style="--sd: 0.4s; --sgd: 4s">
-                                            <b>model</b><span>the file names it</span>
-                                        </li>
-                                        <li class="anim" style="--sd: 0.5s; --sgd: 6s">
-                                            <b>agentic loop</b><span>tools run the work</span>
-                                        </li>
-                                        <li class="anim" style="--sd: 0.6s; --sgd: 8s">
-                                            <b>beat</b><span>the run persists, live</span>
-                                        </li>
-                                    </ol>
+                            <div class="wrap hero-grid">
+                                <div class="hero-copy">
+                                    <p class="eyebrow rise" style="--sd: 0.05s">
+                                        Pulse, terminal-native agent harness
+                                    </p>
+                                    <h1 class="hero-h1" aria-label="Every prompt runs a workflow.">
+                                        <span class="rise" style="--sd: 0.12s">Every prompt</span
+                                        ><br />
+                                        <span class="rise" style="--sd: 0.22s">
+                                            runs a
+                                            <span class="hl"
+                                                >workflow.<svg
+                                                    class="hl-ecg"
+                                                    viewBox="0 0 240 22"
+                                                    preserveAspectRatio="none"
+                                                    aria-hidden="true"
+                                                >
+                                                    <path
+                                                        pathLength="1000"
+                                                        d="M0 11 H60 c6 0 9 -9 15 -9 c6 0 9 9 15 9 H108 l4 4 6 -36 5 41 4 -9 c7 -7 14 -7 21 0 H240"
+                                                        fill="none"
+                                                    /></svg
+                                            ></span>
+                                        </span>
+                                    </h1>
+                                    <p class="sub rise" style="--sd: 0.32s">
+                                        A YAML workflow names the model and steps, an agentic loop
+                                        runs the tools, every run persists as a beat.
+                                    </p>
+                                    <div class="install rise" style="--sd: 0.42s">
+                                        <div class="cmd">
+                                            <span class="dollar" aria-hidden="true">$</span>
+                                            <code data-install
+                                                >mise use -g "github:xdm67x/pulse@latest"</code
+                                            >
+                                            <button class="btn btn-accent" data-copy type="button">
+                                                Copy
+                                            </button>
+                                        </div>
+                                        <p class="hint">
+                                            Requires
+                                            <a href="https://mise.jdx.dev/" rel="noopener">mise</a>
+                                            and a GitHub token with read access
+                                            (<code>MISE_GITHUB_TOKEN</code>). macOS, Apple silicon.
+                                        </p>
+                                    </div>
                                 </div>
 
-                                <div class="r-right anim" style="--sd: 0.4s">
+                                <div class="hero-term rise" style="--sd: 0.3s">
                                     <div
                                         class="term"
                                         role="img"
-                                        aria-label="Screenshot of the Pulse terminal UI"
+                                        aria-label="A Pulse run in a terminal"
                                     >
                                         <div class="term-bar">
                                             <span class="tb-dot r" aria-hidden="true"></span>
                                             <span class="tb-dot y" aria-hidden="true"></span>
                                             <span class="tb-dot g" aria-hidden="true"></span>
-                                            <span class="term-title">pulse — zsh — 80×24</span>
+                                            <span class="term-title">pulse - zsh</span>
                                         </div>
-                                        <div class="term-body">
-                                            <aside class="t-side">
-                                                <div class="t-side-h">beats</div>
-                                                <div class="t-beat now">
-                                                    <span class="tb-row"
-                                                        ><span class="dot" aria-hidden="true"></span
-                                                        >beat-7<span class="t-cost"
-                                                            >$0.31</span
-                                                        ></span
-                                                    >
-                                                    <em>auth-refactor · running</em>
-                                                </div>
-                                                <div class="t-beat">
-                                                    <span class="tb-row"
-                                                        ><span
-                                                            class="dot done"
-                                                            aria-hidden="true"
-                                                        ></span
-                                                        >beat-6<span class="t-cost"
-                                                            >$1.04</span
-                                                        ></span
-                                                    >
-                                                    <em>mvp-launch · done</em>
-                                                </div>
-                                                <div class="t-beat">
-                                                    <span class="tb-row"
-                                                        ><span
-                                                            class="dot done"
-                                                            aria-hidden="true"
-                                                        ></span
-                                                        >beat-5<span class="t-cost"
-                                                            >$0.62</span
-                                                        ></span
-                                                    >
-                                                    <em>landing-page · done</em>
-                                                </div>
-                                            </aside>
-                                            <div class="t-main">
-                                                <div class="t-line user">
-                                                    <span class="t-prompt" aria-hidden="true"
-                                                        >▸</span
-                                                    >
-                                                    <span class="t-type"
-                                                        >refactor the auth module to use git
-                                                        worktrees</span
-                                                    >
-                                                </div>
-                                                <div class="t-line ok" style="--d: 2.3s">
-                                                    → workflow base: OpenRouter -
-                                                    anthropic/claude-3.5-sonnet
-                                                </div>
-                                                <div class="t-line tool" style="--d: 2.6s">
-                                                    ⋯ grep "worktree" pulse-core/src — 12 matches
-                                                </div>
-                                                <div class="t-line tool" style="--d: 3.2s">
-                                                    ⋯ edit_file · harness.rs — worktree branch
-                                                    created
-                                                </div>
-                                                <div class="t-line ok" style="--d: 3.8s">
-                                                    ✓ bash cargo test — 41 passed, 0 failed
-                                                </div>
-                                                <div class="t-line ai" style="--d: 4.4s">
-                                                    beat saved · 1.2k tokens ·
-                                                    <span class="t-cost-a">$0.0142</span>
-                                                </div>
-                                                <div class="t-input">
-                                                    <span aria-hidden="true">❯</span>
-                                                    <span class="cursor" aria-hidden="true"></span>
-                                                </div>
-                                                <div class="t-status">
-                                                    <svg
-                                                        class="t-ecg"
-                                                        viewBox="0 0 300 80"
-                                                        preserveAspectRatio="none"
-                                                        aria-hidden="true"
-                                                    >
-                                                        <path
-                                                            pathLength="1000"
-                                                            d="M0 48 H88 c7 0 11 -10 18 -10 c7 0 11 10 18 10 H136 l5 5 7 -44 6 50 5 -11 c8 -8 16 -8 24 0 H300"
-                                                            fill="none"
-                                                        />
-                                                    </svg>
-                                                    <span>beat-7 · workflow base · $0.3120</span>
-                                                </div>
+                                        <div class="term-main">
+                                            <div class="t-line user">
+                                                <span class="t-prompt" aria-hidden="true">▸</span>
+                                                <span
+                                                    class="t-type"
+                                                    style="--w: 46ch; --ts: 46; --tw: 2.1s; --td: 0.6s"
+                                                    >refactor the auth module to use git
+                                                    worktrees</span
+                                                >
                                             </div>
+                                            <div class="t-line ok" style="--d: 3.1s">
+                                                → workflow base - anthropic/claude-3.5-sonnet
+                                            </div>
+                                            <div class="t-line tool" style="--d: 3.5s">
+                                                ⋯ grep "worktree" pulse-core/src - 12 matches
+                                            </div>
+                                            <div class="t-line tool" style="--d: 4s">
+                                                ⋯ edit_file harness.rs - worktree branch created
+                                            </div>
+                                            <div class="t-line ok" style="--d: 4.6s">
+                                                ✓ bash cargo test - 41 passed, 0 failed
+                                            </div>
+                                            <div class="t-line ai" style="--d: 5.2s">
+                                                beat saved - 1.2k tokens -
+                                                <span class="cost">$0.0142</span>
+                                            </div>
+                                            <div class="t-input">
+                                                <span aria-hidden="true">❯</span>
+                                                <span class="cursor" aria-hidden="true"></span>
+                                            </div>
+                                        </div>
+                                        <div class="term-status">
+                                            <svg
+                                                class="ecg"
+                                                viewBox="0 0 300 80"
+                                                preserveAspectRatio="none"
+                                                aria-hidden="true"
+                                            >
+                                                <path
+                                                    pathLength="1000"
+                                                    d="M0 48 H88 c7 0 11 -10 18 -10 c7 0 11 10 18 10 H136 l5 5 7 -44 6 50 5 -11 c8 -8 16 -8 24 0 H300"
+                                                    fill="none"
+                                                />
+                                            </svg>
+                                            <span class="ts-left">beat-7 · workflow base</span>
+                                            <span class="ts-cost">$0.3120</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- 02 · THE ROUTINE -->
+                        <section
+                            class="section routine slide"
+                            id="routine"
+                            aria-label="The routine, from prompt to beat"
+                        >
+                            <div class="wrap">
+                                <h2 class="reveal">One prompt. Five moves.</h2>
+                                <ol class="steps">
+                                    <li class="reveal" style="--rd: 0s; --i: 0">
+                                        <b>prompt</b><span>you type it</span>
+                                    </li>
+                                    <li class="reveal" style="--rd: 0.07s; --i: 1">
+                                        <b>workflow</b><span>the YAML wakes up</span>
+                                    </li>
+                                    <li class="reveal" style="--rd: 0.14s; --i: 2">
+                                        <b>model</b><span>the file names it</span>
+                                    </li>
+                                    <li class="reveal" style="--rd: 0.21s; --i: 3">
+                                        <b>agentic loop</b><span>tools run the work</span>
+                                    </li>
+                                    <li class="reveal" style="--rd: 0.28s; --i: 4">
+                                        <b>beat</b><span>the run persists, live</span>
+                                    </li>
+                                </ol>
+                            </div>
+
+                            <!-- beat wall: every run persists, drifting by -->
+                            <div class="beatwall">
+                                <div class="bw-track">
+                                    <div class="bw-group">
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-3</span>
+                                            <span class="bw-name">mvp-launch</span>
+                                            <span class="bw-cost">$1.04</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-4</span>
+                                            <span class="bw-name">docs-refresh</span>
+                                            <span class="bw-cost">$0.18</span>
+                                        </div>
+                                        <div class="bw-pill running">
+                                            <span class="status-dot on" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-5</span>
+                                            <span class="bw-name">landing-page</span>
+                                            <span class="bw-cost">$0.62</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-6</span>
+                                            <span class="bw-name">api-retry</span>
+                                            <span class="bw-cost">$0.27</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-8</span>
+                                            <span class="bw-name">db-index</span>
+                                            <span class="bw-cost">$0.09</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-9</span>
+                                            <span class="bw-name">deps-audit</span>
+                                            <span class="bw-cost">$0.44</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-10</span>
+                                            <span class="bw-name">copy-pass</span>
+                                            <span class="bw-cost">$0.12</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-11</span>
+                                            <span class="bw-name">readme-fix</span>
+                                            <span class="bw-cost">$0.07</span>
+                                        </div>
+                                    </div>
+                                    <div class="bw-group bw-dup" aria-hidden="true">
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-3</span>
+                                            <span class="bw-name">mvp-launch</span>
+                                            <span class="bw-cost">$1.04</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-4</span>
+                                            <span class="bw-name">docs-refresh</span>
+                                            <span class="bw-cost">$0.18</span>
+                                        </div>
+                                        <div class="bw-pill running">
+                                            <span class="status-dot on" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-5</span>
+                                            <span class="bw-name">landing-page</span>
+                                            <span class="bw-cost">$0.62</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-6</span>
+                                            <span class="bw-name">api-retry</span>
+                                            <span class="bw-cost">$0.27</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-8</span>
+                                            <span class="bw-name">db-index</span>
+                                            <span class="bw-cost">$0.09</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-9</span>
+                                            <span class="bw-name">deps-audit</span>
+                                            <span class="bw-cost">$0.44</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-10</span>
+                                            <span class="bw-name">copy-pass</span>
+                                            <span class="bw-cost">$0.12</span>
+                                        </div>
+                                        <div class="bw-pill">
+                                            <span class="status-dot" aria-hidden="true"></span>
+                                            <span class="bw-id">beat-11</span>
+                                            <span class="bw-name">readme-fix</span>
+                                            <span class="bw-cost">$0.07</span>
                                         </div>
                                     </div>
                                 </div>
@@ -222,24 +295,21 @@
 
                         <!-- 03 · WORKFLOW PLAYGROUND -->
                         <section
-                            class="slide s-playground"
+                            class="section playground slide"
                             id="playground"
                             aria-label="Workflow playground"
                         >
                             <div class="wrap">
                                 <header class="pg-head">
-                                    <h2 class="anim" style="--sd: 0.05s">
-                                        Pick a workflow.
-                                        <span class="dim">Watch it run.</span>
-                                    </h2>
-                                    <p class="anim" style="--sd: 0.18s">
+                                    <h2 class="reveal">Pick a workflow. Watch it run.</h2>
+                                    <p class="reveal" style="--rd: 0.08s">
                                         Real workflows from <code>~/.pulse/workflows/</code>. Select
-                                        one — the YAML loads, the loop starts, the beat lands.
-                                        That's the whole product.
+                                        one: the YAML loads, the loop starts, the beat lands. That
+                                        is the whole product.
                                     </p>
                                 </header>
 
-                                <div class="pg-layout anim" style="--sd: 0.3s">
+                                <div class="pg-layout reveal" style="--rd: 0.16s">
                                     <div class="pg-side">
                                         <div class="pg-chips" role="tablist" aria-label="Workflows">
                                             <button
@@ -282,12 +352,17 @@
                                             <li>each step names its own <b>model</b></li>
                                         </ul>
 
+                                        <div class="pg-beats-box">
+                                            <span class="pg-beats-h">beats this session</span>
+                                            <ul class="pg-beats" id="pg-beats"></ul>
+                                        </div>
+
                                         <button
-                                            class="btn btn-dark pg-run"
+                                            class="btn btn-accent pg-run"
                                             id="pg-run"
                                             type="button"
                                         >
-                                            ↻ run again
+                                            Run again
                                         </button>
                                     </div>
 
@@ -306,7 +381,7 @@
                                                 <pre class="pg-yaml" id="pg-yaml"></pre>
                                             </div>
                                             <div class="pg-pane">
-                                                <div class="pane-h">pulse — run</div>
+                                                <div class="pane-h">pulse - run</div>
                                                 <div
                                                     class="pg-trace"
                                                     id="pg-trace"
@@ -316,7 +391,7 @@
                                         </div>
                                         <div class="pg-status">
                                             <svg
-                                                class="t-ecg"
+                                                class="ecg"
                                                 viewBox="0 0 300 80"
                                                 preserveAspectRatio="none"
                                                 aria-hidden="true"
@@ -336,89 +411,122 @@
                         </section>
 
                         <!-- 04 · FEATURES -->
-                        <section class="slide s-features" aria-label="What makes Pulse different">
+                        <section
+                            class="section features slide"
+                            id="features"
+                            aria-label="What makes Pulse different"
+                        >
                             <div class="wrap">
-                                <h2 class="anim" style="--sd: 0.05s">
-                                    Built for the <span class="dim">daily routine.</span>
-                                </h2>
+                                <h2 class="reveal">Built for the daily routine.</h2>
 
                                 <div class="feat-grid">
-                                    <div class="feat anim" style="--sd: 0.18s">
-                                        <span class="f-num" aria-hidden="true">01</span>
+                                    <div class="feat reveal">
                                         <div class="f-copy">
                                             <h3>A model per step</h3>
                                             <p>
                                                 Claude to plan it, Mistral to grind it. Name the
-                                                model in the workflow file — for the whole run, or
-                                                per step.
+                                                model in the workflow file, for the whole run or per
+                                                step.
                                             </p>
+                                        </div>
+                                        <div class="f-art">
+                                            <span class="fa-line"
+                                                >model: anthropic/claude-3.5-sonnet</span
+                                            >
+                                            <span class="fa-line">model: mistral-large-latest</span>
                                         </div>
                                     </div>
 
-                                    <div class="feat anim" style="--sd: 0.28s">
-                                        <span class="f-num" aria-hidden="true">02</span>
+                                    <div class="feat feat-tint reveal" style="--rd: 0.07s">
                                         <div class="f-copy">
                                             <h3>{{prompt}} goes in</h3>
                                             <p>
-                                                One placeholder. Whatever you type lands exactly
-                                                where the workflow expects it, and the steps take it
-                                                from there.
+                                                One placeholder. Whatever you type lands where the
+                                                workflow expects it, and the steps take it from
+                                                there.
                                             </p>
+                                        </div>
+                                        <div class="f-art">
+                                            <span class="fa-line">prompt: "{{prompt}}"</span>
                                         </div>
                                     </div>
 
-                                    <div class="feat anim" style="--sd: 0.38s">
-                                        <span class="f-num" aria-hidden="true">03</span>
+                                    <div class="feat reveal" style="--rd: 0.07s">
                                         <div class="f-copy">
                                             <h3>Real tools in the loop</h3>
                                             <p>
-                                                read_file, write_file, edit_file, grep and bash —
-                                                the agentic loop calls them, streams the results,
-                                                and keeps going until the step is done.
+                                                read_file, write_file, edit_file, grep and bash. The
+                                                loop calls them, streams the results, and keeps
+                                                going until the step is done.
                                             </p>
+                                        </div>
+                                        <div class="f-art">
+                                            <span class="fa-line"
+                                                >read_file&nbsp;&nbsp;write_file&nbsp;&nbsp;edit_file</span
+                                            >
+                                            <span class="fa-line">grep&nbsp;&nbsp;bash</span>
                                         </div>
                                     </div>
 
-                                    <div class="feat anim" style="--sd: 0.48s">
-                                        <span class="f-num" aria-hidden="true">04</span>
+                                    <div class="feat feat-dark reveal" style="--rd: 0.14s">
                                         <div class="f-copy">
                                             <h3>Every run is a beat</h3>
                                             <p>
-                                                Status, tokens and cost — persisted for good. Beats
+                                                Status, tokens and cost, persisted for good. Beats
                                                 born inside a project even get their own git
                                                 worktree.
                                             </p>
+                                        </div>
+                                        <div class="f-art f-art-status">
+                                            <svg
+                                                class="ecg"
+                                                viewBox="0 0 300 80"
+                                                preserveAspectRatio="none"
+                                                aria-hidden="true"
+                                            >
+                                                <path
+                                                    pathLength="1000"
+                                                    d="M0 48 H88 c7 0 11 -10 18 -10 c7 0 11 10 18 10 H136 l5 5 7 -44 6 50 5 -11 c8 -8 16 -8 24 0 H300"
+                                                    fill="none"
+                                                />
+                                            </svg>
+                                            <span>beat-7 · running</span>
+                                            <span class="cost">$0.31</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </section>
 
-                        <!-- 05 · CTA -->
-                        <section class="slide s-cta" aria-label="Install Pulse">
+                        <!-- 05 · INSTALL -->
+                        <section class="section cta slide" id="install" aria-label="Install Pulse">
                             <div class="wrap">
-                                <h2 class="anim" style="--sd: 0.05s">
-                                    Run your<br />
-                                    <span class="dim">first beat.</span>
-                                </h2>
-                                <div class="install-cmd cta-cmd anim" style="--sd: 0.2s">
+                                <svg
+                                    class="ecg ecg-wide rise"
+                                    style="--sd: 0.05s"
+                                    viewBox="0 0 300 80"
+                                    preserveAspectRatio="none"
+                                    aria-hidden="true"
+                                >
+                                    <path
+                                        pathLength="1000"
+                                        d="M0 48 H88 c7 0 11 -10 18 -10 c7 0 11 10 18 10 H136 l5 5 7 -44 6 50 5 -11 c8 -8 16 -8 24 0 H300"
+                                        fill="none"
+                                    />
+                                </svg>
+                                <h2 class="reveal">Run your first beat.</h2>
+                                <div class="cmd cta-cmd reveal" style="--rd: 0.08s">
                                     <span class="dollar" aria-hidden="true">$</span>
                                     <code data-install
                                         >mise use -g "github:xdm67x/pulse@latest"</code
                                     >
-                                    <button class="btn btn-dark" data-copy type="button">
+                                    <button class="btn btn-accent" data-copy type="button">
                                         Copy
                                     </button>
                                 </div>
-                                <p class="hint anim" style="--sd: 0.3s">
-                                    macOS, Apple silicon · one binary, zero config files
+                                <p class="hint reveal" style="--rd: 0.16s">
+                                    macOS, Apple silicon. One binary, zero config files.
                                 </p>
-                                <footer class="foot anim" style="--sd: 0.4s">
-                                    pulse — an open agent harness ·
-                                    <a href="https://github.com/xdm67x/pulse" rel="noopener"
-                                        >GitHub</a
-                                    >
-                                </footer>
                             </div>
                         </section>
                     </div>
@@ -426,21 +534,28 @@
             </div>
         </main>
 
-        <!-- deck chrome: progress, dots, counter -->
-        <div class="deck-progress" aria-hidden="true"><span id="deck-bar"></span></div>
+        <footer class="foot">
+            <div class="wrap foot-in">
+                <span>an open agent harness</span>
+                <a href="https://github.com/xdm67x/pulse" rel="noopener">GitHub</a>
+            </div>
+        </footer>
+
+        <!-- deck chrome: beat ticker, slide dots, counter -->
         <nav class="deck-nav" aria-label="Slides">
-            <button class="dot" data-slide="0" aria-label="Intro" type="button"></button>
-            <button class="dot" data-slide="1" aria-label="The routine" type="button"></button>
-            <button
-                class="dot"
-                data-slide="2"
-                aria-label="Workflow playground"
-                type="button"
-            ></button>
-            <button class="dot" data-slide="3" aria-label="Features" type="button"></button>
-            <button class="dot" data-slide="4" aria-label="Install" type="button"></button>
+            <button class="ddot" data-slide="0" aria-label="Intro" type="button"></button>
+            <button class="ddot" data-slide="1" aria-label="The routine" type="button"></button>
+            <button class="ddot" data-slide="2" aria-label="Playground" type="button"></button>
+            <button class="ddot" data-slide="3" aria-label="Features" type="button"></button>
+            <button class="ddot" data-slide="4" aria-label="Install" type="button"></button>
         </nav>
         <div class="deck-count" aria-hidden="true"><b id="count-cur">01</b> / 05</div>
+        <p class="nav-ticker" id="nav-ticker" aria-hidden="true">
+            <span class="status-dot on" id="tick-dot"></span>
+            <span id="tick-beat">beat-12</span>
+            <span class="nt-state" id="tick-state">running</span>
+            <span class="nt-cost" id="tick-cost">$0.0000</span>
+        </p>
 
         <script type="module" src="/src/main.ts"></script>
     </body>

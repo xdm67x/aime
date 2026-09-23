@@ -1,7 +1,7 @@
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)')
 
 /* ------------------------------------------------------------------ */
-/* Install command — every [data-copy] button copies the same command  */
+/* Install command - every [data-copy] button copies the same command  */
 /* ------------------------------------------------------------------ */
 
 const INSTALL_CMD = document.querySelector<HTMLElement>('[data-install]')?.textContent?.trim() ?? ''
@@ -22,17 +22,39 @@ for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Slide deck: vertical scroll drives the slides left to right         */
+/* Scroll reveals - sections settle in as they enter the viewport      */
 /* ------------------------------------------------------------------ */
 
-const HORIZONTAL_MIN = 881
+const reveals = Array.from(document.querySelectorAll<HTMLElement>('.reveal'))
+
+if (!REDUCED.matches && 'IntersectionObserver' in window) {
+    document.documentElement.classList.add('js')
+    const io = new IntersectionObserver(
+        (entries) => {
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue
+                entry.target.classList.add('in')
+                io.unobserve(entry.target)
+            }
+        },
+        { threshold: 0.15 },
+    )
+    for (const el of reveals) io.observe(el)
+} else {
+    for (const el of reveals) el.classList.add('in')
+}
+
+/* ------------------------------------------------------------------ */
+/* Slide deck - vertical scroll pans the slides left to right           */
+/* ------------------------------------------------------------------ */
+
+const HORIZONTAL_MIN = 941
 
 const deck = document.getElementById('deck') as HTMLElement
-const viewport = deck.querySelector<HTMLElement>('.deck-viewport') as HTMLElement
-const track = deck.querySelector<HTMLElement>('.deck-track') as HTMLElement
-const slides = Array.from(track.querySelectorAll<HTMLElement>('.slide'))
-const dots = Array.from(document.querySelectorAll<HTMLButtonElement>('.deck-nav .dot'))
-const deckBar = document.getElementById('deck-bar')
+const deckViewport = deck.querySelector<HTMLElement>('.deck-viewport') as HTMLElement
+const deckTrack = deck.querySelector<HTMLElement>('.deck-track') as HTMLElement
+const slides = Array.from(deckTrack.querySelectorAll<HTMLElement>('.slide'))
+const ddots = Array.from(document.querySelectorAll<HTMLButtonElement>('.deck-nav .ddot'))
 const countCur = document.getElementById('count-cur')
 
 let horizontal = false
@@ -45,7 +67,7 @@ const LOCK_MS = 800
 let lockUntil = 0
 let wheelAcc = 0
 
-/** Viewport width excluding the scrollbar — matches CSS media queries. */
+/** Viewport width excluding the scrollbar, matching the CSS media queries. */
 function viewportWidth() {
     return document.documentElement.clientWidth
 }
@@ -54,17 +76,15 @@ function layout() {
     vw = viewportWidth()
     vh = window.innerHeight
     deck.style.height = `${slides.length * vh}px`
-    viewport.style.height = `${vh}px`
+    deckViewport.style.height = `${vh}px`
     for (const slide of slides) slide.style.width = `${vw}px`
     maxX = (slides.length - 1) * vw
 }
 
 function replayAnimations(slide: HTMLElement) {
-    for (const el of slide.querySelectorAll<HTMLElement>(
-        '.anim, .r-right .t-line, .r-right .t-type',
-    )) {
+    for (const el of slide.querySelectorAll<HTMLElement>('.rise, .reveal')) {
         el.style.animation = 'none'
-        void el.offsetWidth
+        void el.offsetWidth // restart the entrance animation
         el.style.animation = ''
     }
 }
@@ -73,7 +93,7 @@ function setActive(idx: number) {
     if (idx === activeIdx) return
     activeIdx = idx
     slides.forEach((slide, i) => slide.classList.toggle('active', i === idx))
-    dots.forEach((dot, i) => {
+    ddots.forEach((dot, i) => {
         dot.classList.toggle('active', i === idx)
         if (i === idx) dot.setAttribute('aria-current', 'true')
         else dot.removeAttribute('aria-current')
@@ -92,13 +112,12 @@ function setMode(next: boolean) {
         setActive(0)
     } else {
         deck.style.height = ''
-        viewport.style.height = ''
-        track.style.transform = ''
+        deckViewport.style.height = ''
+        deckTrack.style.transform = ''
         for (const slide of slides) slide.style.width = ''
         for (const slide of slides) slide.classList.remove('active')
         activeIdx = -1
         currentX = 0
-        document.body.classList.remove('scrolled')
     }
 }
 
@@ -111,16 +130,10 @@ function frame() {
         if (Math.abs(targetX - currentX) > 0.1) {
             currentX += (targetX - currentX) * 0.14
             if (Math.abs(targetX - currentX) < 0.5) currentX = targetX
-            track.style.transform = `translate3d(${-currentX}px, 0, 0)`
-        }
-        document.body.classList.toggle('scrolled', p > 0.02)
-        if (deckBar) {
-            const w = `${(p * 100).toFixed(2)}%`
-            if (deckBar.style.width !== w) deckBar.style.width = w
+            deckTrack.style.transform = `translate3d(${-currentX}px, 0, 0)`
         }
         /* derive the active slide from the smoothed position, so the dot
-           flips exactly once per transition instead of jittering at the
-           raw scroll boundary */
+           flips exactly once per transition instead of jittering */
         setActive(Math.round(currentX / Math.max(1, vw)))
     }
     requestAnimationFrame(frame)
@@ -136,7 +149,7 @@ function goToSlide(i: number) {
     window.scrollTo({ top: target, behavior: 'smooth' })
 }
 
-for (const dot of dots) {
+for (const dot of ddots) {
     dot.addEventListener('click', () => {
         goToSlide(Number(dot.dataset.slide ?? 0))
     })
@@ -188,6 +201,78 @@ setMode(!REDUCED.matches && viewportWidth() >= HORIZONTAL_MIN)
 requestAnimationFrame(frame)
 
 /* ------------------------------------------------------------------ */
+/* Hero run loop - the terminal replays a beat forever, the nav ticker  */
+/* mirrors it: running, counting cost, done, next beat                  */
+/* ------------------------------------------------------------------ */
+
+const heroTerm = document.querySelector<HTMLElement>('.hero .term') as HTMLElement
+const heroAnimEls = Array.from(heroTerm.querySelectorAll<HTMLElement>('.t-line, .t-type'))
+const heroBeatEl = heroTerm.querySelector<HTMLElement>('.ts-left') as HTMLElement
+const heroCostEl = heroTerm.querySelector<HTMLElement>('.ts-cost') as HTMLElement
+const navTicker = document.getElementById('nav-ticker')
+const tickDot = document.getElementById('tick-dot')
+const tickBeat = document.getElementById('tick-beat')
+const tickState = document.getElementById('tick-state')
+const tickCost = document.getElementById('tick-cost')
+
+const HERO_COST = 0.312
+const HERO_RUN_MS = 5700
+const HERO_HOLD_MS = 4200
+let heroBeat = 12
+let heroToken = 0
+
+function heroCountCost(token: number) {
+    const t0 = performance.now()
+    const step = () => {
+        if (token !== heroToken) return
+        const p = Math.min(1, (performance.now() - t0) / HERO_RUN_MS)
+        const eased = 1 - Math.pow(1 - p, 3)
+        const v = `$${(HERO_COST * eased).toFixed(4)}`
+        heroCostEl.textContent = v
+        if (tickCost) tickCost.textContent = v
+        if (p < 1) {
+            requestAnimationFrame(step)
+        } else {
+            heroCostEl.textContent = `$${HERO_COST.toFixed(4)}`
+            if (tickCost) tickCost.textContent = `$${HERO_COST.toFixed(4)}`
+            if (tickState) tickState.textContent = 'done'
+            if (tickDot) tickDot.classList.remove('on')
+            navTicker?.classList.remove('running')
+        }
+    }
+    requestAnimationFrame(step)
+}
+
+function heroCycle() {
+    const token = ++heroToken
+    for (const el of heroAnimEls) {
+        el.style.animation = 'none'
+        void el.offsetWidth // restart the CSS animation
+        el.style.animation = ''
+    }
+    heroBeat += 1
+    heroBeatEl.textContent = `beat-${heroBeat} · workflow base`
+    heroCostEl.textContent = '$0.0000'
+    if (tickBeat) tickBeat.textContent = `beat-${heroBeat}`
+    if (tickState) tickState.textContent = 'running'
+    if (tickDot) tickDot.classList.add('on')
+    navTicker?.classList.add('running')
+    heroCountCost(token)
+    setTimeout(heroCycle, HERO_RUN_MS + HERO_HOLD_MS)
+}
+
+if (REDUCED.matches) {
+    heroBeatEl.textContent = 'beat-12 · workflow base'
+    heroCostEl.textContent = `$${HERO_COST.toFixed(4)}`
+    if (tickBeat) tickBeat.textContent = 'beat-12'
+    if (tickState) tickState.textContent = 'done'
+    if (tickDot) tickDot.classList.remove('on')
+    navTicker?.classList.remove('running')
+} else {
+    heroCycle()
+}
+
+/* ------------------------------------------------------------------ */
 /* Workflow playground                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -208,18 +293,18 @@ interface Workflow {
 
 const WORKFLOWS: Record<string, Workflow> = {
     base: {
-        blurb: 'The default. Any plain prompt runs straight through one step — one model, the full agentic loop, one beat.',
+        blurb: 'The default. Any plain prompt runs straight through one step: one model, the full agentic loop, one beat.',
         userPrompt: 'add a rate limiter to the api layer',
         steps: [
             {
                 name: 'run',
-                model: 'OpenRouter - anthropic/claude-3.5-sonnet',
+                model: 'anthropic/claude-3.5-sonnet',
                 prompt: '"{{prompt}}"',
                 tools: [
-                    '⋯ grep "limiter" src/api — 9 matches',
-                    '⋯ read_file · api/router.go — 132 lines',
-                    '⋯ edit_file · limiter.go — token bucket added',
-                    '✓ bash go test ./... — 18 passed',
+                    '⋯ grep "limiter" src/api - 9 matches',
+                    '⋯ read_file api/router.go - 132 lines',
+                    '⋯ edit_file limiter.go - token bucket added',
+                    '✓ bash go test ./... - 18 passed',
                 ],
                 tokens: 1200,
                 cost: 0.0142,
@@ -227,14 +312,14 @@ const WORKFLOWS: Record<string, Workflow> = {
         ],
     },
     review: {
-        blurb: 'Two steps, two models. Claude reads and plans, Mistral applies the patch — one prompt, one beat.',
+        blurb: 'Two steps, two models. Claude reads and plans, Mistral applies the patch: one prompt, one beat.',
         userPrompt: 'review the auth module',
         steps: [
             {
                 name: 'plan',
-                model: 'OpenRouter - anthropic/claude-3.5-sonnet',
+                model: 'anthropic/claude-3.5-sonnet',
                 prompt: '"Review {{prompt}} and outline fixes"',
-                tools: ['⋯ read_file · auth.rs — 214 lines', '⋯ grep "session" src — 5 matches'],
+                tools: ['⋯ read_file auth.rs - 214 lines', '⋯ grep "session" src - 5 matches'],
                 tokens: 800,
                 cost: 0.0091,
             },
@@ -242,24 +327,21 @@ const WORKFLOWS: Record<string, Workflow> = {
                 name: 'fix',
                 model: 'mistral-large-latest',
                 prompt: '"Apply the plan above"',
-                tools: [
-                    '⋯ edit_file · session expiry check added',
-                    '✓ bash cargo test — 41 passed',
-                ],
+                tools: ['⋯ edit_file session expiry check added', '✓ bash cargo test - 41 passed'],
                 tokens: 1500,
                 cost: 0.0068,
             },
         ],
     },
     ship: {
-        blurb: 'The release routine. First step proves the build is green, second one tags and ships it.',
+        blurb: 'The release routine. The first step proves the build is green, the second one tags and ships it.',
         userPrompt: 'release the api changes',
         steps: [
             {
                 name: 'test',
-                model: 'OpenRouter - anthropic/claude-3.5-sonnet',
+                model: 'anthropic/claude-3.5-sonnet',
                 prompt: '"Run the full test suite for {{prompt}}"',
-                tools: ['⋯ bash cargo test — 41 passed, 0 failed'],
+                tools: ['⋯ bash cargo test - 41 passed, 0 failed'],
                 tokens: 600,
                 cost: 0.0071,
             },
@@ -267,7 +349,7 @@ const WORKFLOWS: Record<string, Workflow> = {
                 name: 'release',
                 model: 'mistral-large-latest',
                 prompt: '"Bump the version, tag and build"',
-                tools: ['⋯ edit_file · Cargo.toml — 0.10.1', '✓ bash git tag v0.10.1'],
+                tools: ['⋯ edit_file Cargo.toml - 0.10.1', '✓ bash git tag v0.10.1'],
                 tokens: 1100,
                 cost: 0.0049,
             },
@@ -283,6 +365,7 @@ const pgBlurb = document.getElementById('pg-blurb') as HTMLElement
 const pgStatus = document.getElementById('pg-status') as HTMLElement
 const pgCost = document.getElementById('pg-cost') as HTMLElement
 const pgStatusBar = document.querySelector<HTMLElement>('.pg-status')
+const pgBeats = document.getElementById('pg-beats') as HTMLElement
 const pgRun = document.getElementById('pg-run') as HTMLButtonElement
 const chips = Array.from(document.querySelectorAll<HTMLButtonElement>('.chip'))
 
@@ -401,14 +484,32 @@ async function runWorkflow(id: string) {
     })
 
     pgBlurb.textContent = wf.blurb
-    pgTitle.textContent = id === 'base' ? 'pulse' : `pulse — /workflow ${id}`
+    pgTitle.textContent = id === 'base' ? 'pulse' : `pulse - /workflow ${id}`
     pgFile.textContent = `~/.pulse/workflows/${id}.yml`
     pgTrace.replaceChildren()
     pgCost.textContent = '$0.0000'
     beatNo += 1
 
+    /* log the beat: a running row that settles to done with its cost */
+    pgBeats.querySelectorAll('li.running').forEach((row) => row.remove())
+    const beatRow = document.createElement('li')
+    beatRow.className = 'running'
+    const rowDot = document.createElement('span')
+    rowDot.className = 'status-dot on'
+    const rowId = document.createElement('span')
+    rowId.textContent = `beat-${beatNo}`
+    const rowWf = document.createElement('span')
+    rowWf.className = 'pg-beat-wf'
+    rowWf.textContent = id
+    const rowCost = document.createElement('span')
+    rowCost.className = 'pg-beat-cost'
+    rowCost.textContent = '$0.0000'
+    beatRow.append(rowDot, rowId, rowWf, rowCost)
+    pgBeats.append(beatRow)
+    while (pgBeats.children.length > 5) pgBeats.firstElementChild?.remove()
+
     const yamlMs = renderYaml(wf)
-    pgStatus.textContent = `beat-${beatNo} · workflow ${id} · loading yaml`
+    pgStatus.textContent = `beat-${beatNo} - workflow ${id} - loading yaml`
     if (!(await wait(token, yamlMs))) return
 
     const totalCost = wf.steps.reduce((sum, s) => sum + s.cost, 0)
@@ -416,31 +517,36 @@ async function runWorkflow(id: string) {
     const runMs = 900 + wf.steps.reduce((sum, s) => sum + 500 + s.tools.length * 520 + 400, 0)
     startTicker(token, totalCost, runMs)
     pgStatusBar?.classList.add('running')
-    pgStatus.textContent = `beat-${beatNo} · workflow ${id} · running`
+    pgStatus.textContent = `beat-${beatNo} - workflow ${id} - running`
 
     const typeMs = addTyped(wf.userPrompt)
     if (!(await wait(token, typeMs))) return
 
     let tokensSoFar = 0
     for (const [i, step] of wf.steps.entries()) {
-        addLine('ok', `→ step ${i + 1}/${wf.steps.length} · ${step.name} · ${step.model}`)
+        addLine('ok', `→ step ${i + 1}/${wf.steps.length} - ${step.name} - ${step.model}`)
         if (!(await wait(token, 550))) return
         for (const tool of step.tools) {
             addLine(tool.startsWith('✓') ? 'ok' : 'tool', tool)
             if (!(await wait(token, 520))) return
         }
         tokensSoFar += step.tokens
-        addLine('ai', `step ${step.name} done · ${(tokensSoFar / 1000).toFixed(1)}k tokens`)
+        addLine('ai', `step ${step.name} done - ${(tokensSoFar / 1000).toFixed(1)}k tokens`)
         if (!(await wait(token, 450))) return
     }
 
     addLine(
         'ai',
-        `beat saved · ${(totalTokens / 1000).toFixed(1)}k tokens · <span class="t-cost-a">$${totalCost.toFixed(4)}</span>`,
+        `beat saved - ${(totalTokens / 1000).toFixed(1)}k tokens - <span class="cost">$${totalCost.toFixed(4)}</span>`,
     )
     pgCost.textContent = `$${totalCost.toFixed(4)}`
-    pgStatus.textContent = `beat-${beatNo} · workflow ${id} · done`
+    pgStatus.textContent = `beat-${beatNo} - workflow ${id} - done`
     pgStatusBar?.classList.remove('running')
+
+    /* the logged beat settles: dot goes quiet, cost lands */
+    beatRow.classList.remove('running')
+    rowDot.classList.remove('on')
+    rowCost.textContent = `$${totalCost.toFixed(4)}`
 }
 
 for (const chip of chips) {
@@ -464,7 +570,7 @@ pgRun.addEventListener('click', () => {
     void runWorkflow(currentWf)
 })
 
-/* First run kicks off when the playground slide comes into view */
+/* First run kicks off when the playground section comes into view */
 const playground = document.getElementById('playground') as HTMLElement
 if (REDUCED.matches || !('IntersectionObserver' in window)) {
     void runWorkflow('base')
