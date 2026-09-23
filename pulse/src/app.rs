@@ -142,6 +142,54 @@ pub fn move_cursor(input: &str, cursor: &mut usize, delta: i32) {
     *cursor = (*cursor as i32 + delta).clamp(0, len.max(0)) as usize;
 }
 
+/// Sentinel beat id for events that target the transcript itself (not a
+/// running task): they always land in the active session's view.
+const TRANSCRIPT_EVENT_BEAT: i64 = i64::MIN;
+/// Sentinel prefix/separator tagging transient transcript replies so they
+/// replace their placeholder instead of stacking a second copy.
+const TRANSCRIPT_EVENT_PREFIX: char = '\u{1}';
+const TRANSCRIPT_EVENT_SEP: char = '\u{2}';
+
+/// The `/model` slots: `classifier` plus the three routing tiers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Tier {
+    Classifier,
+    High,
+    Base,
+    Low,
+}
+
+impl Tier {
+    fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "classifier" => Some(Tier::Classifier),
+            "high" => Some(Tier::High),
+            "base" => Some(Tier::Base),
+            "low" => Some(Tier::Low),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Tier::Classifier => "classifier",
+            Tier::High => "high",
+            Tier::Base => "base",
+            Tier::Low => "low",
+        }
+    }
+}
+
+/// Mask a stored key for display: first 4 characters, then an ellipsis.
+fn mask_key(key: &str) -> String {
+    if key.chars().count() > 4 {
+        let prefix: String = key.chars().take(4).collect();
+        format!("{prefix}…")
+    } else {
+        "****".into()
+    }
+}
+
 /// Split a leading `@mention` off a prompt: returns (mention, rest). The
 /// mention is empty when the input does not start with `@word`.
 pub fn split_mention(input: &str) -> (&str, &str) {
@@ -519,7 +567,7 @@ impl App {
     }
 
     fn handle_task_event(&mut self, ev: TaggedEvent) {
-        if Some(ev.beat_id) != self.active_beat_id {
+        if Some(ev.beat_id) != self.active_beat_id && ev.beat_id != TRANSCRIPT_EVENT_BEAT {
             return;
         }
         match ev.ev {
@@ -550,7 +598,22 @@ impl App {
                 });
             }
             TaskEvent::Step { text } => {
-                self.transcript.push(TranscriptLine::Step(text));
+                // Transient transcript replies (model lists) carry a sentinel
+                // prefix so they replace their placeholder instead of stacking.
+                if let Some(rest) = text.strip_prefix(TRANSCRIPT_EVENT_PREFIX) {
+                    let Some((_, payload)) = rest.split_once(TRANSCRIPT_EVENT_SEP) else {
+                        self.transcript.push(TranscriptLine::Step(text));
+                        return;
+                    };
+                    match self.transcript.last_mut() {
+                        Some(TranscriptLine::Step(existing)) => *existing = payload.to_string(),
+                        _ => self
+                            .transcript
+                            .push(TranscriptLine::Step(payload.to_string())),
+                    }
+                } else {
+                    self.transcript.push(TranscriptLine::Step(text));
+                }
             }
         }
     }
@@ -716,23 +779,193 @@ impl App {
     fn handle_slash_command(&mut self, input: &str) {
         let cmd = input.trim();
         pulse_core::log::info(format!("slash command: {cmd}"));
-        if let Some(name) = cmd.strip_prefix("/new ") {
-            self.new_beat(name.trim());
-        } else if cmd == "/new" {
-            self.error = Some("Usage: /new {session name}".into());
-        } else if cmd == "/cancel" {
-            self.cancel_task();
-        } else if cmd == "/clear" {
-            self.transcript.clear();
-        } else if cmd == "/compact" {
-            self.send_slash_to_task("/compact".into());
-        } else if let Some(wf) = cmd.strip_prefix("/workflow ") {
-            self.send_slash_to_task(format!("/workflow {}", wf.trim()));
-        } else if cmd == "/workflow" {
-            self.error = Some("Usage: /workflow {name} — list with: pulse workflow list".into());
-        } else {
-            self.error = Some(format!("Unknown command: {cmd}"));
+        let mut parts = cmd.splitn(2, char::is_whitespace);
+        let name = parts.next().unwrap_or_default();
+        let rest = parts.next().map(str::trim).unwrap_or_default();
+        match name {
+            "/new" if !rest.is_empty() => self.new_beat(rest),
+            "/new" => self.error = Some("Usage: /new {session name}".into()),
+            "/cancel" => self.cancel_task(),
+            "/clear" => self.transcript.clear(),
+            "/compact" => self.send_slash_to_task("/compact".into()),
+            "/workflow" if !rest.is_empty() => self.send_slash_to_task(format!("/workflow {rest}")),
+            "/workflow" => {
+                self.error = Some("Usage: /workflow {name} — list with: pulse workflow list".into())
+            }
+            "/model" => self.handle_model_command(rest),
+            "/models" => self.handle_models_command(rest),
+            "/key" => self.handle_key_command(rest),
+            "/keys" => self.handle_keys_command(),
+            "/help" => self.show_help = true,
+            _ => self.error = Some(format!("Unknown command: {cmd}")),
         }
+    }
+
+    /// `/model` — list the model slots, or set one:
+    /// `/model tier nom` sets the named tier slot, `/model nom` sets every
+    /// slot to that model.
+    fn handle_model_command(&mut self, args: &str) {
+        let args = args.trim();
+        if args.is_empty() {
+            match pulse_core::config::ModelConfig::load() {
+                Ok(cfg) => {
+                    let mut text = String::from("Model slots:");
+                    for (slot, model) in [
+                        ("classifier", &cfg.classifier),
+                        ("high", &cfg.high),
+                        ("base", &cfg.base),
+                        ("low", &cfg.low),
+                    ] {
+                        text.push_str(&format!(
+                            "\n  {slot}: {}",
+                            if model.trim().is_empty() {
+                                "(not set)"
+                            } else {
+                                model.trim()
+                            }
+                        ));
+                    }
+                    text.push_str(
+                        "\nSet with: /model [tier] <model> — list models with: /models [provider]",
+                    );
+                    self.transcript.push(TranscriptLine::System(text));
+                }
+                Err(e) => self.error = Some(e),
+            }
+            return;
+        }
+        // The first word may name a tier; everything after it is the model id
+        // (ids are prefixed and can contain spaces, e.g. "Mistral - magistral").
+        let mut words = args.splitn(2, char::is_whitespace);
+        let first = words.next().unwrap_or_default();
+        let rest = words.next().map(str::trim).unwrap_or_default();
+        let (slot, model) = match Tier::parse(first) {
+            Some(tier) if !rest.is_empty() => (Some(tier), rest),
+            Some(_) => {
+                self.error = Some(format!("Usage: /model {first} <model>"));
+                return;
+            }
+            None => (None, args),
+        };
+        let set_err = match pulse_core::config::ModelConfig::load() {
+            Ok(mut cfg) => {
+                match slot {
+                    Some(Tier::Classifier) => cfg.classifier = model.to_string(),
+                    Some(Tier::High) => cfg.high = model.to_string(),
+                    Some(Tier::Base) => cfg.base = model.to_string(),
+                    Some(Tier::Low) => cfg.low = model.to_string(),
+                    None => {
+                        cfg.classifier = model.to_string();
+                        cfg.high = model.to_string();
+                        cfg.base = model.to_string();
+                        cfg.low = model.to_string();
+                    }
+                }
+                pulse_core::config::save_model_config(&cfg)
+            }
+            Err(e) => Err(e),
+        };
+        match set_err {
+            Ok(()) => {
+                let scope = slot.map(|t| t.as_str()).unwrap_or("all tiers");
+                self.transcript.push(TranscriptLine::System(format!(
+                    "Model set for {scope}: {model}"
+                )));
+            }
+            Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// `/models [provider]` — list available models, for one provider or all
+    /// configured ones (ids are prefixed, ready for `/model`).
+    fn handle_models_command(&mut self, args: &str) {
+        let args = args.trim().to_string();
+        let tx = self.event_tx.clone();
+        let from = if args.is_empty() {
+            String::new()
+        } else {
+            format!(" from {args}")
+        };
+        self.transcript
+            .push(TranscriptLine::Step(format!("Fetching models{from}…")));
+        tokio::spawn(async move {
+            let res = if args.is_empty() {
+                pulse_core::providers::list_models().await
+            } else {
+                pulse_core::providers::list_models_of(&args).await
+            };
+            let text = match res {
+                Ok(models) => {
+                    let mut text = format!("{} model(s) available:", models.len());
+                    for m in models.iter().take(200) {
+                        text.push_str(&format!("\n  {} — {}", m.id, m.name));
+                    }
+                    if models.len() > 200 {
+                        text.push_str(&format!("\n  … and {} more", models.len() - 200));
+                    }
+                    text
+                }
+                Err(e) => format!("Failed to list models: {e}"),
+            };
+            let tagged = format!("{TRANSCRIPT_EVENT_PREFIX}0{TRANSCRIPT_EVENT_SEP}{text}");
+            let _ = tx.send(TaggedEvent {
+                beat_id: TRANSCRIPT_EVENT_BEAT,
+                ev: TaskEvent::Step { text: tagged },
+            });
+        });
+    }
+
+    /// `/key <name> <value>` — set an API key. Without a value, shows the
+    /// current one masked. Name is a provider (openrouter, opencode, litellm,
+    /// mistral) or `github` (release updates).
+    fn handle_key_command(&mut self, args: &str) {
+        let mut words = args.trim().splitn(2, char::is_whitespace);
+        let Some(name) = words.next() else {
+            self.error = Some("Usage: /key <name> <value> — list keys with: /keys".into());
+            return;
+        };
+        let value = words.next().map(str::trim);
+        match value {
+            Some(value) => match pulse_core::config::save_api_key(name, value) {
+                Ok(()) => self
+                    .transcript
+                    .push(TranscriptLine::System(format!("{name}-key saved"))),
+                Err(e) => self.error = Some(e),
+            },
+            None => match pulse_core::config::get_api_key(name) {
+                Ok(Some(k)) if !k.trim().is_empty() => {
+                    let masked = mask_key(&k);
+                    self.transcript.push(TranscriptLine::System(format!(
+                        "{name}-key: {masked} — set a new one with: /key {name} <value>"
+                    )));
+                }
+                Ok(_) => self.transcript.push(TranscriptLine::System(format!(
+                    "{name}-key: (not set) — set it with: /key {name} <value>"
+                ))),
+                Err(e) => self.error = Some(e),
+            },
+        }
+    }
+
+    /// `/keys` — show every provider's key status and the litellm base URL.
+    fn handle_keys_command(&mut self) {
+        let mut text = String::from("Keys:");
+        for name in ["openrouter", "opencode", "litellm", "mistral", "github"] {
+            let status = pulse_core::config::get_api_key(name)
+                .ok()
+                .flatten()
+                .filter(|k| !k.trim().is_empty())
+                .map(|k| mask_key(&k))
+                .unwrap_or_else(|| "(not set)".into());
+            text.push_str(&format!("\n  {name}-key: {status}"));
+        }
+        if let Ok(Some(url)) = pulse_core::config::get_base_url("litellm") {
+            if !url.trim().is_empty() {
+                text.push_str(&format!("\n  litellm-base-url: {url}"));
+            }
+        }
+        text.push_str("\nSet with: /key <name> <value>");
+        self.transcript.push(TranscriptLine::System(text));
     }
 
     fn send_slash_to_task(&mut self, command: String) {
@@ -874,5 +1107,49 @@ mod tests {
         while remove_before_cursor(&mut input, &mut cursor) {}
         assert_eq!(input, "");
         assert!(!remove_before_cursor(&mut input, &mut cursor));
+    }
+
+    #[test]
+    fn tier_parse_and_labels() {
+        assert_eq!(Tier::parse("high"), Some(Tier::High));
+        assert_eq!(Tier::parse("Base"), Some(Tier::Base));
+        assert_eq!(Tier::parse(" low "), Some(Tier::Low));
+        assert_eq!(Tier::parse("classifier"), Some(Tier::Classifier));
+        assert_eq!(Tier::parse("mistral"), None);
+        assert_eq!(Tier::High.as_str(), "high");
+        assert_eq!(Tier::Classifier.as_str(), "classifier");
+    }
+
+    #[test]
+    fn mask_key_hides_all_but_prefix() {
+        assert_eq!(mask_key("sk-long-secret-key"), "sk-l\u{2026}");
+        assert_eq!(mask_key("short"), "shor\u{2026}");
+        assert_eq!(mask_key("abc"), "****");
+    }
+
+    #[test]
+    fn transcript_event_marker_replaces_placeholder() {
+        let mut app = App::new();
+        app.transcript
+            .push(TranscriptLine::Step("Fetching models\u{2026}".into()));
+        let tagged =
+            format!("{TRANSCRIPT_EVENT_PREFIX}0{TRANSCRIPT_EVENT_SEP}42 model(s) available:");
+        app.handle_task_event(TaggedEvent {
+            beat_id: TRANSCRIPT_EVENT_BEAT,
+            ev: TaskEvent::Step { text: tagged },
+        });
+        let TranscriptLine::Step(text) = &app.transcript[0] else {
+            panic!("expected a step entry");
+        };
+        assert_eq!(text, "42 model(s) available:");
+        assert_eq!(app.transcript.len(), 1);
+        // A plain step event still appends instead of replacing.
+        app.handle_task_event(TaggedEvent {
+            beat_id: TRANSCRIPT_EVENT_BEAT,
+            ev: TaskEvent::Step {
+                text: "plain".into(),
+            },
+        });
+        assert_eq!(app.transcript.len(), 2);
     }
 }

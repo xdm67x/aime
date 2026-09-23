@@ -1,5 +1,6 @@
-//! Pulse — terminal app. With no subcommand it launches the TUI; settings and
-//! workflow management run as CLI subcommands before any terminal setup.
+//! Pulse — terminal app. With no subcommand it launches the TUI; workflow
+//! management and release updates run as CLI subcommands before any terminal
+//! setup. Settings (API keys, model slots) live in the TUI slash commands.
 
 mod app;
 mod cli;
