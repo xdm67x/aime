@@ -236,6 +236,8 @@ pub struct App {
     pub queue: Vec<String>,
     /// Keep the transcript pinned to the bottom as new output arrives.
     pub follow: bool,
+    /// When the running task started, driving the thinking spinner.
+    pub task_started: Option<std::time::Instant>,
     pub current_model: String,
     pub current_tier: String,
     pub current_cost: f64,
@@ -277,6 +279,7 @@ impl App {
             pending_project: None,
             queue: Vec::new(),
             follow: true,
+            task_started: None,
             current_model: String::new(),
             current_tier: String::new(),
             current_cost: 0.0,
@@ -556,6 +559,7 @@ impl App {
     /// while it ran, send the first one.
     pub fn task_finished(&mut self) {
         self.task_running = false;
+        self.task_started = None;
         self.task_handle = None;
         pulse_core::log::info(format!(
             "task finished ({} prompt(s) queued)",
@@ -689,6 +693,7 @@ impl App {
         self.input_cursor = 0;
         self.transcript.push(TranscriptLine::User(prompt.clone()));
         self.task_running = true;
+        self.task_started = Some(std::time::Instant::now());
         pulse_core::log::info(format!(
             "beat {beat_id}: prompt dispatched ({} chars)",
             prompt.len()
@@ -745,6 +750,7 @@ impl App {
         self.transcript
             .push(TranscriptLine::System(command.clone()));
         self.task_running = true;
+        self.task_started = Some(std::time::Instant::now());
         pulse_core::log::info(format!("beat {beat_id}: task command dispatched"));
         let tx = self.event_tx.clone();
         let handle = crate::task::spawn_task(beat_id, command, vec![], tx);
