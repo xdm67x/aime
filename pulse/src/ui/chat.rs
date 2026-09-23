@@ -153,12 +153,8 @@ fn render_transcript(frame: &mut Frame, app: &mut App, area: Rect) {
         all_lines.extend(lines);
     }
     if app.task_running {
-        let text = match app.task_started {
-            Some(started) => spinner_at(started.elapsed()),
-            None => SPINNER_FRAMES[0].to_string(),
-        };
         all_lines.push(Line::styled(
-            format!("  {text}"),
+            "  (running...)",
             Style::default().fg(Color::Yellow),
         ));
     }
