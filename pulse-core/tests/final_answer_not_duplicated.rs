@@ -49,10 +49,51 @@ fn spawn_mock(tier: &str, script: Vec<Value>) -> (String, Arc<AtomicUsize>) {
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let mut s = stream.unwrap();
+            // read the full request: headers, then Content-Length body bytes
+            let mut raw: Vec<u8> = Vec::new();
+            let mut buf = [0u8; 16384];
+            let header_end = |v: &[u8]| v.windows(4).position(|w| w == b"\r\n\r\n");
+            while header_end(&raw).is_none() {
+                let m = s.read(&mut buf).unwrap_or(0);
+                if m == 0 {
+                    break;
+                }
+                raw.extend_from_slice(&buf[..m]);
+            }
+            let Some(h) = header_end(&raw) else { continue };
+            let head = String::from_utf8_lossy(&raw[..h]).to_string();
+            let content_len: usize = head
+                .lines()
+                .find_map(|l| {
+                    l.to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .and_then(|v| v.trim().parse().ok())
+                })
+                .unwrap_or(0);
+            while raw.len() < h + 4 + content_len {
+                let m = s.read(&mut buf).unwrap_or(0);
+                if m == 0 {
+                    break;
+                }
+                raw.extend_from_slice(&buf[..m]);
+            }
+            let raw = String::from_utf8_lossy(&raw).to_string();
+            let mut reply = |payload: String| {
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    payload.len(),
+                    payload
+                );
+                s.write_all(resp.as_bytes()).unwrap();
+                s.flush().unwrap();
+            };
+            // model-list fetches (context checks, usage pricing) must not
+            // consume scripted chat rounds
+            if raw.starts_with("GET") {
+                reply(r#"{"data":[]}"#.to_string());
+                continue;
+            }
             let i = n.fetch_add(1, Ordering::SeqCst);
-            let mut buf = vec![0u8; 65536];
-            let m = s.read(&mut buf).unwrap_or(0);
-            let raw = String::from_utf8_lossy(&buf[..m]).to_string();
             let body = raw.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
             let v: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
             let model = v["model"].as_str().unwrap_or("").to_string();
@@ -70,13 +111,7 @@ fn spawn_mock(tier: &str, script: Vec<Value>) -> (String, Arc<AtomicUsize>) {
                     .unwrap_or(json!({"content":"(script exhausted)","finish_reason":"stop"}));
                 sse_for(&entry)
             };
-            let resp = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                payload.len(),
-                payload
-            );
-            s.write_all(resp.as_bytes()).unwrap();
-            s.flush().unwrap();
+            reply(payload);
         }
     });
     (format!("http://{addr}/v1"), req_no)
@@ -187,4 +222,86 @@ async fn final_answer_is_not_duplicated() {
         .filter(|m| m["role"] == "assistant" && m["content"].as_str() == Some("REFINED ANSWER"))
         .count();
     assert_eq!(refined_entries, 1, "refined answer must be persisted once");
+
+    // --- end_turn reply restated by task_complete after more tool work ---
+    // The model ends its turn with the plain final answer (finish_reason
+    // "end_turn"), gets the reminder, does one more tool round, then calls
+    // `task_complete` restating the same answer. A tool entry sits between
+    // the reply and the summary, and the restatement varies whitespace — the
+    // result must still appear exactly once.
+    let _home = setup_home();
+    let script = vec![
+        json!({"narration": "Let me check.", "tool": "bash", "args": "{\"command\":\"echo hi\"}"}),
+        json!({"content": "The answer is 42.", "finish_reason": "end_turn"}),
+        json!({"narration": "", "tool": "bash", "args": "{\"command\":\"echo done\"}"}),
+        json!({"narration": "", "tool": "task_complete", "args": "{\"summary\":\"The   answer is\\n42.\"}"}),
+    ];
+    let (url, _n) = spawn_mock("base", script);
+    configure(&url);
+    let beat_id = new_beat();
+
+    let mut events: Vec<Value> = vec![];
+    let r = harness::run_task(beat_id, "what is the answer?".to_string(), vec![], &mut |ev| {
+        events.push(serde_json::to_value(&ev).unwrap());
+    })
+    .await
+    .unwrap();
+    assert_eq!(r.answer, "The answer is 42.");
+
+    // live: the answer streamed as deltas; the restated summary must not be
+    // emitted as a step on top of it
+    let answer_steps = events
+        .iter()
+        .filter(|e| e["type"] == "step")
+        .filter(|e| e["text"].as_str().map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
+            == Some("The answer is 42.".to_string()))
+        .count();
+    assert_eq!(answer_steps, 0, "restated summary must not be emitted as a step");
+
+    // persisted: the end_turn reply IS the answer — exactly one copy
+    let persisted = beats::get_beat_messages(beat_id).unwrap();
+    let answer_entries = persisted
+        .iter()
+        .filter(|m| m["role"] == "assistant"
+            && m["content"].as_str().map(|c| c.split_whitespace().collect::<Vec<_>>().join(" "))
+                == Some("The answer is 42.".to_string()))
+        .count();
+    assert_eq!(answer_entries, 1, "answer must be persisted exactly once");
+
+    // --- task_complete restating the narration streamed on its own round ---
+    // Some models stream the final text next to the `task_complete` call;
+    // the summary must not be emitted or persisted as a second copy.
+    let _home = setup_home();
+    let script = vec![
+        json!({"narration": "Let me check.", "tool": "bash", "args": "{\"command\":\"echo hi\"}"}),
+        json!({"narration": "Here is the result.", "tool": "task_complete",
+               "args": "{\"summary\":\"Here is the result.\"}"}),
+    ];
+    let (url, _n) = spawn_mock("base", script);
+    configure(&url);
+    let beat_id = new_beat();
+
+    let mut events: Vec<Value> = vec![];
+    let r = harness::run_task(beat_id, "do it".to_string(), vec![], &mut |ev| {
+        events.push(serde_json::to_value(&ev).unwrap());
+    })
+    .await
+    .unwrap();
+    assert_eq!(r.answer, "Here is the result.");
+
+    // live: the text streamed as deltas — no step may repeat it
+    let result_steps = events
+        .iter()
+        .filter(|e| e["type"] == "step")
+        .filter(|e| e["text"].as_str() == Some("Here is the result."))
+        .count();
+    assert_eq!(result_steps, 0, "streamed narration must not be re-emitted as a step");
+
+    // persisted: exactly one assistant entry holds the answer
+    let persisted = beats::get_beat_messages(beat_id).unwrap();
+    let result_entries = persisted
+        .iter()
+        .filter(|m| m["role"] == "assistant" && m["content"].as_str() == Some("Here is the result."))
+        .count();
+    assert_eq!(result_entries, 1, "answer must be persisted exactly once");
 }

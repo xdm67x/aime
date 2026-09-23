@@ -324,15 +324,21 @@ async fn agentic_loop(
                 }
                 continue;
             }
-            // The model often restates, as the summary, the narration it
-            // already produced on a previous round (or answers in plain text,
-            // gets the reminder, then calls `task_complete` with the same
-            // words). That identical reply is already the last transcript
-            // entry — don't emit or persist a second copy of it.
-            let dup = entries
-                .last()
-                .map(|e| e["role"] == "assistant" && e["content"] == summary)
-                .unwrap_or(false);
+            // The model often restates, as the summary, a reply it already
+            // produced — the narration streamed on this very round (next to
+            // the tool call), or an earlier turn's text (a plain end-of-turn
+            // reply that got the reminder, narration from before later tool
+            // work). That text is already in the transcript or live in the UI:
+            // don't emit or persist a second copy of it.
+            let restated = entries
+                .iter()
+                .rev()
+                .find(|e| {
+                    e["role"] == "assistant"
+                        && same_reply(e["content"].as_str().unwrap_or(""), &summary)
+                })
+                .map(|e| e["content"].as_str().unwrap_or("").to_string());
+            let dup = restated.is_some() || (streamed && same_reply(&r.content, &summary));
             if !dup {
                 on_event(TaskEvent::Step {
                     text: summary.clone(),
@@ -341,7 +347,10 @@ async fn agentic_loop(
                     "role": "assistant", "model": model, "content": summary,
                 }));
             }
-            return Ok((summary, steps, usage, false));
+            // when the summary restates a transcript entry, that entry is the
+            // canonical copy — return it so the answer matches the transcript
+            let answer = restated.unwrap_or(summary);
+            return Ok((answer, steps, usage, false));
         }
 
         if r.tool_calls.is_empty() {
@@ -607,6 +616,17 @@ async fn reflexion(
     )
     .await?;
     Ok((r.content, r.usage))
+}
+
+/// True when two reply texts are the same modulo whitespace. Models restating
+/// an earlier reply as the `task_complete` summary often vary line breaks and
+/// indentation — that restatement must still count as the same text, not a
+/// second copy of the result.
+fn same_reply(a: &str, b: &str) -> bool {
+    fn squashed(s: &str) -> String {
+        s.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+    !a.trim().is_empty() && squashed(a) == squashed(b)
 }
 
 /// First `max` chars of `s` plus an ellipsis when it was longer — keeps
@@ -964,10 +984,12 @@ async fn run_task_with_model_inner(
     } else {
         answer
     };
-    let dup = entries
-        .last()
-        .map(|e| e["role"] == "assistant" && e["content"] == answer)
-        .unwrap_or(false);
+    // the answer may restate an earlier assistant reply of this run — in that
+    // case it's already in the transcript exactly once; don't append a second
+    // copy.
+    let dup = entries.iter().any(|e| {
+        e["role"] == "assistant" && same_reply(e["content"].as_str().unwrap_or(""), &answer)
+    });
     if !dup {
         entries.push(json!({"role": "assistant", "model": &model, "content": &answer}));
     }
@@ -1237,10 +1259,13 @@ async fn run_task_inner(
     } else {
         answer
     };
-    let dup = entries
-        .last()
-        .map(|e| e["role"] == "assistant" && e["content"] == answer)
-        .unwrap_or(false);
+    // the answer may restate an earlier assistant reply of this run (a plain
+    // end-of-turn answer the loop later collected via `task_complete`) — in
+    // that case it's already in the transcript exactly once; don't append a
+    // second copy.
+    let dup = entries.iter().any(|e| {
+        e["role"] == "assistant" && same_reply(e["content"].as_str().unwrap_or(""), &answer)
+    });
 
     // everything already landed in `entries` in order; just close with the answer
     if !dup {
@@ -1276,6 +1301,18 @@ mod tests {
         assert!(!is_cancelled(2));
         clear_cancel(1);
         assert!(!is_cancelled(1));
+    }
+
+    #[test]
+    fn test_same_reply() {
+        assert!(same_reply("The answer is 42.", "The answer is 42."));
+        // whitespace differences don't make a restatement a new reply
+        assert!(same_reply("The answer\n  is\t42.", " The answer is 42. "));
+        // reworded text is a different reply
+        assert!(!same_reply("The answer is 42.", "The answer is 42"));
+        // empty text never counts as a duplicate
+        assert!(!same_reply("", ""));
+        assert!(!same_reply("", "anything"));
     }
 
     #[test]
