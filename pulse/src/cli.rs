@@ -22,13 +22,19 @@ pub enum Command {
         #[command(subcommand)]
         action: WorkflowAction,
     },
+    /// Check for a newer release; --apply installs it
+    Update {
+        /// Download the latest release and replace the running binary
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 #[derive(Subcommand)]
 pub enum SettingsAction {
     /// List providers and model slots
     List,
-    /// Set a field: openrouter-key, opencode-key, litellm-key,
+    /// Set a field: openrouter-key, opencode-key, litellm-key, github-key,
     /// litellm-base-url, classifier, high, base, low
     Set { field: String, value: String },
 }
@@ -49,21 +55,47 @@ impl Command {
         match self {
             Command::Settings { .. } => "settings",
             Command::Workflow { .. } => "workflow",
+            Command::Update { .. } => "update",
         }
     }
 }
 
-pub fn run(command: Command) -> Result<(), String> {
+pub async fn run(command: Command) -> Result<(), String> {
     match command {
         Command::Settings { action } => run_settings(action),
         Command::Workflow { action } => run_workflow(action),
+        Command::Update { apply } => run_update(apply).await,
     }
+}
+
+async fn run_update(apply: bool) -> Result<(), String> {
+    let current = env!("CARGO_PKG_VERSION");
+    if !apply {
+        let release = pulse_core::update::check(current)
+            .await
+            .map_err(|e| format!("Update check failed: {e}"))?
+            .ok_or_else(|| format!("pulse {current} is up to date"))?;
+        println!("New release: {} (installed: v{current})", release.tag);
+        println!("Apply with: pulse update --apply");
+        return Ok(());
+    }
+    let tag = async {
+        let release = pulse_core::update::check(current)
+            .await?
+            .ok_or_else(|| format!("pulse {current} is already up to date"))?;
+        println!("Downloading {}…", release.tag);
+        pulse_core::update::apply(&release).await
+    }
+    .await
+    .map_err(|e| format!("Update failed: {e}"))?;
+    println!("Updated to {tag} — restart pulse to run the new version.");
+    Ok(())
 }
 
 fn run_settings(action: SettingsAction) -> Result<(), String> {
     match action {
         SettingsAction::List => {
-            for provider in ["openrouter", "opencode", "litellm"] {
+            for provider in ["openrouter", "opencode", "litellm", "github"] {
                 let key = pulse_core::config::get_api_key(provider)
                     .map_err(|e| format!("Failed to read settings: {e}"))?;
                 let display = match key {
@@ -93,6 +125,7 @@ fn run_settings(action: SettingsAction) -> Result<(), String> {
                 "opencode-key" => pulse_core::config::save_api_key("opencode", &value),
                 "litellm-key" => pulse_core::config::save_api_key("litellm", &value),
                 "litellm-base-url" => pulse_core::config::save_base_url("litellm", &value),
+                "github-key" => pulse_core::config::save_api_key("github", &value),
                 "classifier" | "high" | "base" | "low" => {
                     let mut config = pulse_core::config::ModelConfig::load()
                         .map_err(|e| format!("Failed to read settings: {e}"))?;
@@ -107,7 +140,8 @@ fn run_settings(action: SettingsAction) -> Result<(), String> {
                 }
                 _ => Err(format!(
                     "Unknown field: {field}\nValid fields: openrouter-key, opencode-key, \
-                     litellm-key, litellm-base-url, classifier, high, base, low"
+                     litellm-key, github-key, litellm-base-url,
+                     classifier, high, base, low"
                 )),
             }?;
             pulse_core::log::info(format!("settings set: {field}"));

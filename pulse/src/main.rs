@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             env!("CARGO_PKG_VERSION"),
             command.label()
         ));
-        if let Err(e) = cli::run(command) {
+        if let Err(e) = cli::run(command).await {
             pulse_core::log::error(format!("cli command failed: {e}"));
             eprintln!("Error: {e}");
             std::process::exit(1);
@@ -55,6 +55,11 @@ async fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(pulse_core::providers::refresh_loop());
 
     let mut app = App::new();
+
+    // Check for a newer release at startup; a failed check only logs.
+    if let Some(notice) = pulse_core::update::startup_notice(env!("CARGO_PKG_VERSION")).await {
+        app.transcript.push(app::TranscriptLine::System(notice));
+    }
 
     // Main loop
     while app.running {
