@@ -12,6 +12,21 @@ use crate::app::{App, AtPopup, EntryRow, InputPopup, Mode, TranscriptLine};
 /// Width of the sessions sidebar when the sessions window is open.
 const SESSIONS_WIDTH: u16 = 32;
 
+/// Braille spinner frames for the thinking animation.
+const SPINNER_FRAMES: [&str; 10] = [
+    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
+];
+
+/// Frame of the thinking animation for a task that started at `started`.
+/// The spinner advances every 80ms, and the trailing dots cycle as a
+/// secondary wave so the loading state always feels alive.
+pub fn spinner_at(elapsed: std::time::Duration) -> String {
+    let idx = (elapsed.as_millis() / 80) % SPINNER_FRAMES.len() as u128;
+    let spinner = SPINNER_FRAMES[idx as usize];
+    let dots = ".".repeat((elapsed.as_millis() / 400 % 3 + 1) as usize);
+    format!("{spinner} thinking{dots}")
+}
+
 pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     let main_h = if area.height > 2 { area.height - 1 } else { 0 };
@@ -138,8 +153,12 @@ fn render_transcript(frame: &mut Frame, app: &mut App, area: Rect) {
         all_lines.extend(lines);
     }
     if app.task_running {
+        let text = match app.task_started {
+            Some(started) => spinner_at(started.elapsed()),
+            None => SPINNER_FRAMES[0].to_string(),
+        };
         all_lines.push(Line::styled(
-            "  (running...)",
+            format!("  {text}"),
             Style::default().fg(Color::Yellow),
         ));
     }
@@ -284,7 +303,11 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
     if app.task_running {
-        block = block.title(" running — Enter queues ");
+        let text = match app.task_started {
+            Some(started) => spinner_at(started.elapsed()),
+            None => SPINNER_FRAMES[0].to_string(),
+        };
+        block = block.title(format!(" {text} — Enter queues "));
     }
     let inner_w = area.width.saturating_sub(2) as usize;
     // The input stays visible while a task runs, so queued prompts can be
@@ -504,5 +527,28 @@ mod tests {
     fn truncate_str_is_char_safe() {
         assert_eq!(truncate_str("héllo wörld", 5), "héllo…");
         assert_eq!(truncate_str("short", 10), "short");
+    }
+
+    #[test]
+    fn spinner_at_shows_thinking_with_dots() {
+        let s = spinner_at(std::time::Duration::from_millis(0));
+        assert!(s.contains("thinking."), "got: {s}");
+        let s = spinner_at(std::time::Duration::from_millis(400));
+        assert!(s.contains("thinking.."), "got: {s}");
+        let s = spinner_at(std::time::Duration::from_millis(800));
+        assert!(s.contains("thinking..."), "got: {s}");
+        // the wave wraps back to one dot
+        let s = spinner_at(std::time::Duration::from_millis(1200));
+        assert!(s.contains("thinking."), "got: {s}");
+    }
+
+    #[test]
+    fn spinner_at_cycles_frames() {
+        let first = spinner_at(std::time::Duration::from_millis(0));
+        let next = spinner_at(std::time::Duration::from_millis(80));
+        assert_ne!(first, next, "spinner should advance between frames");
+        // full cycle: 10 spinner frames (800ms) wrapped with the 3-dot wave
+        let wrapped = spinner_at(std::time::Duration::from_millis(2400));
+        assert_eq!(first, wrapped);
     }
 }
