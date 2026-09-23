@@ -1,6 +1,7 @@
 //! Pulse — terminal app. With no subcommand it launches the TUI; workflow
 //! management and release updates run as CLI subcommands before any terminal
-//! setup. Settings (API keys, model slots) live in the TUI slash commands.
+//! setup. Settings (API keys) live in the TUI slash commands; models are
+//! picked per workflow, not globally.
 
 mod app;
 mod cli;
@@ -139,13 +140,19 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // The onboarding popup captures all keys (except Ctrl+C below)
+    if app.onboarding.is_some() {
+        handle_onboarding_key(app, key);
+        return;
+    }
+
     // The confirmation popup captures all keys
     if app.popup.is_some() {
         handle_confirm_key(app, key);
         return;
     }
 
-    // The listing popup (/keys, /models) captures all keys
+    // The listing popup (/keys, /models, /workflows) captures all keys
     if app.list_popup.is_some() {
         handle_list_popup_key(app, key);
         return;
@@ -218,6 +225,29 @@ fn handle_confirm_key(app: &mut App, key: KeyEvent) {
             }
         }
         KeyCode::Esc => app.popup = None,
+        _ => {}
+    }
+}
+
+/// Keys for the first-run onboarding popup: typing fills the current field,
+/// Enter submits it, Esc skips the flow.
+fn handle_onboarding_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.onboarding_cancel(),
+        KeyCode::Backspace => {
+            if let Some(ob) = app.onboarding.as_mut() {
+                ob.text.pop();
+            }
+        }
+        KeyCode::Enter => app.onboarding_submit(),
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.running = false;
+        }
+        KeyCode::Char(c) => {
+            if let Some(ob) = app.onboarding.as_mut() {
+                ob.text.push(c);
+            }
+        }
         _ => {}
     }
 }
@@ -483,6 +513,10 @@ fn handle_click(app: &mut App, x: u16, y: u16) {
     // Overlays first: they sit on top of everything else.
     if app.show_help {
         app.show_help = false;
+        return;
+    }
+    // The onboarding popup is modal — clicks pass through to nothing.
+    if app.onboarding.is_some() {
         return;
     }
     if app.list_popup.is_some() {

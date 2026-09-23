@@ -2,7 +2,7 @@
 //! same text emitted as both a streaming delta and a step) nor persisted
 //! (the same reply stored as two adjacent assistant entries).
 
-use pulse_core::{beats, db, harness};
+use pulse_core::{beats, db, harness, workflows::BASE};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -40,8 +40,7 @@ fn sse_for(entry: &Value) -> String {
     out
 }
 
-fn spawn_mock(tier: &str, script: Vec<Value>) -> (String, Arc<AtomicUsize>) {
-    let tier = tier.to_string();
+fn spawn_mock(script: Vec<Value>) -> (String, Arc<AtomicUsize>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let req_no = Arc::new(AtomicUsize::new(0));
@@ -101,12 +100,9 @@ fn spawn_mock(tier: &str, script: Vec<Value>) -> (String, Arc<AtomicUsize>) {
                 "--- request #{i}: model={model} tools={}",
                 v.get("tools").is_some()
             );
-            let payload = if model.contains("classifier") {
-                // non-streaming classify response
-                json!({"choices":[{"message":{"content":serde_json::json!({"tier": tier.to_string(), "n": 2}).to_string()},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}).to_string()
-            } else {
+            let payload = {
                 let entry = script
-                    .get(i.saturating_sub(1))
+                    .get(i)
                     .cloned()
                     .unwrap_or(json!({"content":"(script exhausted)","finish_reason":"stop"}));
                 sse_for(&entry)
@@ -126,10 +122,9 @@ fn setup_home() -> tempfile::TempDir {
 fn configure(url: &str) {
     db::set_setting("litellm_base_url", url).unwrap();
     db::set_setting("litellm_api_key", "test").unwrap();
-    db::set_setting("model_classifier", "LiteLLM - classifier").unwrap();
-    db::set_setting("model_base", "LiteLLM - worker").unwrap();
-    db::set_setting("model_low", "LiteLLM - low").unwrap();
-    db::set_setting("model_high", "LiteLLM - worker").unwrap();
+    // Plain prompts run through the base workflow: one step that hands the
+    // user's message to the worker model.
+    pulse_core::workflows::create(BASE, "", "LiteLLM - worker", "{{prompt}}").unwrap();
 }
 
 fn new_beat() -> i64 {
@@ -142,13 +137,14 @@ fn new_beat() -> i64 {
 
 #[tokio::test]
 async fn final_answer_is_not_duplicated() {
-    // --- base tier: plain-text answer, reminder, task_complete restates it ---
+    // --- plain prompt (base workflow): plain-text answer, reminder,
+    //     task_complete restates it ---
     let _home = setup_home();
     let script = vec![
         json!({"content": "The answer is 42.", "finish_reason": "stop"}),
         json!({"narration": "", "tool": "task_complete", "args": "{\"summary\":\"The answer is 42.\"}"}),
     ];
-    let (url, _n) = spawn_mock("base", script);
+    let (url, _n) = spawn_mock(script);
     configure(&url);
     let beat_id = new_beat();
 
@@ -164,6 +160,8 @@ async fn final_answer_is_not_duplicated() {
     .await
     .unwrap();
     assert_eq!(r.answer, "The answer is 42.");
+    assert_eq!(r.workflow, BASE);
+    assert_eq!(r.model, "LiteLLM - worker");
 
     // live: the answer may stream as deltas, but no step may repeat it
     let answer_steps = events
@@ -181,48 +179,6 @@ async fn final_answer_is_not_duplicated() {
         .count();
     assert_eq!(answer_entries, 1, "answer must be persisted exactly once");
 
-    // --- high tier: the task_complete draft must not be emitted/persisted twice ---
-    let _home = setup_home();
-    let script = vec![
-        json!({"narration": "", "tool": "task_complete", "args": "{\"summary\":\"DRAFT ANSWER\"}"}),
-        json!({"content": "REFINED ANSWER", "finish_reason": "stop"}),
-    ];
-    let (url, _n) = spawn_mock("high", script);
-    configure(&url);
-    let beat_id = new_beat();
-
-    let mut events: Vec<Value> = vec![];
-    let r = harness::run_task(beat_id, "do it well".to_string(), vec![], &mut |ev| {
-        events.push(serde_json::to_value(&ev).unwrap());
-    })
-    .await
-    .unwrap();
-    assert_eq!(r.answer, "REFINED ANSWER");
-
-    // the draft shows up once as a step, not twice
-    let draft_steps = events
-        .iter()
-        .filter(|e| e["type"] == "step")
-        .filter(|e| e["text"].as_str() == Some("DRAFT ANSWER"))
-        .count();
-    assert_eq!(
-        draft_steps, 1,
-        "draft must be emitted as a step exactly once"
-    );
-
-    // and is persisted once, before the refined answer (also persisted once)
-    let persisted = beats::get_beat_messages(beat_id).unwrap();
-    let draft_entries = persisted
-        .iter()
-        .filter(|m| m["role"] == "assistant" && m["content"].as_str() == Some("DRAFT ANSWER"))
-        .count();
-    assert_eq!(draft_entries, 1, "draft must be persisted exactly once");
-    let refined_entries = persisted
-        .iter()
-        .filter(|m| m["role"] == "assistant" && m["content"].as_str() == Some("REFINED ANSWER"))
-        .count();
-    assert_eq!(refined_entries, 1, "refined answer must be persisted once");
-
     // --- end_turn reply restated by task_complete after more tool work ---
     // The model ends its turn with the plain final answer (finish_reason
     // "end_turn"), gets the reminder, does one more tool round, then calls
@@ -236,7 +192,7 @@ async fn final_answer_is_not_duplicated() {
         json!({"narration": "", "tool": "bash", "args": "{\"command\":\"echo done\"}"}),
         json!({"narration": "", "tool": "task_complete", "args": "{\"summary\":\"The   answer is\\n42.\"}"}),
     ];
-    let (url, _n) = spawn_mock("base", script);
+    let (url, _n) = spawn_mock(script);
     configure(&url);
     let beat_id = new_beat();
 
@@ -277,7 +233,7 @@ async fn final_answer_is_not_duplicated() {
         json!({"narration": "Here is the result.", "tool": "task_complete",
                "args": "{\"summary\":\"Here is the result.\"}"}),
     ];
-    let (url, _n) = spawn_mock("base", script);
+    let (url, _n) = spawn_mock(script);
     configure(&url);
     let beat_id = new_beat();
 

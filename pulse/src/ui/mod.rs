@@ -59,10 +59,9 @@ fn render_help(frame: &mut Frame) {
         ratatui::text::Line::raw("  wheel             Scroll chat / move sessions"),
         ratatui::text::Line::raw(""),
         ratatui::text::Line::raw("Slash commands:"),
-        ratatui::text::Line::raw("  /new {name}     /workflow {name}"),
+        ratatui::text::Line::raw("  /new {name}     /workflow {name}  /workflows"),
         ratatui::text::Line::raw("  /compact        /cancel  /clear"),
-        ratatui::text::Line::raw("  /model [tier] <model>  /models [provider]"),
-        ratatui::text::Line::raw("  /key <name> <value>    /keys"),
+        ratatui::text::Line::raw("  /models [provider]      /key <name> <value>    /keys"),
     ];
 
     let block = ratatui::widgets::Block::default()

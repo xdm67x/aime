@@ -7,7 +7,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{matching_commands, App, AtPopup, CmdPopup, EntryRow, InputPopup, Mode, TranscriptLine};
+use crate::app::{
+    matching_commands, App, AtPopup, CmdPopup, EntryRow, InputPopup, Mode, OnboardingStep,
+    TranscriptLine,
+};
 
 /// Width of the sessions sidebar when the sessions window is open.
 const SESSIONS_WIDTH: u16 = 32;
@@ -68,6 +71,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     // Floating overlays
     render_at_popup(frame, app, chat_chunks[1]);
     render_cmd_popup(frame, app, chat_chunks[1]);
+    render_onboarding(frame, app);
     render_input_popup(frame, app);
     render_cloning(frame, app);
 
@@ -421,6 +425,51 @@ fn render_input_popup(frame: &mut Frame, app: &mut App) {
     frame.render_widget(p, popup_area);
 }
 
+/// First-run onboarding: collect the base workflow's model, prompt template
+/// and description, then write `~/.pulse/workflows/base.yml`.
+fn render_onboarding(frame: &mut Frame, app: &App) {
+    let Some(ob) = &app.onboarding else {
+        return;
+    };
+    let area = frame.area();
+    let w = 72.min(area.width);
+    let h = 10.min(area.height);
+    let x = area.x + (area.width - w) / 2;
+    let y = area.y + (area.height - h) / 2;
+    let popup = Rect::new(x, y, w, h);
+
+    let step_no = match ob.step {
+        OnboardingStep::Model => 1,
+        OnboardingStep::Prompt => 2,
+        OnboardingStep::Description => 3,
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Welcome — create your base workflow ")
+        .border_style(Style::default().fg(Color::Cyan));
+    let text = vec![
+        Line::raw("Every plain prompt runs through the \"base\" workflow."),
+        Line::raw(""),
+        Line::styled(
+            format!("Step {step_no}/3 — {}", ob.step.label()),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Line::styled(ob.step.hint().to_string(), Style::default().fg(Color::DarkGray)),
+        Line::raw(""),
+        Line::raw(format!("> {}_", ob.text)),
+        Line::raw(""),
+        Line::styled(
+            "Enter: continue  Esc: skip",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ];
+    let p = ratatui::widgets::Paragraph::new(text).block(block);
+    frame.render_widget(ratatui::widgets::Clear, popup);
+    frame.render_widget(p, popup);
+}
+
 /// "Cloning…" indicator while a background repo clone is running.
 fn render_cloning(frame: &mut Frame, app: &App) {
     if app.clone_handle.is_none() {
@@ -452,14 +501,17 @@ fn render_status(frame: &mut Frame, app: &App, area: Rect) {
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
     )];
+    if !app.current_workflow.is_empty() {
+        parts.push(Span::raw(format!(
+            "Workflow: {}  ",
+            truncate_str(&app.current_workflow, 20)
+        )));
+    }
     if !app.current_model.is_empty() {
-        let model = truncate_str(&app.current_model, 24);
-        let tier = if app.current_tier.is_empty() {
-            String::new()
-        } else {
-            format!(" ({})", app.current_tier)
-        };
-        parts.push(Span::raw(format!("Model: {model}{tier}  ")));
+        parts.push(Span::raw(format!(
+            "Model: {}  ",
+            truncate_str(&app.current_model, 24)
+        )));
     }
     if app.current_cost > 0.0 {
         parts.push(Span::raw(format!("Cost: ${:.4}  ", app.current_cost)));

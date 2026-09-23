@@ -5,17 +5,11 @@
 //! and no runtime file lookups can fail. Templates that carry runtime values
 //! use `{{key}}` placeholders, filled with [`fill`].
 
-/// Classifier system message: routes a user prompt to the high/base/low tier.
-pub const CLASSIFIER: &str = include_str!("prompts/classifier.md");
-
-/// Tool-use note appended to the system message of the agentic tiers.
+/// Tool-use note appended to the system message of agentic runs.
 pub const AGENT_NOTE: &str = include_str!("prompts/agent-note.md");
 
 /// Summarizes prior beat messages into a context brief (`{{history}}`).
 pub const SUMMARIZE: &str = include_str!("prompts/summarize.md");
-
-/// Reflexion pass over the agentic draft (`{{prompt}}`, `{{draft}}`, `{{evidence}}`).
-pub const REFLEXION: &str = include_str!("prompts/reflexion.md");
 
 /// Built-in session instructions, prepended to every model run's system message.
 pub const SYSTEM: &str = include_str!("prompts/system.md");
@@ -84,13 +78,8 @@ mod tests {
     fn test_prompts_embedded() {
         // the embedded files are non-empty and the templated ones declare
         // every placeholder the code fills
-        assert!(CLASSIFIER.contains("three model tiers"));
         assert!(AGENT_NOTE.contains("Tools are available"));
         assert!(SUMMARIZE.contains("{{history}}"));
-        for key in ["prompt", "draft", "evidence"] {
-            let token = format!("{{{{{key}}}}}");
-            assert!(REFLEXION.contains(&token), "missing {token}");
-        }
         assert!(SYSTEM.contains("Session instructions"));
     }
 }

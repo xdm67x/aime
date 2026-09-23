@@ -67,7 +67,7 @@ pub fn open() -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// Older builds double-persisted base-tier answers (the agentic draft was
+/// Older builds double-persisted the final answer (the agentic draft was
 /// pushed as its own entry and again as the final answer, identical and
 /// adjacent). Drop adjacent duplicate messages once per open.
 fn dedupe_messages(conn: &Connection) {

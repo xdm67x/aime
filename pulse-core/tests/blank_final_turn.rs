@@ -61,12 +61,9 @@ fn spawn_mock(script: Vec<Value>) -> (String, Arc<AtomicUsize>) {
                 "--- request #{i}: model={model} tools={}",
                 v.get("tools").is_some()
             );
-            let payload = if model.contains("classifier") {
-                // non-streaming classify response
-                json!({"choices":[{"message":{"content":"{\"tier\": \"base\", \"n\": 2}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}).to_string()
-            } else {
+            let payload = {
                 let entry = script
-                    .get(i.saturating_sub(1))
+                    .get(i)
                     .cloned()
                     .unwrap_or(json!({"content":"(script exhausted)","finish_reason":"stop"}));
                 sse_for(&entry)
@@ -110,10 +107,9 @@ async fn blank_final_turn_never_ends_run_silently() {
     let (url, _n) = spawn_mock(script);
     db::set_setting("litellm_base_url", &url).unwrap();
     db::set_setting("litellm_api_key", "test").unwrap();
-    db::set_setting("model_classifier", "LiteLLM - classifier").unwrap();
-    db::set_setting("model_base", "LiteLLM - worker").unwrap();
-    db::set_setting("model_low", "LiteLLM - low").unwrap();
-    db::set_setting("model_high", "LiteLLM - high").unwrap();
+    // Plain prompts run through the base workflow: one step that hands the
+    // user's message to the worker model.
+    pulse_core::workflows::create("base", "", "LiteLLM - worker", "{{prompt}}").unwrap();
 
     let proj_dir = tempfile::tempdir().unwrap();
     let proj = pulse_core::projects::add_project(proj_dir.path().to_str().unwrap()).unwrap();

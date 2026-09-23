@@ -9,8 +9,9 @@ Before making any changes or contributions, read
 ## What this repo is
 
 **Pulse** — an AI agent harness with a terminal UI (plus a marketing website)
-where users send prompts to LLM providers; a classifier routes each prompt to a
-model tier, an agentic tool loop executes work, and results persist as "beats".
+where users send prompts to LLM providers; every prompt runs through a
+workflow (YAML in `~/.pulse/workflows/`) that names the model and steps, an
+agentic tool loop executes work, and results persist as "beats".
 
 ## Layout
 
@@ -18,8 +19,9 @@ model tier, an agentic tool loop executes work, and results persist as "beats".
   dependencies.** Consumed today by the `pulse` binary; designed to also
   back other runtimes. Progress flows through a caller-supplied `harness::OnEvent`
   callback, so any runtime can drive it.
-  - `harness.rs` — agentic loop, tier routing (`Tier::High/Base/Low`), task
-    events (`TaskEvent`, `TaggedEvent`), cancellation, `run_task` entry point.
+  - `harness.rs` — agentic loop, task events (`TaskEvent`, `TaggedEvent`),
+    cancellation, `run_task` entry point (resolves the workflow — plain
+    prompts run `base`, `/workflow {name}` picks one — and runs its steps).
   - `providers/` — `Provider` trait with `openrouter`, `opencode`, `litellm`,
     `mistral` implementations; `chat_completion` / `chat_completion_stream` /
     `list_models` / `list_models_of` (per provider).
@@ -29,23 +31,25 @@ model tier, an agentic tool loop executes work, and results persist as "beats".
     frontmatter gives name/description; full file loads on demand).
   - `prompts.rs` + `prompts/` — prompt templates embedded at compile time via
     `include_str!`; `{{key}}` placeholders filled at runtime.
-  - `config.rs` — API keys/base URLs and the four model slots
-    (`classifier`, `high`, `base`, `low`) stored in the DB.
-    (The `pulse settings` CLI is gone — keys and models are set from the TUI.)
+  - `config.rs` — API keys/base URLs stored in the DB. There are no global
+    model slots: models are named per workflow in the workflow files.
   - `db.rs` — SQLite at `~/.pulse/pulse.db` (`config`, `projects`, `beats`
     tables; rusqlite, bundled).
   - `beats.rs` / `projects.rs` — beat + project persistence. Beats born from a
     project get their own git worktree under `~/.pulse/worktrees/<beat>-<name>`.
-  - `workflows.rs` — the workflow engine.
+  - `workflows.rs` — the workflow engine: YAML files in
+    `~/.pulse/workflows/`, per-step/workflow `model:` (required somewhere),
+    `{{prompt}}` placeholders filled with the user's message on implicit
+    (base workflow) runs.
 - `pulse/` — the terminal app: a CLI + TUI hybrid on top of `pulse-core`.
   - `src/main.rs` — entry point: CLI subcommand dispatch, TUI event loop, key
     dispatch.
   - `src/cli.rs` — CLI subcommands: `pulse workflow list|new|edit` and
     `pulse update`. These run headless, before any terminal setup. Settings
-    (API keys, model slots) live in the TUI slash commands: `/key`, `/keys`,
-    `/model`, `/models`.
+    (API keys) live in the TUI slash commands: `/key`, `/keys`.
   - `src/app.rs` — application state and modes; `src/task.rs` runs harness
-    tasks; `src/event.rs` bridges input events.
+    tasks; `src/event.rs` bridges input events. First run with no workflows
+    opens the guided onboarding popup that creates the `base` workflow.
   - `src/ui/` — the chat view: transcript + input bar, with the sessions
     sidebar (opened with Left/Tab) and the `@` project picker popup.
 - `web/` — static GitHub Pages site (project landing page + release

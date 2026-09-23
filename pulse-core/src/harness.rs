@@ -1,22 +1,18 @@
 //! Task harness on OpenRouter / OpenCode Go, driven from beats (sessions).
 //!
-//! The user no longer picks a model per message. A cheap **classifier** model
-//! routes each prompt to one of three tiers the user configures in Settings:
-//! - `high` — most capable model; agentic work with tools, then a **reflexion**
-//!   pass (critique the draft → refined answer) for hard, high-stakes tasks.
-//! - `base` — implementation workhorse; agentic work with tools.
-//! - `low`  — low-cost model, single completion, no tools.
+//! Every prompt runs through a **workflow** (YAML in `~/.pulse/workflows/`)
+//! that names the model for each step — there are no global model slots and
+//! no tier routing. A plain prompt runs the `base` workflow; `/workflow
+//! {name}` picks a specific one. Each step's agentic loop offers the tools
+//! (`read_file`, `write_file`, `edit_file`, `grep`, `bash`) plus one
+//! `skill_*` tool per discovered skill in `~/.agents/skills/` (`skills.rs`
+//! holds skill discovery, `tools.rs` the schemas and execution).
 //!
-//! Tools (`read_file`, `write_file`, `edit_file`, `grep`, `bash`) plus one
-//! `skill_*` tool per discovered skill in `~/.agents/skills/` are offered to
-//! the high/base tiers; `skills.rs` holds skill discovery, `tools.rs` holds
-//! the tool schemas and execution.
-//!
-//! New patterns: add a `pub async fn run_*` command that classifies, picks a
-//! model tier, drives `agentic_loop`, and persists the result onto the beat.
+//! New patterns: add a `pub async fn run_*` command that resolves a workflow,
+//! drives `agentic_loop`, and persists the result onto the beat.
 
 use crate::providers::{self, chat_completion, chat_completion_stream, Usage};
-use crate::{beats, config, db, projects, prompts, skills, tools};
+use crate::{beats, db, projects, prompts, skills, tools, workflows};
 use serde::Serialize;
 use serde_json::json;
 use std::sync::Mutex;
@@ -65,8 +61,8 @@ pub const STOPPED: &str = "stopped";
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TaskEvent {
-    /// Model + tier chosen for this task (labels the streaming bubble).
-    Start { model: String, tier: String },
+    /// Model + workflow chosen for this task (labels the streaming bubble).
+    Start { model: String, workflow: String },
     /// Incremental text of the reply currently being generated.
     Delta { text: String },
     /// A tool call finished executing.
@@ -76,7 +72,7 @@ pub enum TaskEvent {
         result: String,
         error: bool,
     },
-    /// A finished intermediate step (e.g. the high-tier reflexion draft).
+    /// A finished intermediate step (e.g. a mid-task narration).
     Step { text: String },
 }
 
@@ -95,65 +91,10 @@ pub struct TaggedEvent {
     pub ev: TaskEvent,
 }
 
-/* ---- routing: the classifier picks a model tier ---- */
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tier {
-    High,
-    Base,
-    Low,
-}
-
-impl Tier {
-    fn as_str(self) -> &'static str {
-        match self {
-            Tier::High => "high",
-            Tier::Base => "base",
-            Tier::Low => "low",
-        }
-    }
-    fn parse(s: &str) -> Option<Tier> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "high" => Some(Tier::High),
-            "base" => Some(Tier::Base),
-            "low" => Some(Tier::Low),
-            _ => None,
-        }
-    }
-}
-
-/// Ask the classifier model which tier this prompt belongs to. Falls back to
-/// `base` (a safe middle ground) if the reply can't be parsed.
-async fn classify(classifier: &str, prompt: &str, mu: &mut ModelUsage) -> Result<Tier, String> {
-    let r = chat_completion(
-        classifier,
-        &[
-            json!({"role": "system", "content": prompts::CLASSIFIER}),
-            json!({"role": "user", "content": prompt}),
-        ],
-        &[],
-        Some(0.0),
-        Some(64),
-        true,
-        None,
-    )
-    .await?;
-    mu.add(&r.usage);
-    let tier = extract_json(&r.content)
-        .and_then(|v| v.get("tier").and_then(|t| t.as_str()).and_then(Tier::parse))
-        .unwrap_or(Tier::Base);
-    crate::log::debug(format!(
-        "classifier replied {:?} → tier {}",
-        r.content,
-        tier.as_str()
-    ));
-    Ok(tier)
-}
-
 /* ---- context + session prompt ---- */
 
 /// The beat's prior conversation, condensed into a context brief. Uses the
-/// classifier model (cheap) as the summarizer.
+/// step's model (the workflow's choice) as the summarizer.
 async fn summarize_history(
     beat_id: i64,
     model: &str,
@@ -567,57 +508,6 @@ fn persist_round(
     }));
 }
 
-/* ---- reflexion (high tier): critique the agentic draft → refined answer ---- */
-
-/// One reflexion pass over the draft the agentic loop produced, with the tool
-/// work summarized as evidence for the critique.
-async fn reflexion(
-    model: &str,
-    on_event: RawEvent<'_>,
-    prompt: &str,
-    draft: &str,
-    tool_steps: &[tools::ToolStep],
-    brief: &str,
-    session: &str,
-) -> Result<(String, Usage), String> {
-    let evidence = tool_steps
-        .iter()
-        .map(|s| {
-            let status = if s.error { "FAILED" } else { "ok" };
-            format!("- {}({}) → {status}", s.tool, s.arguments)
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let evidence = if evidence.is_empty() {
-        "none (no tools used)".to_string()
-    } else {
-        evidence
-    };
-    let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
-    let r = chat_completion_stream(
-        model,
-        &[
-            system_message(brief, session, ""),
-            json!({"role": "user", "content": prompts::fill(
-                prompts::REFLEXION,
-                &[
-                    ("prompt", prompt),
-                    ("draft", draft),
-                    ("evidence", evidence.as_str()),
-                ],
-            )}),
-        ],
-        &[],
-        Some(0.5),
-        None,
-        false,
-        None,
-        &mut on_delta,
-    )
-    .await?;
-    Ok((r.content, r.usage))
-}
-
 /// True when two reply texts are the same modulo whitespace. Models restating
 /// an earlier reply as the `task_complete` summary often vary line breaks and
 /// indentation — that restatement must still count as the same text, not a
@@ -639,26 +529,20 @@ fn truncate_middle(s: &str, max: usize) -> String {
     format!("{cut}…")
 }
 
-/// Pull the first embedded JSON object out of a reply (prose tolerated).
-fn extract_json(text: &str) -> Option<serde_json::Value> {
-    let start = text.find('{')?;
-    let end = text.rfind('}')? + 1;
-    serde_json::from_str(&text[start..end]).ok()
-}
-
-/* ---- task runner: classify → route → run → persist ---- */
+/* ---- task runner: resolve a workflow → run its steps → persist ---- */
 
 #[derive(Serialize)]
 pub struct TaskResult {
-    pub tier: String,
+    /// Workflow that ran the task (e.g. "base").
+    pub workflow: String,
     pub model: String,
-    /// Intermediate reflexion steps (e.g. the draft). Empty for base/low.
+    /// Names of the workflow steps that ran.
     pub steps: Vec<String>,
     /// Tool calls the model made while working.
     pub tool_steps: Vec<tools::ToolStep>,
     pub answer: String,
-    /// Per-model token usage for this run (classifier, summarizer, main
-    /// model, reflexion — one entry per model that was called).
+    /// Per-model token usage for this run (one entry per model that was
+    /// called; the summarizer's calls are internal plumbing, not included).
     pub usage: Vec<ModelUsage>,
     /// Total cost of this run in USD, summed across all model calls.
     pub cost_usd: f64,
@@ -755,13 +639,23 @@ fn session_is_full(beat_id: i64) -> Result<bool, String> {
 /// inherits the project (and thus the working directory) but starts with a
 /// clean context.
 async fn compact_session(beat_id: i64, on_event: RawEvent<'_>) -> Result<TaskResult, String> {
-    let cfg = config::ModelConfig::load()?;
-    let classifier = cfg.classifier.trim();
-    if classifier.is_empty() {
-        return Err("No classifier model configured — set the four model slots with `/model classifier|high|base|low <model>` (ids are prefixed, e.g. \"LiteLLM - gpt-4o\").".into());
-    }
-    let mut mu = ModelUsage::new(classifier);
-    let summary = summarize_history(beat_id, classifier, &mut mu).await?;
+    // /compact summarizes with the base workflow's model — there is no other
+    // model source anymore.
+    let wf = workflows::load(workflows::BASE).map_err(|_| {
+        "No 'base' workflow — /compact summarizes with its model. Create it with: \
+         `pulse workflow new base` (then set `model:`)."
+            .to_string()
+    })?;
+    let model = wf
+        .default_model()
+        .ok_or_else(|| {
+            "The base workflow has no model — set `model:` in \
+             ~/.pulse/workflows/base.yml (list ids with /models)."
+                .to_string()
+        })?
+        .to_string();
+    let mut mu = ModelUsage::new(&model);
+    let summary = summarize_history(beat_id, &model, &mut mu).await?;
     if summary.trim().is_empty() {
         return Err("Nothing to compact — this session has no messages yet.".into());
     }
@@ -782,8 +676,8 @@ async fn compact_session(beat_id: i64, on_event: RawEvent<'_>) -> Result<TaskRes
     });
     let cost_usd = mu.cost_usd;
     Ok(TaskResult {
-        tier: "low".into(),
-        model: classifier.to_string(),
+        workflow: workflows::BASE.into(),
+        model,
         steps: vec![],
         tool_steps: vec![],
         answer: format!(
@@ -798,10 +692,10 @@ async fn compact_session(beat_id: i64, on_event: RawEvent<'_>) -> Result<TaskRes
     })
 }
 
-/// Handle one user message: the classifier picks a tier, the tier's model runs
-/// the task — agentic with tools for `high`/`base` (plus a reflexion pass for
-/// `high`), a single completion for `low` — and everything is persisted onto
-/// the beat so it survives reloads.
+/// Handle one user message: resolve the workflow it runs through — a plain
+/// prompt runs the `base` workflow, `/workflow {name}` picks a specific one —
+/// run its steps with the agentic loop, and persist everything onto the beat
+/// so it survives reloads.
 /// Tag events with the beat, clear any stale cancel flag for it, and run with
 /// the beat id scoped so `cancelled()` knows which session asked.
 pub async fn run_task(
@@ -825,9 +719,9 @@ pub async fn run_task(
         .await;
     match &res {
         Ok(r) => crate::log::info(format!(
-            "beat {beat_id}: task finished in {:.1}s — tier={} model={} cost=${:.4} tools={} context={:?}",
+            "beat {beat_id}: task finished in {:.1}s — workflow={} model={} cost=${:.4} tools={} context={:?}",
             started.elapsed().as_secs_f64(),
-            r.tier,
+            r.workflow,
             r.model,
             r.cost_usd,
             r.tool_steps.len(),
@@ -841,19 +735,18 @@ pub async fn run_task(
     res
 }
 
-/// Run a single prompt on a beat with a specific model, bypassing the
-/// classifier. Always uses the agentic loop (tools enabled), like the base
-/// tier path in `run_task_inner`. Used by the workflow engine for steps that
-/// specify a model.
+/// Run one workflow step's prompt on a beat with its resolved model. Always
+/// uses the agentic loop (tools enabled). Called by the workflow engine.
 pub async fn run_task_with_model(
     beat_id: i64,
     prompt: String,
     model: String,
+    workflow: String,
     images: Vec<String>,
     on_event: OnEvent<'_>,
 ) -> Result<TaskResult, String> {
     crate::log::info(format!(
-        "beat {beat_id}: starting task with model {model} ({} chars, {} image(s))",
+        "beat {beat_id}: starting workflow '{workflow}' step with model {model} ({} chars, {} image(s))",
         prompt.len(),
         images.len()
     ));
@@ -862,12 +755,11 @@ pub async fn run_task_with_model(
     let mut sink = |ev: TaskEvent| {
         on_event(TaggedEvent { beat_id, ev });
     };
-    let res = BEAT
-        .scope(
-            beat_id,
-            run_task_with_model_inner(beat_id, prompt, model, images, &mut sink),
-        )
-        .await;
+    let res = BEAT.scope(
+        beat_id,
+        run_task_with_model_inner(beat_id, prompt, model, workflow, images, &mut sink),
+    )
+    .await;
     match &res {
         Ok(r) => crate::log::info(format!(
             "beat {beat_id}: model task finished in {:.1}s — model={} cost=${:.4} tools={}",
@@ -884,14 +776,14 @@ pub async fn run_task_with_model(
     res
 }
 
-/// Inner implementation of `run_task_with_model`: runs the agentic loop with a
-/// specified model, skipping classifier routing and reflexion. Reuses the same
-/// setup (system message, prior turns, working dir, persistence) as the base
-/// tier path in `run_task_inner`.
+/// Inner implementation of `run_task_with_model`: runs the agentic loop with
+/// the step's resolved model. Reuses the same setup (system message, prior
+/// turns, working dir, persistence) for every workflow step.
 async fn run_task_with_model_inner(
     beat_id: i64,
     prompt: String,
     model: String,
+    workflow: String,
     images: Vec<String>,
     on_event: RawEvent<'_>,
 ) -> Result<TaskResult, String> {
@@ -906,31 +798,23 @@ async fn run_task_with_model_inner(
         return compact_session(beat_id, on_event).await;
     }
 
-    let cfg = config::ModelConfig::load()?;
-    let classifier = cfg.classifier.trim();
     let session = session_prompt();
 
-    // Use the classifier for summarization when available (cheap); fall back
-    // to the specified model when no classifier is configured.
-    let summarizer = if classifier.is_empty() {
-        &model
-    } else {
-        classifier
-    };
-    let mut summarizer_usage = ModelUsage::new(summarizer);
-    let brief = summarize_history(beat_id, summarizer, &mut summarizer_usage).await?;
+    // The step's model doubles as the summarizer — it's the workflow's pick.
+    let mut summarizer_usage = ModelUsage::new(&model);
+    let brief = summarize_history(beat_id, &model, &mut summarizer_usage).await?;
 
     let mut main_usage = ModelUsage::new(&model);
     on_event(TaskEvent::Start {
         model: model.to_string(),
-        tier: "workflow".to_string(),
+        workflow: workflow.clone(),
     });
 
     let discovered = skills::discover();
     let tool_defs = tools::definitions(&discovered);
     let mut entries = vec![user_entry(&prompt, &images)];
 
-    // Agentic loop (base-tier path: tools, no reflexion)
+    // Agentic loop: tools enabled, working dir (and AGENTS.md) injected
     let wd = projects::working_dir(beat_id)?;
     let mut note = prompts::AGENT_NOTE.to_string();
     if let Some(dir) = &wd {
@@ -996,7 +880,7 @@ async fn run_task_with_model_inner(
     db::append_messages(beat_id, entries)?;
 
     Ok(TaskResult {
-        tier: "workflow".to_string(),
+        workflow,
         model: model.to_string(),
         steps: vec![],
         tool_steps,
@@ -1080,209 +964,59 @@ async fn run_task_inner(
     if prompt.trim().eq_ignore_ascii_case("/compact") {
         return compact_session(beat_id, on_event).await;
     }
-    if let Some(wf_name) = prompt.trim().strip_prefix("/workflow ") {
-        crate::log::info(format!("beat {beat_id}: running workflow {wf_name}"));
-        let wf = crate::workflows::load(wf_name.trim())?;
-        let mut tagged = |te: TaggedEvent| {
-            on_event(te.ev);
-        };
-        let result = crate::workflows::run(beat_id, &wf, &mut tagged).await?;
-        let answer = result
+    // Every prompt runs a workflow: `/workflow {name}` picks one explicitly;
+    // anything else runs the base workflow with the prompt as its input.
+    let trimmed = prompt.trim();
+    let (wf_name, user_prompt) = if trimmed == "/workflow" {
+        return Err("Usage: /workflow {name} — list them with: /workflows".into());
+    } else if let Some(rest) = trimmed.strip_prefix("/workflow ") {
+        (rest.trim().to_string(), None)
+    } else {
+        (workflows::BASE.to_string(), Some(prompt.clone()))
+    };
+    crate::log::info(format!("beat {beat_id}: running workflow {wf_name}"));
+    let wf = workflows::load(&wf_name).map_err(|e| {
+        if wf_name == workflows::BASE {
+            format!(
+                "{e}\nPlain prompts run through the 'base' workflow — create it with: \
+                 pulse workflow new base (then set `model:`), or invoke one explicitly \
+                 with /workflow {{name}}."
+            )
+        } else {
+            e
+        }
+    })?;
+    let mut tagged = |te: TaggedEvent| {
+        on_event(te.ev);
+    };
+    let result =
+        workflows::run(beat_id, &wf, user_prompt.as_deref(), &images, &mut tagged).await?;
+    // a single step IS the task — no headings; multiple steps get one
+    // section per step
+    let answer = if result.steps.len() == 1 {
+        result.steps[0].answer.clone()
+    } else {
+        result
             .steps
             .iter()
             .map(|s| format!("## {}\n\n{}", s.name, s.answer))
             .collect::<Vec<_>>()
-            .join("\n\n---\n\n");
-        return Ok(TaskResult {
-            tier: "workflow".into(),
-            model: wf.model.unwrap_or_else(|| "classifier".into()),
-            steps: result.steps.iter().map(|s| s.name.clone()).collect(),
-            tool_steps: vec![],
-            answer,
-            usage: vec![],
-            cost_usd: result.total_cost_usd,
-            context_percent: None,
-            context_full: false,
-            new_beat_id: None,
-        });
-    }
-    let cfg = config::ModelConfig::load()?;
-    let classifier = cfg.classifier.trim();
-    if classifier.is_empty() {
-        return Err("No classifier model configured — set the four model slots with `/model classifier|high|base|low <model>` (ids are prefixed, e.g. \"LiteLLM - gpt-4o\").".into());
-    }
-    let session = session_prompt();
-    let mut classifier_usage = ModelUsage::new(classifier);
-    let brief = summarize_history(beat_id, classifier, &mut classifier_usage).await?;
-    let tier = classify(classifier, &prompt, &mut classifier_usage).await?;
-    let model = match tier {
-        Tier::High => cfg.high.trim(),
-        Tier::Base => cfg.base.trim(),
-        Tier::Low => cfg.low.trim(),
+            .join("\n\n---\n\n")
     };
-    crate::log::info(format!(
-        "beat {beat_id}: classifier routed to tier {} → model {model}",
-        tier.as_str()
-    ));
-    if model.is_empty() {
-        return Err(format!(
-            "No {} model configured — set it with /model {} <model>.",
-            tier.as_str(),
-            tier.as_str()
-        ));
-    }
-    let mut main_usage = ModelUsage::new(model);
-    on_event(TaskEvent::Start {
-        model: model.to_string(),
-        tier: tier.as_str().to_string(),
-    });
-
-    // skills only contribute their frontmatter up front; the full SKILL.md is
-    // loaded on demand when the model invokes a skill tool
-    let discovered = skills::discover();
-    let tool_defs = tools::definitions(&discovered);
-
-    // the persisted transcript, built chronologically as work happens
-    let mut entries = vec![user_entry(&prompt, &images)];
-
-    let (answer, steps, tool_steps, _usage, ctx_full) = match tier {
-        Tier::High | Tier::Base => {
-            // a beat attached to a project runs its tools inside the project
-            // directory and gets its AGENTS.md injected as instructions
-            let wd = projects::working_dir(beat_id)?;
-            let mut note = prompts::AGENT_NOTE.to_string();
-            if let Some(dir) = &wd {
-                if !note.is_empty() {
-                    note.push_str("\n\n");
-                }
-                note.push_str(&format!(
-                    "Working directory: {dir}. Relative tool paths resolve against it, \
-                     bash runs inside it.\n\n"
-                ));
-                if let Some(agents) = projects::agents_note(dir) {
-                    note.push_str(&agents);
-                }
-            }
-            let sys = system_message(&brief, &session, &note);
-            // system first (some providers require it), then the replayed
-            // prior turns, then this instruction
-            let mut msgs = vec![sys];
-            msgs.extend(prior_turns(beat_id)?);
-            msgs.push(user_message(&prompt, &images));
-            let (draft, tool_steps, u1, ctx_full) = agentic_loop(
-                model,
-                on_event,
-                &mut msgs,
-                &mut entries,
-                &tool_defs,
-                wd.as_deref(),
-            )
-            .await?;
-            // for base the draft IS the final answer, already emitted by
-            // `agentic_loop` when `task_complete` fired — don't show it twice.
-            // For high tier the draft is a distinct intermediate message: it
-            // was already emitted and persisted by the loop's `task_complete`
-            // handling, so don't duplicate it — reflexion refines it next.
-            if tier == Tier::High {
-                crate::log::debug("high tier: running reflexion pass over the agentic draft");
-                let (final_, u2) = reflexion(
-                    model,
-                    on_event,
-                    &prompt,
-                    &draft,
-                    &tool_steps,
-                    &brief,
-                    &session,
-                )
-                .await?;
-                let usage = Usage {
-                    prompt_tokens: u1.prompt_tokens + u2.prompt_tokens,
-                    completion_tokens: u1.completion_tokens + u2.completion_tokens,
-                };
-                record_usage(beat_id, &mut main_usage, &usage).await;
-                (final_, vec![draft], tool_steps, usage, ctx_full)
-            } else {
-                record_usage(beat_id, &mut main_usage, &u1).await;
-                (draft, vec![], tool_steps, u1, ctx_full)
-            }
-        }
-        Tier::Low => {
-            let sys = system_message(&brief, &session, "");
-            let mut msgs = vec![sys];
-            msgs.extend(prior_turns(beat_id)?);
-            msgs.push(user_message(&prompt, &images));
-            let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
-            let r = chat_completion_stream(
-                model,
-                &msgs,
-                &[],
-                Some(0.7),
-                None,
-                false,
-                None,
-                &mut on_delta,
-            )
-            .await?;
-            record_usage(beat_id, &mut main_usage, &r.usage).await;
-            (r.content, vec![], vec![], r.usage, false)
-        }
-    };
-
-    // aggregate: only the routed (post-classification) model's calls; the
-    // classifier/summarizer calls are internal plumbing, not session usage
-    let usage = main_usage.clone();
-    let cost_usd = usage.cost_usd;
-    let context_percent = context_percent(model, main_usage.prompt_tokens).await;
-    // the session is full when the loop said so, or the reported fill already
-    // crossed the limit line
-    let context_full = ctx_full
-        || context_percent
-            .map(|p| p >= CONTEXT_LIMIT_PERCENT)
-            .unwrap_or(false);
-    if context_full {
-        beats::set_context_full(beat_id, true)?;
-    }
-
-    // a blank answer must not end the run silently — fall back to the last
-    // real assistant message (e.g. the truncated turn the loop continued
-    // from), and don't persist it twice when that's already the last entry
-    let answer = if answer.trim().is_empty() {
-        entries
-            .iter()
-            .rev()
-            .find(|e| {
-                e["role"] == "assistant" && !e["content"].as_str().unwrap_or("").trim().is_empty()
-            })
-            .and_then(|e| e["content"].as_str())
-            .unwrap_or("")
-            .to_string()
-    } else {
-        answer
-    };
-    // the answer may restate an earlier assistant reply of this run (a plain
-    // end-of-turn answer the loop later collected via `task_complete`) — in
-    // that case it's already in the transcript exactly once; don't append a
-    // second copy.
-    let dup = entries.iter().any(|e| {
-        e["role"] == "assistant" && same_reply(e["content"].as_str().unwrap_or(""), &answer)
-    });
-
-    // everything already landed in `entries` in order; just close with the answer
-    if !dup {
-        entries.push(json!({"role": "assistant", "model": model, "content": &answer}));
-    }
-    db::append_messages(beat_id, entries)?;
-
     Ok(TaskResult {
-        tier: tier.as_str().to_string(),
-        model: model.to_string(),
-        steps,
-        tool_steps,
+        workflow: wf.name.clone(),
+        model: result
+            .steps
+            .first()
+            .map(|s| s.model.clone())
+            .unwrap_or_default(),
+        steps: result.steps.iter().map(|s| s.name.clone()).collect(),
+        tool_steps: vec![],
         answer,
-        usage: vec![usage],
-        cost_usd,
-        context_percent,
-        context_full,
+        usage: vec![],
+        cost_usd: result.total_cost_usd,
+        context_percent: None,
+        context_full: false,
         new_beat_id: None,
     })
 }
@@ -1322,31 +1056,5 @@ mod tests {
         assert_eq!(truncate_middle(&long, 5), "xxxxx…");
         // multibyte chars count as one, never split a codepoint
         assert_eq!(truncate_middle(&"é".repeat(3), 2), "éé…");
-    }
-
-    #[test]
-    fn test_extract_json() {
-        assert_eq!(extract_json("{\"tier\":\"high\"}").unwrap()["tier"], "high");
-        // JSON embedded in prose survives
-        let v = extract_json("Decision:\n{\"tier\": \"low\", \"n\": 2}\nThanks!").unwrap();
-        assert_eq!(v["n"], 2);
-        assert_eq!(v["tier"], "low");
-        assert!(extract_json("no json here").is_none());
-        assert!(extract_json("broken {json").is_none());
-        // picks the outer object of nested ones
-        assert_eq!(
-            extract_json("x {\"a\": {\"b\": 1}} y").unwrap()["a"]["b"],
-            1
-        );
-    }
-
-    #[test]
-    fn test_tier_parse() {
-        assert_eq!(Tier::parse("high"), Some(Tier::High));
-        assert_eq!(Tier::parse("BASE"), Some(Tier::Base));
-        assert_eq!(Tier::parse(" low "), Some(Tier::Low));
-        assert_eq!(Tier::parse("unknown"), None);
-        assert_eq!(Tier::parse(""), None);
-        assert_eq!(Tier::High.as_str(), "high");
     }
 }

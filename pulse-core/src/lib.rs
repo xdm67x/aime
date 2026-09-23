@@ -1,4 +1,4 @@
-//! Pulse core: the agent harness — provider dispatch, tiered model routing,
+//! Pulse core: the agent harness — provider dispatch, workflow-driven runs,
 //! agentic tool loop, beats/projects persistence — with no UI dependencies.
 //!
 //! Consumed today by the `pulse` binary; designed to also back other

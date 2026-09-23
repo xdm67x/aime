@@ -1,17 +1,18 @@
 # Pulse
 
 Pulse is an AI agent harness with a terminal UI (plus a marketing website).
-You send prompts to LLM providers; a classifier routes each prompt to a model
-tier (`High`/`Base`/`Low`), an agentic tool loop executes the work, and results
-persist as "beats". Beats born from a project get their own git worktree, and
-a small workflow engine drives multi-step runs.
+You send prompts to LLM providers; every prompt runs through a **workflow**
+(YAML in `~/.pulse/workflows/`) that names the model and the steps, an agentic
+tool loop executes the work, and results persist as "beats". Beats born from
+a project get their own git worktree, and plain prompts run the `base`
+workflow (`/workflow <name>` picks any other).
 
 The project is a Rust workspace:
 
 - `pulse-core/` — the agent harness as a pure library (no UI dependencies):
   providers (OpenRouter, OpenCode, LiteLLM), core tools (`read_file`,
-  `write_file`, `edit_file`, `grep`, `bash`), skill discovery, tier routing,
-  prompt templates, SQLite persistence, and the workflow engine.
+  `write_file`, `edit_file`, `grep`, `bash`), skill discovery, workflow
+  execution, prompt templates, SQLite persistence.
 - `pulse/` — the terminal app: a CLI + TUI hybrid on top of `pulse-core`.
 - `web/` — the static marketing site (Vite + pnpm, deployed to GitHub Pages).
 
@@ -41,10 +42,11 @@ cargo run -p pulse -- workflow list
 ```
 
 Settings live in the TUI: `/key <name> <value>` sets an API key (openrouter,
-opencode, litellm, mistral, github) and `/keys` shows their status; `/model`
-shows the four model slots, `/model <model>` sets the general model, and
-`/model <tier> <model>` sets a specific slot; `/models [provider]` lists
-available models (all configured providers, or just one).
+opencode, litellm, mistral, github) and `/keys` shows their status. Models are
+not configured globally — each workflow names its model (`model:` at the
+workflow or step level), and `/models [provider]` lists available model ids.
+On first run with no workflows, the TUI walks you through creating the `base`
+workflow plain prompts run through.
 
 ## Updating
 

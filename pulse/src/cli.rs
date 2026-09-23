@@ -1,7 +1,7 @@
 //! CLI subcommands: workflow management and release updates. These run before
 //! any terminal setup and exit — the TUI only launches when no subcommand is
-//! given. Settings (API keys, model slots) live in the TUI via /key, /keys,
-//! /model and /models.
+//! given. Settings (API keys) live in the TUI via /key and /keys; models are
+//! picked per workflow in the workflow files themselves.
 
 use clap::{Parser, Subcommand};
 
@@ -104,10 +104,11 @@ fn run_workflow(action: WorkflowAction) -> Result<(), String> {
             let template = format!(
                 "name: {name}\n\
                  description: A new workflow\n\
+                 model: # required — pick from /models, e.g. OpenRouter - anthropic/claude-3.5-sonnet\n\
                  steps:\n\
                  \x20 - name: step1\n\
                  \x20   prompt: |\n\
-                 \x20     Do something useful.\n"
+                 \x20     Do something useful. {{prompt}} inserts the user's message.\n"
             );
             std::fs::write(&path, template).map_err(|e| format!("Failed to write {path}: {e}"))?;
             pulse_core::log::info(format!("workflow created: {path}"));

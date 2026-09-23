@@ -85,7 +85,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("/clear", "clear the transcript"),
     ("/compact", "compact the session context"),
     ("/workflow", "run a workflow"),
-    ("/model", "show or set model slots"),
+    ("/workflows", "list workflows"),
     ("/models", "list available models"),
     ("/key", "set an API key"),
     ("/keys", "show configured API keys"),
@@ -214,32 +214,45 @@ const TRANSCRIPT_EVENT_BEAT: i64 = i64::MIN;
 const TRANSCRIPT_EVENT_PREFIX: char = '\u{1}';
 const TRANSCRIPT_EVENT_SEP: char = '\u{2}';
 
-/// The `/model` slots: `classifier` plus the three routing tiers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Tier {
-    Classifier,
-    High,
-    Base,
-    Low,
+/// Guided onboarding, shown at startup while no workflows exist: collects
+/// the fields of the base workflow — the one every plain prompt runs through.
+#[derive(Clone)]
+pub struct Onboarding {
+    /// Field currently being filled in.
+    pub step: OnboardingStep,
+    /// Text typed into the current field.
+    pub text: String,
+    /// Collected: the base workflow's model.
+    pub model: String,
+    /// Collected: the base workflow's prompt template.
+    pub prompt: String,
 }
 
-impl Tier {
-    fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "classifier" => Some(Tier::Classifier),
-            "high" => Some(Tier::High),
-            "base" => Some(Tier::Base),
-            "low" => Some(Tier::Low),
-            _ => None,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OnboardingStep {
+    Model,
+    Prompt,
+    Description,
+}
+
+impl OnboardingStep {
+    pub fn label(self) -> &'static str {
+        match self {
+            OnboardingStep::Model => "model",
+            OnboardingStep::Prompt => "prompt",
+            OnboardingStep::Description => "description",
         }
     }
 
-    fn as_str(self) -> &'static str {
+    pub fn hint(self) -> &'static str {
         match self {
-            Tier::Classifier => "classifier",
-            Tier::High => "high",
-            Tier::Base => "base",
-            Tier::Low => "low",
+            OnboardingStep::Model => {
+                "the model every prompt runs on, e.g. OpenRouter - anthropic/claude-3.5-sonnet (list ids with /models)"
+            }
+            OnboardingStep::Prompt => {
+                "what to do with each message — {{prompt}} inserts it; leave as-is to pass it straight through"
+            }
+            OnboardingStep::Description => "a short description (optional)",
         }
     }
 }
@@ -359,9 +372,11 @@ pub struct App {
     /// When the running task started, driving the thinking spinner.
     pub task_started: Option<std::time::Instant>,
     pub current_model: String,
-    pub current_tier: String,
+    pub current_workflow: String,
     pub current_cost: f64,
     pub current_context: Option<f64>,
+    /// Guided first-run setup; open while no workflows exist.
+    pub onboarding: Option<Onboarding>,
 }
 
 impl App {
@@ -403,12 +418,26 @@ impl App {
             follow: true,
             task_started: None,
             current_model: String::new(),
-            current_tier: String::new(),
+            current_workflow: String::new(),
             current_cost: 0.0,
             current_context: None,
+            onboarding: None,
         };
         if let Some(id) = active_beat_id {
             app.load_transcript(id);
+        }
+        // First run: no workflows yet — guide the user through creating the
+        // base workflow every plain prompt runs through.
+        if pulse_core::workflows::discover()
+            .map(|w| w.is_empty())
+            .unwrap_or(false)
+        {
+            app.onboarding = Some(Onboarding {
+                step: OnboardingStep::Model,
+                text: String::new(),
+                model: String::new(),
+                prompt: String::new(),
+            });
         }
         app
     }
@@ -578,7 +607,7 @@ impl App {
         self.current_cost = 0.0;
         self.current_context = None;
         self.current_model.clear();
-        self.current_tier.clear();
+        self.current_workflow.clear();
         // Populate the status bar from the session's recorded usage.
         if let Ok(totals) = pulse_core::beats::usage_totals(beat_id) {
             self.current_cost = totals.iter().map(|t| t.cost_usd).sum();
@@ -688,11 +717,12 @@ impl App {
             return;
         }
         match ev.ev {
-            TaskEvent::Start { model, tier } => {
+            TaskEvent::Start { model, workflow } => {
                 self.current_model = model.clone();
-                self.current_tier = tier.clone();
-                self.transcript
-                    .push(TranscriptLine::System(format!("→ {model} ({tier})")));
+                self.current_workflow = workflow.clone();
+                self.transcript.push(TranscriptLine::System(format!(
+                    "→ workflow {workflow}: {model}"
+                )));
             }
             TaskEvent::Delta { text } => {
                 if let Some(TranscriptLine::Assistant(existing)) = self.transcript.last_mut() {
@@ -913,9 +943,9 @@ impl App {
             "/compact" => self.send_slash_to_task("/compact".into()),
             "/workflow" if !rest.is_empty() => self.send_slash_to_task(format!("/workflow {rest}")),
             "/workflow" => {
-                self.error = Some("Usage: /workflow {name} — list with: pulse workflow list".into())
+                self.error = Some("Usage: /workflow {name} — list them with: /workflows".into())
             }
-            "/model" => self.handle_model_command(rest),
+            "/workflows" => self.handle_workflows_command(),
             "/models" => self.handle_models_command(rest),
             "/key" => self.handle_key_command(rest),
             "/keys" => self.handle_keys_command(),
@@ -924,83 +954,41 @@ impl App {
         }
     }
 
-    /// `/model` — list the model slots, or set one:
-    /// `/model tier nom` sets the named tier slot, `/model nom` sets every
-    /// slot to that model.
-    fn handle_model_command(&mut self, args: &str) {
-        let args = args.trim();
-        if args.is_empty() {
-            match pulse_core::config::ModelConfig::load() {
-                Ok(cfg) => {
-                    let mut text = String::from("Model slots:");
-                    for (slot, model) in [
-                        ("classifier", &cfg.classifier),
-                        ("high", &cfg.high),
-                        ("base", &cfg.base),
-                        ("low", &cfg.low),
-                    ] {
-                        text.push_str(&format!(
-                            "\n  {slot}: {}",
-                            if model.trim().is_empty() {
-                                "(not set)"
-                            } else {
-                                model.trim()
-                            }
-                        ));
-                    }
-                    text.push_str(
-                        "\nSet with: /model [tier] <model> — list models with: /models [provider]",
-                    );
-                    self.transcript.push(TranscriptLine::System(text));
+    /// `/workflows` — list the discovered workflows in a popup.
+    fn handle_workflows_command(&mut self) {
+        match pulse_core::workflows::discover() {
+            Ok(wfs) if wfs.is_empty() => {
+                self.transcript.push(TranscriptLine::System(
+                    "No workflows found in ~/.pulse/workflows — create one with: \
+                     pulse workflow new <name> (then set `model:`)."
+                        .into(),
+                ));
+            }
+            Ok(wfs) => {
+                let mut lines = vec![format!("{} workflow(s)", wfs.len())];
+                for wf in &wfs {
+                    lines.push(format!(
+                        "{} — {} [model: {}]",
+                        wf.name,
+                        wf.description,
+                        wf.default_model().unwrap_or("(not set)")
+                    ));
                 }
-                Err(e) => self.error = Some(e),
-            }
-            return;
-        }
-        // The first word may name a tier; everything after it is the model id
-        // (ids are prefixed and can contain spaces, e.g. "Mistral - magistral").
-        let mut words = args.splitn(2, char::is_whitespace);
-        let first = words.next().unwrap_or_default();
-        let rest = words.next().map(str::trim).unwrap_or_default();
-        let (slot, model) = match Tier::parse(first) {
-            Some(tier) if !rest.is_empty() => (Some(tier), rest),
-            Some(_) => {
-                self.error = Some(format!("Usage: /model {first} <model>"));
-                return;
-            }
-            None => (None, args),
-        };
-        let set_err = match pulse_core::config::ModelConfig::load() {
-            Ok(mut cfg) => {
-                match slot {
-                    Some(Tier::Classifier) => cfg.classifier = model.to_string(),
-                    Some(Tier::High) => cfg.high = model.to_string(),
-                    Some(Tier::Base) => cfg.base = model.to_string(),
-                    Some(Tier::Low) => cfg.low = model.to_string(),
-                    None => {
-                        cfg.classifier = model.to_string();
-                        cfg.high = model.to_string();
-                        cfg.base = model.to_string();
-                        cfg.low = model.to_string();
-                    }
-                }
-                pulse_core::config::save_model_config(&cfg)
-            }
-            Err(e) => Err(e),
-        };
-        match set_err {
-            Ok(()) => {
-                let scope = slot.map(|t| t.as_str()).unwrap_or("all tiers");
-                self.transcript.push(TranscriptLine::System(format!(
-                    "Model set for {scope}: {model}"
-                )));
+                lines.push(String::new());
+                lines.push("Run one with: /workflow <name> — plain prompts run \"base\"".into());
+                self.list_popup = Some(ListPopup {
+                    title: "Workflows".into(),
+                    lines,
+                    scroll: 0,
+                });
             }
             Err(e) => self.error = Some(e),
         }
     }
 
     /// `/models [provider]` — list available models in a popup, for one
-    /// provider or all configured ones (ids are prefixed, ready for `/model`).
+    /// provider or all configured ones (ids are prefixed, ready for a
+    /// workflow's `model:` field).
     fn handle_models_command(&mut self, args: &str) {
         let args = args.trim().to_string();
         let tx = self.event_tx.clone();
@@ -1104,6 +1092,66 @@ impl App {
         });
     }
 
+    /// Onboarding input: submit the current field and advance. The model is
+    /// required; the prompt defaults to `{{prompt}}`; the description is
+    /// optional and completes the flow by writing the base workflow.
+    pub fn onboarding_submit(&mut self) {
+        let Some(mut ob) = self.onboarding.take() else {
+            return;
+        };
+        match ob.step {
+            OnboardingStep::Model => {
+                let model = ob.text.trim().to_string();
+                if model.is_empty() {
+                    self.error =
+                        Some("Enter the model the base workflow should use — list ids with /models.".into());
+                    self.onboarding = Some(ob);
+                    return;
+                }
+                ob.model = model;
+                ob.step = OnboardingStep::Prompt;
+                ob.text = "{{prompt}}".into();
+                self.onboarding = Some(ob);
+            }
+            OnboardingStep::Prompt => {
+                ob.prompt = if ob.text.trim().is_empty() {
+                    "{{prompt}}".into()
+                } else {
+                    ob.text.trim().to_string()
+                };
+                ob.step = OnboardingStep::Description;
+                ob.text.clear();
+                self.onboarding = Some(ob);
+            }
+            OnboardingStep::Description => {
+                let description = ob.text.trim().to_string();
+                match pulse_core::workflows::create(
+                    pulse_core::workflows::BASE,
+                    &description,
+                    &ob.model,
+                    &ob.prompt,
+                ) {
+                    Ok(path) => self.transcript.push(TranscriptLine::System(format!(
+                        "Base workflow created at {} — plain prompts now run through it.",
+                        path.display()
+                    ))),
+                    Err(e) => self.error = Some(e),
+                }
+            }
+        }
+    }
+
+    /// Skip onboarding: plain prompts keep working once the base workflow is
+    /// created out-of-band (the error message at prompt time explains how).
+    pub fn onboarding_cancel(&mut self) {
+        self.onboarding = None;
+        self.transcript.push(TranscriptLine::System(
+            "Onboarding skipped — create the base workflow later with: \
+             pulse workflow new base (then set `model:`). Plain prompts run through it."
+                .into(),
+        ));
+    }
+
     fn send_slash_to_task(&mut self, command: String) {
         let beat_id = match self.active_beat_id {
             Some(id) => id,
@@ -1130,6 +1178,11 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Serializes HOME-redirection across this crate's tests (set_var is
+    /// process-global). Test binaries are separate processes, so this lock
+    /// only needs to cover the `pulse` crate's own tests.
+    static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn entry_row_at_finds_tool_entries() {
@@ -1262,8 +1315,9 @@ mod tests {
                 .map(|(n, _)| *n)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(names("/mo"), vec!["/model", "/models"]);
-        assert_eq!(names("/MO"), vec!["/model", "/models"]);
+        assert_eq!(names("/mo"), vec!["/models"]);
+        assert_eq!(names("/MO"), vec!["/models"]);
+        assert_eq!(names("/work"), vec!["/workflow", "/workflows"]);
         assert_eq!(names("/new"), vec!["/new"]);
         assert!(names("/zzz").is_empty());
         assert!(names("plain").is_empty());
@@ -1273,12 +1327,15 @@ mod tests {
 
     #[test]
     fn cmd_popup_updates_and_completes() {
+        // HOME_LOCK: App::new() reads HOME (workflows, db); keep it stable
+        // while other tests redirect it to a temp dir.
+        let _g = HOME_LOCK.lock().unwrap();
         let mut app = App::new();
         app.input = "/mo".into();
         app.input_cursor = app.input.chars().count();
         app.cmd_popup = Some(CmdPopup { selected: 0 });
         app.update_cmd_popup();
-        assert_eq!(matching_commands(&app.input).len(), 2);
+        assert_eq!(matching_commands(&app.input).len(), 1);
         assert_eq!(app.cmd_popup, Some(CmdPopup { selected: 0 }));
 
         // Completing rewrites the input with the command and a trailing space.
@@ -1313,14 +1370,61 @@ mod tests {
     }
 
     #[test]
-    fn tier_parse_and_labels() {
-        assert_eq!(Tier::parse("high"), Some(Tier::High));
-        assert_eq!(Tier::parse("Base"), Some(Tier::Base));
-        assert_eq!(Tier::parse(" low "), Some(Tier::Low));
-        assert_eq!(Tier::parse("classifier"), Some(Tier::Classifier));
-        assert_eq!(Tier::parse("mistral"), None);
-        assert_eq!(Tier::High.as_str(), "high");
-        assert_eq!(Tier::Classifier.as_str(), "classifier");
+    fn onboarding_creates_the_base_workflow() {
+        // set_var("HOME") is process-global and races across parallel tests
+        let _g = HOME_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", dir.path());
+        let mut app = App::new();
+        assert!(app.onboarding.is_some(), "no workflows yet → onboarding opens");
+
+        // an empty model is refused
+        app.onboarding_submit();
+        assert_eq!(
+            app.onboarding.as_ref().unwrap().step,
+            OnboardingStep::Model
+        );
+        assert!(app.error.is_some());
+
+        // a model advances to the prompt step, prefilled with {{prompt}}
+        app.error = None;
+        if let Some(ob) = app.onboarding.as_mut() {
+            ob.text = "OpenRouter - anthropic/claude-3.5-sonnet".into();
+        }
+        app.onboarding_submit();
+        let ob = app.onboarding.as_ref().unwrap();
+        assert_eq!(ob.step, OnboardingStep::Prompt);
+        assert_eq!(ob.model, "OpenRouter - anthropic/claude-3.5-sonnet");
+        assert_eq!(ob.text, "{{prompt}}");
+
+        // the prefilled prompt (kept as-is) advances to the description
+        app.onboarding_submit();
+        assert_eq!(
+            app.onboarding.as_ref().unwrap().step,
+            OnboardingStep::Description
+        );
+
+        // the description completes the flow and writes the base workflow
+        if let Some(ob) = app.onboarding.as_mut() {
+            ob.text = "the default workflow".into();
+        }
+        app.onboarding_submit();
+        assert!(app.onboarding.is_none());
+        let wf = pulse_core::workflows::load(pulse_core::workflows::BASE).unwrap();
+        assert_eq!(wf.description, "the default workflow");
+        assert_eq!(
+            wf.default_model().unwrap(),
+            "OpenRouter - anthropic/claude-3.5-sonnet"
+        );
+        assert_eq!(wf.steps[0].prompt.trim(), "{{prompt}}");
+
+        // skipping instead leaves no workflow behind (fresh HOME)
+        let dir2 = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", dir2.path());
+        let mut app = App::new();
+        assert!(app.onboarding.is_some());
+        app.onboarding_cancel();
+        assert!(app.onboarding.is_none());
     }
 
     #[test]
@@ -1342,6 +1446,7 @@ mod tests {
 
     #[test]
     fn transcript_event_marker_replaces_placeholder() {
+        let _g = HOME_LOCK.lock().unwrap();
         let mut app = App::new();
         app.transcript
             .push(TranscriptLine::Step("Fetching models\u{2026}".into()));
@@ -1368,6 +1473,7 @@ mod tests {
 
     #[test]
     fn transcript_event_fills_open_list_popup() {
+        let _g = HOME_LOCK.lock().unwrap();
         let mut app = App::new();
         app.list_popup = Some(ListPopup {
             title: "Models".into(),
@@ -1407,6 +1513,7 @@ mod tests {
 
     #[test]
     fn keys_command_opens_popup_one_line_per_key() {
+        let _g = HOME_LOCK.lock().unwrap();
         let mut app = App::new();
         app.handle_slash_command("/keys");
         let popup = app.list_popup.as_ref().expect("popup opens");
