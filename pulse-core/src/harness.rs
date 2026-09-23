@@ -709,7 +709,7 @@ async fn compact_session(beat_id: i64, on_event: RawEvent<'_>) -> Result<TaskRes
     let cfg = config::ModelConfig::load()?;
     let classifier = cfg.classifier.trim();
     if classifier.is_empty() {
-        return Err("No classifier model configured — set the four models in Settings.".into());
+        return Err("No classifier model configured — set the four model slots with `pulse settings set classifier|high|base|low <model>` (ids are prefixed, e.g. \"LiteLLM - gpt-4o\").".into());
     }
     let mut mu = ModelUsage::new(classifier);
     let summary = summarize_history(beat_id, classifier, &mut mu).await?;
@@ -1058,7 +1058,7 @@ async fn run_task_inner(
     let cfg = config::ModelConfig::load()?;
     let classifier = cfg.classifier.trim();
     if classifier.is_empty() {
-        return Err("No classifier model configured — set the four models in Settings.".into());
+        return Err("No classifier model configured — set the four model slots with `pulse settings set classifier|high|base|low <model>` (ids are prefixed, e.g. \"LiteLLM - gpt-4o\").".into());
     }
     let session = session_prompt();
     let mut classifier_usage = ModelUsage::new(classifier);

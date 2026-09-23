@@ -143,6 +143,20 @@ pub trait Provider: Send + Sync {
     fn prefix(&self) -> &'static str;
     /// Settings key holding this provider's API key.
     fn key_setting(&self) -> &'static str;
+    /// True when the provider is usable: its API key is set. Unconfigured
+    /// providers are skipped when listing models, so configuring a single
+    /// provider (e.g. LiteLLM) is enough to run Pulse on it alone.
+    fn configured(&self) -> bool {
+        config::api_key(self.key_setting())
+            .ok()
+            .flatten()
+            .is_some_and(|k| !k.trim().is_empty())
+    }
+    /// True for providers that work without a key (e.g. an unauthenticated
+    /// LiteLLM proxy); their dispatch paths accept an empty key.
+    fn keyless(&self) -> bool {
+        false
+    }
     /// URL, headers and body extras for one chat POST. The shared `chat` and
     /// `chat_stream` paths add nothing else; streaming only adds `stream:true`
     /// on top. `req.model` is the bare (unprefixed) model id.
@@ -167,17 +181,48 @@ fn providers() -> &'static [Box<dyn Provider>] {
 }
 
 /// Resolve a prefixed model id to its provider, stripping the prefix. Bare
-/// legacy ids (saved before prefixing) fall back to OpenRouter.
+/// legacy ids (saved before prefixing) fall back to OpenRouter — unless
+/// OpenRouter is not configured and exactly one other provider is: then the
+/// id belongs to that provider (a LiteLLM-only setup must not be told to
+/// configure an OpenRouter key).
 fn provider_for(model: &str) -> Result<(&'static dyn Provider, String), String> {
     for p in providers() {
         if let Some(id) = model.strip_prefix(p.prefix()) {
             return Ok((p.as_ref(), id.to_string()));
         }
     }
+    let configured: Vec<&dyn Provider> = providers()
+        .iter()
+        .map(|p| p.as_ref())
+        .filter(|p| p.configured())
+        .collect();
+    if configured.len() == 1 {
+        return Ok((configured[0], model.to_string()));
+    }
     Ok((providers()[0].as_ref(), model.to_string()))
 }
 
 /* ---- chat dispatch ---- */
+
+/// The error shown when a chat is routed to a provider whose key is missing.
+/// Names the exact settings field so the fix is one `pulse settings set` away.
+fn missing_key_error(p: &dyn Provider) -> String {
+    format!(
+        "No {} API key configured — set it with `pulse settings set {}-key <key>`",
+        p.name(),
+        p.key_setting()
+    )
+}
+
+/// The key for one chat against a provider: the configured key, or an empty
+/// string when the provider is keyless and no key is set.
+fn dispatch_key(p: &dyn Provider) -> Result<String, String> {
+    match config::api_key(p.key_setting())? {
+        Some(k) if !k.trim().is_empty() => Ok(k),
+        _ if p.keyless() => Ok(String::new()),
+        _ => Err(missing_key_error(p)),
+    }
+}
 
 /// One chat completion against whichever provider owns `model`. Retries once
 /// on failure; the retry drops `json_mode` (some models reject
@@ -192,8 +237,7 @@ pub async fn chat_completion(
     tools: Option<&[serde_json::Value]>,
 ) -> Result<ChatResult, String> {
     let (p, model_id) = provider_for(model)?;
-    let key = config::api_key(p.key_setting())?
-        .ok_or_else(|| format!("No {} API key configured", p.name()))?;
+    let key = dispatch_key(p)?;
     let mut req = ChatRequest {
         model: model_id,
         messages: messages.to_vec(),
@@ -310,8 +354,7 @@ pub async fn chat_completion_stream(
     on_delta: &mut (dyn FnMut(&str) + Send),
 ) -> Result<ChatResult, String> {
     let (p, model_id) = provider_for(model)?;
-    let key = config::api_key(p.key_setting())?
-        .ok_or_else(|| format!("No {} API key configured", p.name()))?;
+    let key = dispatch_key(p)?;
     let req = ChatRequest {
         model: model_id,
         messages: messages.to_vec(),
@@ -565,11 +608,23 @@ static MODELS_CACHE: Mutex<Option<(Instant, Vec<Model>)>> = Mutex::new(None);
 async fn fetch_models() -> Result<Vec<Model>, String> {
     let mut models = Vec::new();
     let mut errors = Vec::new();
+    let mut configured = 0usize;
     for p in providers() {
+        if !p.configured() {
+            continue;
+        }
+        configured += 1;
         match p.models().await {
             Ok(m) => models.extend(m),
             Err(e) => errors.push(format!("{}: {e}", p.name())),
         }
+    }
+    if configured == 0 {
+        return Err(
+            "No provider API key configured — set one with `pulse settings set \
+             openrouter-key|opencode-key|litellm-key <key>`"
+                .into(),
+        );
     }
     if models.is_empty() {
         return Err(errors.join("; "));
@@ -646,17 +701,60 @@ mod tests {
         assert!(u.is_none());
     }
 
+    // Redirect HOME to a fresh temp dir (shares log::HOME_LOCK with the db
+    // and log tests) so configured()/provider_for() read an isolated DB.
+    fn with_temp_home(f: impl FnOnce()) {
+        let _g = crate::log::HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!("pulse-providers-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::env::set_var("HOME", &tmp);
+        f();
+        std::env::set_var("HOME", std::env::temp_dir());
+    }
+
     #[test]
     fn test_provider_for() {
-        let (p, id) = provider_for("OpenCode - kimi-k3").unwrap();
-        assert_eq!(p.name(), "OpenCode Go");
-        assert_eq!(id, "kimi-k3");
-        let (p, id) = provider_for("OpenRouter - anthropic/claude").unwrap();
-        assert_eq!(p.name(), "OpenRouter");
-        assert_eq!(id, "anthropic/claude");
-        // legacy bare id falls back to OpenRouter, id unchanged
-        let (p, id) = provider_for("anthropic/claude").unwrap();
-        assert_eq!(p.name(), "OpenRouter");
-        assert_eq!(id, "anthropic/claude");
+        with_temp_home(|| {
+            let (p, id) = provider_for("OpenCode - kimi-k3").unwrap();
+            assert_eq!(p.name(), "OpenCode Go");
+            assert_eq!(id, "kimi-k3");
+            let (p, id) = provider_for("OpenRouter - anthropic/claude").unwrap();
+            assert_eq!(p.name(), "OpenRouter");
+            assert_eq!(id, "anthropic/claude");
+            // with no provider configured the legacy bare id falls back to
+            // OpenRouter, id unchanged
+            let (p, id) = provider_for("anthropic/claude").unwrap();
+            assert_eq!(p.name(), "OpenRouter");
+            assert_eq!(id, "anthropic/claude");
+        });
+    }
+
+    #[test]
+    fn test_bare_id_routes_to_sole_configured_provider() {
+        with_temp_home(|| {
+            // LiteLLM-only setup: a bare id must route to LiteLLM, not
+            // demand an OpenRouter key
+            config::save_api_key("litellm", "sk-test").unwrap();
+            for p in providers() {
+                assert_eq!(p.configured(), p.name() == "LiteLLM");
+            }
+            let (p, id) = provider_for("anthropic/claude").unwrap();
+            assert_eq!(p.name(), "LiteLLM");
+            assert_eq!(id, "anthropic/claude");
+            let (p, id) = provider_for("gpt-4o").unwrap();
+            assert_eq!(p.name(), "LiteLLM");
+            assert_eq!(id, "gpt-4o");
+            // an explicit prefix still wins over the sole-provider fallback
+            let (p, id) = provider_for("OpenRouter - anthropic/claude").unwrap();
+            assert_eq!(p.name(), "OpenRouter");
+            assert_eq!(id, "anthropic/claude");
+        });
+    }
+
+    #[test]
+    fn test_missing_key_error_names_setting() {
+        let msg = missing_key_error(providers()[0].as_ref());
+        assert_eq!(msg, "No OpenRouter API key configured — set it with `pulse settings set openrouter-key <key>`");
     }
 }
