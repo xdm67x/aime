@@ -634,7 +634,13 @@ impl App {
                         "tool" => {
                             let tool = m["model"].as_str().unwrap_or("tool").to_string();
                             let arguments = m["arguments"].as_str().unwrap_or("").to_string();
-                            let result = content.clone();
+                            // Prefer the raw result (with the UI diff section)
+                            // over the stripped model-facing copy.
+                            let result = m["raw_content"]
+                                .as_str()
+                                .or_else(|| m["content"].as_str())
+                                .unwrap_or("")
+                                .to_string();
                             let error = m["error"].as_bool().unwrap_or(false);
                             self.transcript.push(TranscriptLine::Tool {
                                 tool,

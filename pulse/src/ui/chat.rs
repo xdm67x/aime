@@ -224,7 +224,10 @@ fn build_entry_lines(
             let mut spans = vec![
                 Span::styled(format!(" {marker} "), Style::default().fg(color)),
                 Span::styled(format!("[{tool}] "), Style::default().fg(color)),
-                Span::styled(arguments.clone(), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    tool_summary(tool, arguments),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ];
             if !is_expanded {
                 let n = result.lines().count();
@@ -237,13 +240,7 @@ fn build_entry_lines(
             }
             out.push(Line::from(spans));
             if is_expanded {
-                let out_color = if *error { Color::Red } else { Color::Gray };
-                for line in truncate_str(result, 4000).lines() {
-                    out.push(Line::styled(
-                        format!("     {line}"),
-                        Style::default().fg(out_color),
-                    ));
-                }
+                out.extend(expanded_result_lines(tool, arguments, result, *error));
             }
             out.push(Line::raw(""));
             is_tool = Some(idx);
@@ -270,6 +267,143 @@ fn build_entry_lines(
         }
     }
     (out, is_tool)
+}
+
+/// One-line summary of a tool call for the transcript header, shown in both
+/// collapsed and expanded states. Parses the arguments JSON and picks the
+/// interesting bits per tool, so a collapsed row never dumps a whole
+/// `write_file` payload. Non-JSON arguments fall back to a whitespace-
+/// collapsed copy of the raw string.
+fn tool_summary(tool: &str, arguments: &str) -> String {
+    let args: serde_json::Value =
+        serde_json::from_str(arguments).unwrap_or(serde_json::Value::Null);
+    let str_arg = |k: &str| args[k].as_str();
+    let raw = || {
+        if arguments.trim().is_empty() {
+            String::new()
+        } else {
+            one_line(arguments)
+        }
+    };
+    let summary = match tool {
+        "read_file" => match str_arg("path") {
+            Some(p) => match (args["offset"].as_u64(), args["limit"].as_u64()) {
+                (Some(off), Some(lim)) => format!("{p}:{off}-{}", off + lim.saturating_sub(1)),
+                (Some(off), None) => format!("{p}:{off}-end"),
+                _ => p.to_string(),
+            },
+            None => raw(),
+        },
+        "write_file" => match (str_arg("path"), str_arg("content")) {
+            (Some(p), Some(c)) => format!("{p} (+{} lines)", c.lines().count().max(1)),
+            (Some(p), None) => p.to_string(),
+            _ => raw(),
+        },
+        "edit_file" => match str_arg("path") {
+            Some(p) => match args["start_line"].as_u64() {
+                Some(start) => format!(
+                    "{p}:{start}-{}",
+                    args["end_line"].as_u64().unwrap_or(start)
+                ),
+                None => format!("{p} (replace)"),
+            },
+            None => raw(),
+        },
+        "grep" => match (str_arg("pattern"), str_arg("path")) {
+            (Some(pat), Some(p)) => format!("{pat} in {p}"),
+            (Some(pat), None) => pat.to_string(),
+            _ => raw(),
+        },
+        "bash" => str_arg("command").map(one_line).unwrap_or_else(raw),
+        "task_complete" => str_arg("summary").map(one_line).unwrap_or_else(raw),
+        other => match other.strip_prefix("skill_") {
+            Some(name) => format!("load skill {name}"),
+            None => raw(),
+        },
+    };
+    truncate_str(&summary, 100)
+}
+
+/// Collapse all whitespace to single spaces (multi-line args → one line).
+fn one_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// `path` argument of a file tool, if the arguments are JSON with one.
+fn file_arg(arguments: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(arguments)
+        .ok()?
+        .get("path")?
+        .as_str()
+        .map(str::to_string)
+}
+
+/// Output lines of an expanded tool call. Errors stay plain. File tools get
+/// syntax highlighting: `read_file` content is highlighted directly, and
+/// `write_file`/`edit_file` results carry a diff section (after the
+/// `\x1bDIFF\x1b` marker) rendered git-style with the code highlighted.
+fn expanded_result_lines(
+    tool: &str,
+    arguments: &str,
+    result: &str,
+    error: bool,
+) -> Vec<Line<'static>> {
+    let base = Style::default().fg(if error { Color::Red } else { Color::Gray });
+    let result = truncate_str(result, 4000);
+    let mut out = Vec::new();
+
+    if error {
+        for line in result.lines() {
+            out.push(Line::styled(format!("     {line}"), base));
+        }
+        return out;
+    }
+
+    let lang = match tool {
+        "read_file" | "write_file" | "edit_file" => {
+            file_arg(arguments).as_deref().and_then(super::highlight::lang_for_path)
+        }
+        _ => None,
+    };
+
+    if let Some((msg, diff)) = result.split_once("\n\x1bDIFF\x1b\n") {
+        for line in msg.lines() {
+            out.push(Line::styled(format!("     {line}"), base));
+        }
+        for line in diff.lines() {
+            out.push(diff_line(line, lang, base));
+        }
+        return out;
+    }
+
+    for line in result.lines() {
+        let mut spans = vec![Span::styled("     ".to_string(), base)];
+        spans.extend(super::highlight::highlight_line(line, lang, base));
+        out.push(Line::from(spans));
+    }
+    out
+}
+
+/// One diff body line: sign prefix colored git-style (green +, red -, dim
+/// context), the code itself syntax-highlighted. Elision markers dim.
+fn diff_line(line: &str, lang: Option<&str>, base: Style) -> Line<'static> {
+    let (sign, rest, sign_style) = match line.chars().next() {
+        Some('+') => ("+ ", &line[1..], Style::default().fg(Color::Green)),
+        Some('-') => ("- ", &line[1..], Style::default().fg(Color::Red)),
+        Some(' ') => ("  ", &line[1..], base),
+        _ => {
+            return Line::styled(
+                format!("     {line}"),
+                Style::default().fg(Color::DarkGray),
+            )
+        }
+    };
+    let mut spans = vec![
+        Span::styled("     ".to_string(), base),
+        Span::styled(sign, sign_style),
+    ];
+    spans.extend(super::highlight::highlight_line(rest, lang, base));
+    Line::from(spans)
 }
 
 /// Queued prompts waiting for the running task to finish, dimmed rows above
@@ -544,7 +678,7 @@ mod tests {
     fn tool_entry(result: &str) -> TranscriptLine {
         TranscriptLine::Tool {
             tool: "bash".into(),
-            arguments: "ls -la".into(),
+            arguments: r#"{"command":"ls -la"}"#.into(),
             result: result.into(),
             error: false,
         }
@@ -587,13 +721,111 @@ mod tests {
     fn tool_entry_marks_errors() {
         let entry = TranscriptLine::Tool {
             tool: "bash".into(),
-            arguments: "oops".into(),
+            arguments: r#"{"command":"oops"}"#.into(),
             result: "boom".into(),
             error: true,
         };
         let (lines, tool) = build_entry_lines(&std::collections::HashSet::new(), 0, &entry);
         assert_eq!(tool, Some(0));
         assert!(lines[0].to_string().contains("[!]"));
+    }
+
+    #[test]
+    fn collapsed_write_file_shows_summary_not_content() {
+        let entry = TranscriptLine::Tool {
+            tool: "write_file".into(),
+            arguments: r#"{"path":"src/main.rs","content":"fn main() {}\n// two\n"}"#.into(),
+            result: "Wrote 24 bytes to src/main.rs".into(),
+            error: false,
+        };
+        let (lines, _) = build_entry_lines(&std::collections::HashSet::new(), 0, &entry);
+        let header = lines[0].to_string();
+        assert!(header.contains("src/main.rs (+2 lines)"), "got: {header}");
+        assert!(!header.contains("fn main"), "content leaked: {header}");
+        assert!(!header.contains("{\"path\""), "raw JSON leaked: {header}");
+    }
+
+    #[test]
+    fn collapsed_read_file_summary_includes_range() {
+        let entry = TranscriptLine::Tool {
+            tool: "read_file".into(),
+            arguments: r#"{"path":"lib.rs","offset":10,"limit":5}"#.into(),
+            result: "…".into(),
+            error: false,
+        };
+        let (lines, _) = build_entry_lines(&std::collections::HashSet::new(), 0, &entry);
+        assert!(lines[0].to_string().contains("lib.rs:10-14"));
+    }
+
+    #[test]
+    fn expanded_write_file_renders_diff_with_signs_and_highlight() {
+        let entry = TranscriptLine::Tool {
+            tool: "write_file".into(),
+            arguments: r#"{"path":"src/main.rs","content":"fn main() {}"}"#.into(),
+            result: format!(
+                "Wrote 13 bytes to src/main.rs\n\x1bDIFF\x1b\n-fn main() {{}}\n+fn main() {{}} {{}}\n fn other();"
+            ),
+            error: false,
+        };
+        let mut expanded = std::collections::HashSet::new();
+        expanded.insert(0);
+        let (lines, _) = build_entry_lines(&expanded, 0, &entry);
+        // Message line + 3 diff lines.
+        assert!(lines[1].to_string().contains("Wrote 13 bytes"));
+        let rendered: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        assert!(rendered.join("\n").contains("+ fn main"), "diff body missing");
+        // No raw marker anywhere.
+        assert!(!rendered.join("\n").contains('\u{1b}'));
+        // Sign spans colored: added green, removed red.
+        let added = &lines[3];
+        assert!(added.spans.iter().any(|s| s.style.fg == Some(Color::Green)));
+        let removed = &lines[2];
+        assert!(removed.spans.iter().any(|s| s.style.fg == Some(Color::Red)));
+        // Code inside the diff is highlighted (fn is a keyword).
+        assert!(
+            added
+                .spans
+                .iter()
+                .any(|s| s.content == "fn" && s.style.fg == Some(Color::Magenta))
+        );
+    }
+
+    #[test]
+    fn expanded_read_file_highlights_code() {
+        let entry = TranscriptLine::Tool {
+            tool: "read_file".into(),
+            arguments: r#"{"path":"src/app.rs"}"#.into(),
+            result: "fn main() {}".into(),
+            error: false,
+        };
+        let mut expanded = std::collections::HashSet::new();
+        expanded.insert(0);
+        let (lines, _) = build_entry_lines(&expanded, 0, &entry);
+        let code = &lines[1];
+        assert!(code.to_string().contains("fn main() {}"));
+        assert!(
+            code.spans
+                .iter()
+                .any(|s| s.content == "fn" && s.style.fg == Some(Color::Magenta)),
+            "expected keyword highlighting"
+        );
+    }
+
+    #[test]
+    fn expanded_plain_tool_output_stays_gray() {
+        let entry = TranscriptLine::Tool {
+            tool: "grep".into(),
+            arguments: r#"{"pattern":"todo","path":"."}"#.into(),
+            result: "src/a.rs:1:todo".into(),
+            error: false,
+        };
+        let mut expanded = std::collections::HashSet::new();
+        expanded.insert(0);
+        let (lines, _) = build_entry_lines(&expanded, 0, &entry);
+        assert!(lines[0].to_string().contains("todo in ."));
+        assert!(lines[1].to_string().contains("src/a.rs:1:todo"));
+        assert!(lines[1].spans.iter().all(|s| s.style.fg.is_none()
+            || s.style.fg == Some(Color::Gray)));
     }
 
     #[test]

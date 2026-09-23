@@ -1,6 +1,7 @@
 //! Render dispatch: chat view (with sessions sidebar) + popup overlays.
 
 pub mod chat;
+pub mod highlight;
 pub mod markdown;
 
 use crate::app::{self, App};
