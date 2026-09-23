@@ -6,7 +6,7 @@
         <title>Pulse — Feel your agent's heartbeat</title>
         <meta
             name="description"
-            content="Pulse is a terminal-native AI agent harness. Every prompt becomes a beat — live status, tokens and cost, beating straight from your terminal. macOS, Apple silicon."
+            content="Pulse is a terminal-native AI agent harness built around workflows. Every prompt runs through a YAML workflow that names the model and the steps, and every run persists as a beat — live status, tokens and cost, straight from your terminal. macOS, Apple silicon."
         />
         <meta name="theme-color" content="#f4f8f5" />
         <link
@@ -44,10 +44,11 @@
                             fill="none"
                         />
                     </svg>
-                    <h3>Live beats</h3>
+                    <h3>Workflows at the root</h3>
                     <p>
-                        Every AI session runs as a heartbeat — live status, tokens and activity,
-                        nothing silent.
+                        Every prompt runs through a YAML workflow that names the model and the
+                        steps. Plain prompts hit your base workflow; <code>/workflow</code> runs any
+                        other.
                     </p>
                 </div>
                 <div class="side-item i-amber">
@@ -69,10 +70,10 @@
                             fill="none"
                         />
                     </svg>
-                    <h3>Cost tracking</h3>
+                    <h3>Live beats</h3>
                     <p>
-                        Spend per beat and per project, added up in dollars — not abstract token
-                        counts.
+                        Every AI session runs as a heartbeat — live status, tokens and activity,
+                        nothing silent.
                     </p>
                 </div>
             </aside>
@@ -84,9 +85,9 @@
                 </p>
                 <h1>Feel your agent's heartbeat.</h1>
                 <p class="sub">
-                    Pulse is a terminal-native agent harness. Send a prompt, it runs through a
-                    workflow that picks the model and the steps, an agentic loop does the work — and
-                    every run persists as a beat you can watch live.
+                    Pulse is a terminal-native agent harness built around workflows. Every prompt
+                    runs through a YAML workflow that names the model and the steps, an agentic loop
+                    does the work — and every run persists as a beat you can watch live.
                 </p>
 
                 <div class="install">
@@ -166,16 +167,19 @@
                                     >refactor the auth module to use git worktrees</span
                                 >
                             </div>
-                            <div class="t-line tool" style="--d: 2.4s">
+                            <div class="t-line ok" style="--d: 2.3s">
+                                → workflow base: OpenRouter - anthropic/claude-3.5-sonnet
+                            </div>
+                            <div class="t-line tool" style="--d: 2.6s">
                                 ⋯ grep "worktree" pulse-core/src — 12 matches
                             </div>
-                            <div class="t-line tool" style="--d: 3s">
+                            <div class="t-line tool" style="--d: 3.2s">
                                 ⋯ edit_file · harness.rs — worktree branch created
                             </div>
-                            <div class="t-line ok" style="--d: 3.6s">
+                            <div class="t-line ok" style="--d: 3.8s">
                                 ✓ bash cargo test — 41 passed, 0 failed
                             </div>
-                            <div class="t-line ai" style="--d: 4.2s">
+                            <div class="t-line ai" style="--d: 4.4s">
                                 beat saved · 1.2k tokens · <span class="t-cost-a">$0.0142</span>
                             </div>
                             <div class="t-input">
@@ -228,7 +232,7 @@
                         status at a glance.
                     </p>
                 </div>
-                <div class="side-item i-green">
+                <div class="side-item i-amber">
                     <svg
                         class="si-ecg"
                         viewBox="0 0 300 80"
@@ -247,10 +251,10 @@
                             fill="none"
                         />
                     </svg>
-                    <h3>Workflow-driven</h3>
+                    <h3>Cost tracking</h3>
                     <p>
-                        Every prompt runs through a workflow that names the model and the steps —
-                        plain prompts run your base workflow.
+                        Spend per beat and per project, added up in dollars — not abstract token
+                        counts.
                     </p>
                 </div>
             </aside>
