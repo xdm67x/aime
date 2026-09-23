@@ -13,9 +13,7 @@ use crate::app::{App, AtPopup, EntryRow, InputPopup, Mode, TranscriptLine};
 const SESSIONS_WIDTH: u16 = 32;
 
 /// Braille spinner frames for the thinking animation.
-const SPINNER_FRAMES: [&str; 10] = [
-    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
-];
+const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /// Frame of the thinking animation for a task that started at `started`.
 /// The spinner advances every 80ms, and the trailing dots cycle as a
