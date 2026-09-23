@@ -80,10 +80,13 @@ pub fn load(name: &str) -> Result<Workflow, String> {
         let path = dir.join(format!("{name}.{ext}"));
         if path.is_file() {
             let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-            return serde_yaml::from_str(&content)
-                .map_err(|e| format!("Failed to parse {}: {e}", path.display()));
+            return serde_yaml::from_str(&content).map_err(|e| {
+                crate::log::warn(format!("failed to parse workflow {}: {e}", path.display()));
+                format!("Failed to parse {}: {e}", path.display())
+            });
         }
     }
+    crate::log::warn(format!("workflow '{name}' not found in {}", dir.display()));
     Err(format!("Workflow '{name}' not found in {}", dir.display()))
 }
 
@@ -97,6 +100,11 @@ pub async fn run(
 ) -> Result<WorkflowRunResult, String> {
     let mut steps = Vec::with_capacity(workflow.steps.len());
     let mut total_cost = 0.0;
+    crate::log::info(format!(
+        "beat {beat_id}: workflow '{}' starting ({} steps)",
+        workflow.name,
+        workflow.steps.len()
+    ));
 
     for step in &workflow.steps {
         let model = step.model.as_deref().or(workflow.model.as_deref());
@@ -122,6 +130,13 @@ pub async fn run(
             }
         };
 
+        crate::log::info(format!(
+            "beat {beat_id}: workflow '{}' step '{}' done (model={}, cost=${:.4})",
+            workflow.name,
+            step.name,
+            result.model,
+            result.cost_usd
+        ));
         total_cost += result.cost_usd;
         steps.push(WorkflowStepResult {
             name: step.name.clone(),

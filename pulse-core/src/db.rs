@@ -158,9 +158,11 @@ pub fn append_messages(beat_id: i64, entries: Vec<serde_json::Value>) -> Result<
 mod tests {
     use super::*;
 
-    // one test because std::env::set_var("HOME") is process-global and races across parallel tests
+    // shares log::HOME_LOCK: std::env::set_var("HOME") is process-global and
+    // races across parallel tests (also with the log module's tests)
     #[test]
     fn test_db_roundtrip() {
+        let _g = crate::log::HOME_LOCK.lock().unwrap();
         // redirect home to a temp dir so we never touch the real ~/.pulse
         let tmp = std::env::temp_dir().join(format!("pulse-test-{}", std::process::id()));
         std::env::set_var("HOME", &tmp);

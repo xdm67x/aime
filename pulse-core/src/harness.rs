@@ -37,6 +37,7 @@ static CANCELLED: Mutex<Vec<i64>> = Mutex::new(Vec::new());
 pub fn cancel_current(beat_id: i64) {
     let mut flags = CANCELLED.lock().unwrap();
     if !flags.contains(&beat_id) {
+        crate::log::info(format!("cancel requested for beat {beat_id}"));
         flags.push(beat_id);
     }
 }
@@ -138,9 +139,15 @@ async fn classify(classifier: &str, prompt: &str, mu: &mut ModelUsage) -> Result
     )
     .await?;
     mu.add(&r.usage);
-    Ok(extract_json(&r.content)
+    let tier = extract_json(&r.content)
         .and_then(|v| v.get("tier").and_then(|t| t.as_str()).and_then(Tier::parse))
-        .unwrap_or(Tier::Base))
+        .unwrap_or(Tier::Base);
+    crate::log::debug(format!(
+        "classifier replied {:?} → tier {}",
+        r.content,
+        tier.as_str()
+    ));
+    Ok(tier)
 }
 
 /* ---- context + session prompt ---- */
@@ -255,8 +262,10 @@ async fn agentic_loop(
     let mut usage = Usage::default();
     let mut nudged = false;
     let mut last_prompt_tokens: Option<u64>;
+    let mut round = 0usize;
     loop {
         if cancelled() {
+            crate::log::info("agentic loop cancelled");
             return Err(STOPPED.into());
         }
         let r = {
@@ -277,6 +286,13 @@ async fn agentic_loop(
         usage.completion_tokens += r.usage.completion_tokens;
         // the last round's prompt tokens are the live session context size
         last_prompt_tokens = Some(r.usage.prompt_tokens);
+        crate::log::debug(format!(
+            "agentic round {round}: {} tool call(s), {} new chars, finish_reason={:?}",
+            r.tool_calls.len(),
+            r.content.len(),
+            r.finish_reason
+        ));
+        round += 1;
 
         // Path 1: the model called `task_complete` — the only sanctioned way
         // to finish. Its `summary` argument is the final answer.
@@ -289,6 +305,9 @@ async fn agentic_loop(
                 // this turn, else ask the model to restate it
                 .unwrap_or_default();
             if summary.is_empty() {
+                crate::log::warn(
+                    "task_complete called with an empty summary; asking the model to restate",
+                );
                 persist_round(model, &r, messages, entries, on_event);
                 for tc in &r.tool_calls {
                     messages.push(
@@ -348,6 +367,7 @@ async fn agentic_loop(
                 }));
                 messages.push(json!({"role": "assistant", "content": r.content}));
             } else if !nudged {
+                crate::log::warn("agentic round came back empty; nudging the model to continue");
                 nudged = true;
                 messages.push(json!({"role": "user", "content": "Continue."}));
             }
@@ -383,12 +403,20 @@ async fn agentic_loop(
         }));
         for tc in &calls {
             if cancelled() {
+                crate::log::info("agentic loop cancelled between tool calls");
                 return Err(STOPPED.into());
             }
             let (output, error) = match tools::execute(&tc.name, &tc.arguments, cwd).await {
                 Ok(out) => (out, false),
                 Err(e) => (e, true),
             };
+            crate::log::info(format!(
+                "tool {} {} → {} ({} chars)",
+                tc.name,
+                truncate_middle(&tc.arguments, 300),
+                if error { "error" } else { "ok" },
+                output.len()
+            ));
             // The diff section is for the UI only — the model already knows
             // what it wrote, so keep it out of the transcript.
             let model_output = tools::strip_diff(&output);
@@ -419,7 +447,10 @@ async fn agentic_loop(
         // model may legitimately be done) and flag the session as full: only
         // `/compact` can continue it afterwards.
         if context_limit_reached(model, last_prompt_tokens).await {
-            crate::log::log("agentic loop hit the session context limit; forcing a final answer");
+            crate::log::warn(format!(
+                "agentic loop hit the session context limit at {} prompt tokens; forcing a final answer",
+                last_prompt_tokens.unwrap_or(0)
+            ));
             let r = {
                 let mut on_delta = |t: &str| on_event(TaskEvent::Delta { text: t.into() });
                 chat_completion_stream(
@@ -549,6 +580,16 @@ async fn reflexion(
     Ok((r.content, r.usage))
 }
 
+/// First `max` chars of `s` plus an ellipsis when it was longer — keeps
+/// logged arguments (prompts, tool args) bounded.
+fn truncate_middle(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let cut: String = s.chars().take(max).collect();
+    format!("{cut}…")
+}
+
 /// Pull the first embedded JSON object out of a reply (prose tolerated).
 fn extract_json(text: &str) -> Option<serde_json::Value> {
     let start = text.find('{')?;
@@ -651,7 +692,7 @@ async fn record_usage(beat_id: i64, mu: &mut ModelUsage, u: &Usage) {
     )
     .await
     {
-        crate::log::log(format!("usage record failed: {e}"));
+        crate::log::warn(format!("usage record failed: {e}"));
     }
 }
 
@@ -676,6 +717,10 @@ async fn compact_session(beat_id: i64, on_event: RawEvent<'_>) -> Result<TaskRes
         return Err("Nothing to compact — this session has no messages yet.".into());
     }
     let new_beat = beats::create_summary_beat(beat_id, &summary)?;
+    crate::log::info(format!(
+        "beat {beat_id} compacted into beat {}",
+        new_beat.id
+    ));
     // the old session is done: archive it and clear its full flag so it can
     // still be browsed (and compacted again if ever unarchived)
     let _ = beats::set_beat_archived(beat_id, true);
@@ -716,12 +761,34 @@ pub async fn run_task(
     images: Vec<String>,
     on_event: OnEvent<'_>,
 ) -> Result<TaskResult, String> {
+    crate::log::info(format!(
+        "beat {beat_id}: starting task ({} chars, {} image(s))",
+        prompt.len(),
+        images.len()
+    ));
+    let started = std::time::Instant::now();
     clear_cancel(beat_id);
     let mut sink = |ev: TaskEvent| {
         on_event(TaggedEvent { beat_id, ev });
     };
-    BEAT.scope(beat_id, run_task_inner(beat_id, prompt, images, &mut sink))
-        .await
+    let res =
+        BEAT.scope(beat_id, run_task_inner(beat_id, prompt, images, &mut sink)).await;
+    match &res {
+        Ok(r) => crate::log::info(format!(
+            "beat {beat_id}: task finished in {:.1}s — tier={} model={} cost=${:.4} tools={} context={:?}",
+            started.elapsed().as_secs_f64(),
+            r.tier,
+            r.model,
+            r.cost_usd,
+            r.tool_steps.len(),
+            r.context_percent
+        )),
+        Err(e) => crate::log::error(format!(
+            "beat {beat_id}: task failed after {:.1}s: {e}",
+            started.elapsed().as_secs_f64()
+        )),
+    }
+    res
 }
 
 /// Run a single prompt on a beat with a specific model, bypassing the
@@ -735,15 +802,35 @@ pub async fn run_task_with_model(
     images: Vec<String>,
     on_event: OnEvent<'_>,
 ) -> Result<TaskResult, String> {
+    crate::log::info(format!(
+        "beat {beat_id}: starting task with model {model} ({} chars, {} image(s))",
+        prompt.len(),
+        images.len()
+    ));
+    let started = std::time::Instant::now();
     clear_cancel(beat_id);
     let mut sink = |ev: TaskEvent| {
         on_event(TaggedEvent { beat_id, ev });
     };
-    BEAT.scope(
+    let res = BEAT.scope(
         beat_id,
         run_task_with_model_inner(beat_id, prompt, model, images, &mut sink),
     )
-    .await
+    .await;
+    match &res {
+        Ok(r) => crate::log::info(format!(
+            "beat {beat_id}: model task finished in {:.1}s — model={} cost=${:.4} tools={}",
+            started.elapsed().as_secs_f64(),
+            r.model,
+            r.cost_usd,
+            r.tool_steps.len()
+        )),
+        Err(e) => crate::log::error(format!(
+            "beat {beat_id}: model task failed after {:.1}s: {e}",
+            started.elapsed().as_secs_f64()
+        )),
+    }
+    res
 }
 
 /// Inner implementation of `run_task_with_model`: runs the agentic loop with a
@@ -941,6 +1028,7 @@ async fn run_task_inner(
         return compact_session(beat_id, on_event).await;
     }
     if let Some(wf_name) = prompt.trim().strip_prefix("/workflow ") {
+        crate::log::info(format!("beat {beat_id}: running workflow {wf_name}"));
         let wf = crate::workflows::load(wf_name.trim())?;
         let mut tagged = |te: TaggedEvent| {
             on_event(te.ev);
@@ -979,6 +1067,10 @@ async fn run_task_inner(
         Tier::Base => cfg.base.trim(),
         Tier::Low => cfg.low.trim(),
     };
+    crate::log::info(format!(
+        "beat {beat_id}: classifier routed to tier {} → model {model}",
+        tier.as_str()
+    ));
     if model.is_empty() {
         return Err(format!(
             "No {} model configured — set the four models in Settings.",
@@ -1037,6 +1129,7 @@ async fn run_task_inner(
             // For high tier the draft is a distinct intermediate message: emit
             // and persist it before reflexion refines it into the final answer.
             if tier == Tier::High {
+                crate::log::debug("high tier: running reflexion pass over the agentic draft");
                 on_event(TaskEvent::Step {
                     text: draft.clone(),
                 });
@@ -1156,6 +1249,15 @@ mod tests {
         assert!(!is_cancelled(2));
         clear_cancel(1);
         assert!(!is_cancelled(1));
+    }
+
+    #[test]
+    fn test_truncate_middle() {
+        assert_eq!(truncate_middle("short", 10), "short");
+        let long = "x".repeat(20);
+        assert_eq!(truncate_middle(&long, 5), "xxxxx…");
+        // multibyte chars count as one, never split a codepoint
+        assert_eq!(truncate_middle(&"é".repeat(3), 2), "éé…");
     }
 
     #[test]
