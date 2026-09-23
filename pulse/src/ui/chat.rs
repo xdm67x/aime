@@ -152,13 +152,6 @@ fn render_transcript(frame: &mut Frame, app: &mut App, area: Rect) {
         y += height;
         all_lines.extend(lines);
     }
-    if app.task_running {
-        all_lines.push(Line::styled(
-            "  (running...)",
-            Style::default().fg(Color::Yellow),
-        ));
-    }
-
     app.entry_rows = rows;
     app.rects.transcript = Some(inner);
 
