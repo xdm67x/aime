@@ -20,9 +20,9 @@ model tier, an agentic tool loop executes work, and results persist as "beats".
   callback, so any runtime can drive it.
   - `harness.rs` — agentic loop, tier routing (`Tier::High/Base/Low`), task
     events (`TaskEvent`, `TaggedEvent`), cancellation, `run_task` entry point.
-  - `providers/` — `Provider` trait with `openrouter`, `opencode`, `litellm`
-    implementations; `chat_completion` / `chat_completion_stream` /
-    `list_models`.
+  - `providers/` — `Provider` trait with `openrouter`, `opencode`, `litellm`,
+    `mistral` implementations; `chat_completion` / `chat_completion_stream` /
+    `list_models` / `list_models_of` (per provider).
   - `tools.rs` — core tools: `read_file`, `write_file`, `edit_file`, `grep`,
     `bash`, plus one `skill_<name>` tool per discovered skill.
   - `skills.rs` — discovers skills from `~/.agents/skills/*/SKILL.md` (YAML
@@ -31,6 +31,7 @@ model tier, an agentic tool loop executes work, and results persist as "beats".
     `include_str!`; `{{key}}` placeholders filled at runtime.
   - `config.rs` — API keys/base URLs and the four model slots
     (`classifier`, `high`, `base`, `low`) stored in the DB.
+    (The `pulse settings` CLI is gone — keys and models are set from the TUI.)
   - `db.rs` — SQLite at `~/.pulse/pulse.db` (`config`, `projects`, `beats`
     tables; rusqlite, bundled).
   - `beats.rs` / `projects.rs` — beat + project persistence. Beats born from a
@@ -39,9 +40,10 @@ model tier, an agentic tool loop executes work, and results persist as "beats".
 - `pulse/` — the terminal app: a CLI + TUI hybrid on top of `pulse-core`.
   - `src/main.rs` — entry point: CLI subcommand dispatch, TUI event loop, key
     dispatch.
-  - `src/cli.rs` — CLI subcommands: `pulse settings list|set` (API keys,
-    model slots) and `pulse workflow list|new|edit`. These run headless,
-    before any terminal setup.
+  - `src/cli.rs` — CLI subcommands: `pulse workflow list|new|edit` and
+    `pulse update`. These run headless, before any terminal setup. Settings
+    (API keys, model slots) live in the TUI slash commands: `/key`, `/keys`,
+    `/model`, `/models`.
   - `src/app.rs` — application state and modes; `src/task.rs` runs harness
     tasks; `src/event.rs` bridges input events.
   - `src/ui/` — the chat view: transcript + input bar, with the sessions
@@ -59,7 +61,6 @@ model tier, an agentic tool loop executes work, and results persist as "beats".
 cargo test                      # all workspace tests
 cargo build                     # workspace
 cargo run -p pulse              # run the terminal app (TUI)
-cargo run -p pulse -- settings list
 cargo run -p pulse -- workflow list
 pnpm --dir web lint && pnpm --dir web format:check
 pnpm --dir web build            # static site (base: './')

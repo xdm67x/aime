@@ -6,10 +6,13 @@ pub fn api_key(provider: &str) -> Result<Option<String>, String> {
 }
 
 pub fn save_api_key(provider: &str, key: &str) -> Result<(), String> {
-    if !matches!(provider, "openrouter" | "opencode" | "litellm" | "github") {
+    if !matches!(
+        provider,
+        "openrouter" | "opencode" | "litellm" | "mistral" | "github"
+    ) {
         return Err(format!("Unknown provider: {provider}"));
     }
-    db::set_setting(&format!("{}_api_key", provider), key.trim())
+    db::set_setting(&format!("{provider}_api_key"), key.trim())
 }
 
 pub fn get_api_key(provider: &str) -> Result<Option<String>, String> {

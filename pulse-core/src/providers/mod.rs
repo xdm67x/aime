@@ -1,5 +1,5 @@
-//! Provider abstraction: each backend (OpenRouter, OpenCode Go, …) implements
-//! the `Provider` trait — a model-id prefix, its API-key setting name, and two
+//! Provider abstraction: each backend (OpenRouter, OpenCode Go, Mistral, …)
+//! implements the `Provider` trait — a model-id prefix, its API-key setting name, and two
 //! async calls (`chat`, `models`). Adding a provider is one small file and one
 //! line in `providers()`; dispatch, retry, caching and the UI contract are
 //! shared here.
@@ -10,6 +10,7 @@
 //! ids still route to OpenRouter.
 
 pub mod litellm;
+pub mod mistral;
 pub mod opencode;
 pub mod openrouter;
 
@@ -176,8 +177,44 @@ fn providers() -> &'static [Box<dyn Provider>] {
             Box::new(openrouter::OpenRouter),
             Box::new(opencode::OpenCode),
             Box::new(litellm::LiteLlm),
+            Box::new(mistral::Mistral),
         ]
     })
+}
+
+/// Registered providers in registry order: display name + prefix. Keys are
+/// set from the TUI with `/key <name> <value>`.
+pub fn provider_names() -> Vec<&'static str> {
+    providers().iter().map(|p| p.name()).collect()
+}
+
+/// Resolve a provider by its display name (case-insensitive), e.g. the
+/// `<name>` argument of `/models <name>`.
+pub fn provider_by_name(name: &str) -> Option<&'static dyn Provider> {
+    let n = name.trim().to_lowercase();
+    providers()
+        .iter()
+        .map(|p| p.as_ref())
+        .find(|p| p.name().to_lowercase() == n)
+}
+
+/// The models of one provider, ids already prefixed. Unconfigured providers
+/// return an error naming the key to set.
+pub async fn list_models_of(name: &str) -> Result<Vec<Model>, String> {
+    let p = provider_by_name(name).ok_or_else(|| {
+        format!(
+            "Unknown provider: {name} — known: {}",
+            provider_names().join(", ")
+        )
+    })?;
+    if !p.configured() {
+        return Err(format!(
+            "No {} API key configured — set it with /key {} <key>",
+            p.name(),
+            p.key_setting()
+        ));
+    }
+    p.models().await
 }
 
 /// Resolve a prefixed model id to its provider, stripping the prefix. Bare
@@ -205,10 +242,10 @@ fn provider_for(model: &str) -> Result<(&'static dyn Provider, String), String> 
 /* ---- chat dispatch ---- */
 
 /// The error shown when a chat is routed to a provider whose key is missing.
-/// Names the exact settings field so the fix is one `pulse settings set` away.
+/// Names the exact settings field so the fix is one `/key` away.
 fn missing_key_error(p: &dyn Provider) -> String {
     format!(
-        "No {} API key configured — set it with `pulse settings set {}-key <key>`",
+        "No {} API key configured — set it with /key {} <key>",
         p.name(),
         p.key_setting()
     )
@@ -621,9 +658,7 @@ async fn fetch_models() -> Result<Vec<Model>, String> {
     }
     if configured == 0 {
         return Err(
-            "No provider API key configured — set one with `pulse settings set \
-             openrouter-key|opencode-key|litellm-key <key>`"
-                .into(),
+            "No provider API key configured — set one with /key openrouter|opencode|litellm|mistral <key>".into(),
         );
     }
     if models.is_empty() {
@@ -755,6 +790,21 @@ mod tests {
     #[test]
     fn test_missing_key_error_names_setting() {
         let msg = missing_key_error(providers()[0].as_ref());
-        assert_eq!(msg, "No OpenRouter API key configured — set it with `pulse settings set openrouter-key <key>`");
+        assert_eq!(
+            msg,
+            "No OpenRouter API key configured — set it with /key openrouter <key>"
+        );
+    }
+
+    #[test]
+    fn test_provider_lookup() {
+        let mistral = provider_by_name("mistral").unwrap();
+        assert_eq!(mistral.name(), "Mistral");
+        assert_eq!(mistral.prefix(), "Mistral - ");
+        assert_eq!(mistral.key_setting(), "mistral");
+        assert!(provider_by_name("nope").is_none());
+        let names = provider_names();
+        assert!(names.contains(&"Mistral"));
+        assert!(names.contains(&"LiteLLM"));
     }
 }

@@ -1,5 +1,7 @@
-//! CLI subcommands: settings and workflow management. These run before any
-//! terminal setup and exit — the TUI only launches when no subcommand is given.
+//! CLI subcommands: workflow management and release updates. These run before
+//! any terminal setup and exit — the TUI only launches when no subcommand is
+//! given. Settings (API keys, model slots) live in the TUI via /key, /keys,
+//! /model and /models.
 
 use clap::{Parser, Subcommand};
 
@@ -12,11 +14,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Manage settings: API keys and the four model slots
-    Settings {
-        #[command(subcommand)]
-        action: SettingsAction,
-    },
     /// Manage workflows (run them in the chat with /workflow <name>)
     Workflow {
         #[command(subcommand)]
@@ -28,15 +25,6 @@ pub enum Command {
         #[arg(long)]
         apply: bool,
     },
-}
-
-#[derive(Subcommand)]
-pub enum SettingsAction {
-    /// List providers and model slots
-    List,
-    /// Set a field: openrouter-key, opencode-key, litellm-key, github-key,
-    /// litellm-base-url, classifier, high, base, low
-    Set { field: String, value: String },
 }
 
 #[derive(Subcommand)]
@@ -53,7 +41,6 @@ impl Command {
     /// Short name for logging: which subcommand ran, without arguments.
     pub fn label(&self) -> &'static str {
         match self {
-            Command::Settings { .. } => "settings",
             Command::Workflow { .. } => "workflow",
             Command::Update { .. } => "update",
         }
@@ -62,7 +49,6 @@ impl Command {
 
 pub async fn run(command: Command) -> Result<(), String> {
     match command {
-        Command::Settings { action } => run_settings(action),
         Command::Workflow { action } => run_workflow(action),
         Command::Update { apply } => run_update(apply).await,
     }
@@ -90,73 +76,6 @@ async fn run_update(apply: bool) -> Result<(), String> {
     .map_err(|e| format!("Update failed: {e}"))?;
     println!("Updated to {tag} — restart pulse to run the new version.");
     Ok(())
-}
-
-fn run_settings(action: SettingsAction) -> Result<(), String> {
-    match action {
-        SettingsAction::List => {
-            for provider in ["openrouter", "opencode", "litellm", "github"] {
-                let key = pulse_core::config::get_api_key(provider)
-                    .map_err(|e| format!("Failed to read settings: {e}"))?;
-                let display = match key {
-                    Some(k) if k.len() > 4 => format!("{}…", &k[..4]),
-                    Some(_) => "****".to_string(),
-                    None => "(not set)".to_string(),
-                };
-                println!("{provider}-key: {display}");
-            }
-            let litellm_base_url = pulse_core::config::get_base_url("litellm")
-                .map_err(|e| format!("Failed to read settings: {e}"))?;
-            match litellm_base_url {
-                Some(url) if !url.is_empty() => println!("litellm-base-url: {url}"),
-                _ => println!("litellm-base-url: (not set)"),
-            }
-            let config = pulse_core::config::ModelConfig::load()
-                .map_err(|e| format!("Failed to read settings: {e}"))?;
-            println!("classifier: {}", or_unset(&config.classifier));
-            println!("high:       {}", or_unset(&config.high));
-            println!("base:       {}", or_unset(&config.base));
-            println!("low:        {}", or_unset(&config.low));
-            Ok(())
-        }
-        SettingsAction::Set { field, value } => {
-            match field.as_str() {
-                "openrouter-key" => pulse_core::config::save_api_key("openrouter", &value),
-                "opencode-key" => pulse_core::config::save_api_key("opencode", &value),
-                "litellm-key" => pulse_core::config::save_api_key("litellm", &value),
-                "litellm-base-url" => pulse_core::config::save_base_url("litellm", &value),
-                "github-key" => pulse_core::config::save_api_key("github", &value),
-                "classifier" | "high" | "base" | "low" => {
-                    let mut config = pulse_core::config::ModelConfig::load()
-                        .map_err(|e| format!("Failed to read settings: {e}"))?;
-                    match field.as_str() {
-                        "classifier" => config.classifier = value,
-                        "high" => config.high = value,
-                        "base" => config.base = value,
-                        "low" => config.low = value,
-                        _ => unreachable!(),
-                    }
-                    pulse_core::config::save_model_config(&config)
-                }
-                _ => Err(format!(
-                    "Unknown field: {field}\nValid fields: openrouter-key, opencode-key, \
-                     litellm-key, github-key, litellm-base-url,
-                     classifier, high, base, low"
-                )),
-            }?;
-            pulse_core::log::info(format!("settings set: {field}"));
-            println!("Saved {field}");
-            Ok(())
-        }
-    }
-}
-
-fn or_unset(value: &str) -> &str {
-    if value.is_empty() {
-        "(not set)"
-    } else {
-        value
-    }
 }
 
 fn run_workflow(action: WorkflowAction) -> Result<(), String> {

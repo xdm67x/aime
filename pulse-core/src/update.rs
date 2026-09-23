@@ -53,7 +53,7 @@ fn token() -> Result<String, String> {
         }
     }
     Err("GitHub token required (the repository is private): \
-        `pulse settings set github-key <token>` or export GITHUB_TOKEN"
+        `/key github <token>` (TUI) or export GITHUB_TOKEN"
         .into())
 }
 
@@ -80,10 +80,11 @@ pub async fn latest_release() -> Result<Option<Release>, String> {
     match resp.status().as_u16() {
         200 => {}
         404 => return Ok(None),
-        401 => return Err(
-            "GitHub rejected the token — set it again with `pulse settings set github-key <token>`"
-                .into(),
-        ),
+        401 => {
+            return Err(
+                "GitHub rejected the token — set it again with `/key github <token>` (TUI)".into(),
+            )
+        }
         code => return Err(format!("GitHub returned HTTP {code}")),
     }
     let release: GhRelease = resp

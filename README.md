@@ -37,9 +37,14 @@ mise run release-build  # release binary for aarch64-apple-darwin
 Headless CLI subcommands also work without the TUI:
 
 ```sh
-cargo run -p pulse -- settings list
 cargo run -p pulse -- workflow list
 ```
+
+Settings live in the TUI: `/key <name> <value>` sets an API key (openrouter,
+opencode, litellm, mistral, github) and `/keys` shows their status; `/model`
+shows the four model slots, `/model <model>` sets the general model, and
+`/model <tier> <model>` sets a specific slot; `/models [provider]` lists
+available models (all configured providers, or just one).
 
 ## Updating
 
@@ -54,10 +59,10 @@ pulse update --apply  # download and install it
 
 The TUI also checks at startup and shows a notice in the transcript when a
 new release exists. The repository is private, so the updater needs a token:
-the `github-key` setting or `GITHUB_TOKEN`/`MISE_GITHUB_TOKEN`:
+the `github` key or `GITHUB_TOKEN`/`MISE_GITHUB_TOKEN` — in the TUI:
 
 ```sh
-pulse settings set github-key <token with Contents: read>
+/key github <token with Contents: read>
 ```
 
 ## Install (clients, macOS ARM only)
