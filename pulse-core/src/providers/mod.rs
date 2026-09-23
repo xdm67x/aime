@@ -577,7 +577,11 @@ async fn fetch_models() -> Result<Vec<Model>, String> {
     for e in &errors {
         crate::log::warn(format!("models fetch partially failed: {e}"));
     }
-    crate::log::info(format!("fetched {} models from {} provider(s)", models.len(), providers().len()));
+    crate::log::info(format!(
+        "fetched {} models from {} provider(s)",
+        models.len(),
+        providers().len()
+    ));
     models.sort_by(|a, b| a.id.cmp(&b.id));
     *MODELS_CACHE.lock().unwrap() = Some((Instant::now(), models.clone()));
     Ok(models)

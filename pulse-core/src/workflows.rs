@@ -132,10 +132,7 @@ pub async fn run(
 
         crate::log::info(format!(
             "beat {beat_id}: workflow '{}' step '{}' done (model={}, cost=${:.4})",
-            workflow.name,
-            step.name,
-            result.model,
-            result.cost_usd
+            workflow.name, step.name, result.model, result.cost_usd
         ));
         total_cost += result.cost_usd;
         steps.push(WorkflowStepResult {

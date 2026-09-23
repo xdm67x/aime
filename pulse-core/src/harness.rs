@@ -771,8 +771,9 @@ pub async fn run_task(
     let mut sink = |ev: TaskEvent| {
         on_event(TaggedEvent { beat_id, ev });
     };
-    let res =
-        BEAT.scope(beat_id, run_task_inner(beat_id, prompt, images, &mut sink)).await;
+    let res = BEAT
+        .scope(beat_id, run_task_inner(beat_id, prompt, images, &mut sink))
+        .await;
     match &res {
         Ok(r) => crate::log::info(format!(
             "beat {beat_id}: task finished in {:.1}s — tier={} model={} cost=${:.4} tools={} context={:?}",
@@ -812,11 +813,12 @@ pub async fn run_task_with_model(
     let mut sink = |ev: TaskEvent| {
         on_event(TaggedEvent { beat_id, ev });
     };
-    let res = BEAT.scope(
-        beat_id,
-        run_task_with_model_inner(beat_id, prompt, model, images, &mut sink),
-    )
-    .await;
+    let res = BEAT
+        .scope(
+            beat_id,
+            run_task_with_model_inner(beat_id, prompt, model, images, &mut sink),
+        )
+        .await;
     match &res {
         Ok(r) => crate::log::info(format!(
             "beat {beat_id}: model task finished in {:.1}s — model={} cost=${:.4} tools={}",
