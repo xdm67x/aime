@@ -3,8 +3,9 @@
 //! executes its steps through the agentic tool loop until each step's goal
 //! is reached, writing a markdown report of everything that happened into
 //! the current directory while the terminal shows which step is running.
-//! The provider (url + api key) is set with `pulse provider use`, and its
-//! models are listed with `pulse models`.
+//! The provider is set with `pulse provider use` (a base URL, or a known
+//! provider name + API key) and shown with `pulse provider`; its models are
+//! listed with `pulse models`.
 
 mod cli;
 mod run;

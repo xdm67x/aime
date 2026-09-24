@@ -47,12 +47,14 @@ the durable record is the position.
 ## Operating Context
 
 - Terminal-first and headless: one binary, zero config files; the CLI is the
-  whole product (`pulse workflow new|list|edit`, `pulse provider use <url>
+  whole product (`pulse workflow new|list|edit`, `pulse provider use`,
   `pulse models`, `pulse version`, `pulse update`, `pulse <workflow>`).
 - Provider: one OpenAI-compatible endpoint (base URL + API key) configured
-  with `pulse provider use` — OpenAI, LiteLLM, Ollama's `/v1`, vLLM, …;
-  `pulse models` lists what it offers. Workflows name the model per workflow
-  or per step; there are no global model slots.
+  with `pulse provider use` — OpenAI, LiteLLM, Ollama's `/v1`, vLLM, … — or
+  a built-in provider (`litellm`, `mistral`, `opencode`, `openrouter`) with
+  just an API key; `pulse provider` shows the current one, `pulse models`
+  lists what it offers. Workflows name the model per workflow or per step
+  with bare ids (no provider prefix); there are no global model slots.
 - Workflows: YAML files — the current directory first, then
   `~/.pulse/workflows/`; per-step optional `goal:` re-runs the step with
   reviewer feedback until confirmed reached (max 3 runs).
@@ -76,8 +78,9 @@ the durable record is the position.
 Confirmed functionality:
 
 - Provider: any OpenAI-compatible endpoint via `pulse provider use <url>
-  <key>` (`chat_completion`, streaming, model listing); OpenRouter,
-  OpenCode, LiteLLM, Mistral implementations also live in core.
+  <key>` (`chat_completion`, streaming, model listing); known providers
+  (`litellm`, `mistral`, `opencode`, `openrouter`) configure with an API key
+  alone. Bare model ids route to the configured provider.
 - Core tools: `read_file`, `write_file`, `edit_file`, `grep`, `bash`, plus one
   `skill_<name>` tool per skill discovered in
   `~/.agents/skills/*/SKILL.md`.

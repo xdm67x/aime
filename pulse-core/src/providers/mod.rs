@@ -201,6 +201,35 @@ pub fn provider_by_name(name: &str) -> Option<&'static dyn Provider> {
         .find(|p| p.name().to_lowercase() == n)
 }
 
+/// Resolve a provider by its settings key (`key_setting`) — the names
+/// `pulse provider use` accepts: "openrouter", "opencode", "litellm",
+/// "mistral", plus "custom" for the URL-configured provider.
+pub fn provider_by_key(key: &str) -> Option<&'static dyn Provider> {
+    let k = key.trim().to_lowercase();
+    if k == "custom" {
+        return provider_by_name("Custom");
+    }
+    providers()
+        .iter()
+        .map(|p| p.as_ref())
+        .find(|p| p.key_setting() == k)
+}
+
+/// The provider `pulse provider use` configured — the one bare model ids
+/// route to and `pulse models` lists. Configs made before the provider name
+/// was stored fall back to the Custom provider when a URL is set.
+pub fn configured_provider() -> Option<&'static dyn Provider> {
+    if let Some(name) = config::provider_name().ok().flatten() {
+        if let Some(p) = provider_by_name(&name) {
+            return Some(p);
+        }
+    }
+    if config::provider_url().ok().flatten().is_some() {
+        return provider_by_name("Custom");
+    }
+    None
+}
+
 /// The models of one provider, ids already prefixed. Unconfigured providers
 /// return an error naming the key to set.
 pub async fn list_models_of(name: &str) -> Result<Vec<Model>, String> {
@@ -211,31 +240,27 @@ pub async fn list_models_of(name: &str) -> Result<Vec<Model>, String> {
         )
     })?;
     if !p.configured() {
-        return Err(format!(
-            "No {} API key configured — set it with /key {} <key>",
-            p.name(),
-            p.key_setting()
-        ));
+        return Err(missing_key_error(p));
     }
     p.models().await
 }
 
 /// Resolve a prefixed model id to its provider, stripping the prefix. Bare
-/// ids (the normal case for the workflow CLI, which configures one provider
-/// with `pulse provider use`) route to that provider when it is configured;
-/// otherwise bare ids fall back to OpenRouter — unless OpenRouter is not
-/// configured and exactly one other provider is: then the id belongs to that
-/// provider (a LiteLLM-only setup must not be told to configure an OpenRouter
-/// key).
+/// ids — the normal case for the workflow CLI — route to the provider
+/// configured with `pulse provider use`, so workflow files never need a
+/// provider name before the model id; an explicit prefix still wins.
+/// Without a configured provider a bare id falls back to OpenRouter —
+/// unless OpenRouter is not configured and exactly one other provider is:
+/// then the id belongs to that provider (a LiteLLM-only setup must not be
+/// told to configure an OpenRouter key).
 fn provider_for(model: &str) -> Result<(&'static dyn Provider, String), String> {
     for p in providers() {
         if let Some(id) = model.strip_prefix(p.prefix()) {
             return Ok((p.as_ref(), id.to_string()));
         }
     }
-    let custom = provider_by_name("Custom").unwrap();
-    if custom.configured() {
-        return Ok((custom, model.to_string()));
+    if let Some(p) = configured_provider().filter(|p| p.configured()) {
+        return Ok((p, model.to_string()));
     }
     let configured: Vec<&dyn Provider> = providers()
         .iter()
@@ -251,13 +276,14 @@ fn provider_for(model: &str) -> Result<(&'static dyn Provider, String), String> 
 /* ---- chat dispatch ---- */
 
 /// The error shown when a chat is routed to a provider whose key is missing.
-/// Names the exact settings field so the fix is one `/key` away.
+/// Names the exact command so the fix is one `pulse provider use` away.
 fn missing_key_error(p: &dyn Provider) -> String {
-    format!(
-        "No {} API key configured — set it with /key {} <key>",
-        p.name(),
-        p.key_setting()
-    )
+    let hint = if p.key_setting() == "provider" {
+        "pulse provider use <url> <api_key>".to_string()
+    } else {
+        format!("pulse provider use {} <api_key>", p.key_setting())
+    };
+    format!("No {} API key configured — set it with: {hint}", p.name())
 }
 
 /// The key for one chat against a provider: the configured key, or an empty
@@ -666,9 +692,9 @@ async fn fetch_models() -> Result<Vec<Model>, String> {
         }
     }
     if configured == 0 {
-        return Err(
-            "No provider API key configured — set one with /key openrouter|opencode|litellm|mistral <key>".into(),
-        );
+        return Err("No provider configured — set one with: pulse provider use \
+             <url|litellm|mistral|opencode|openrouter> <api_key>"
+            .into());
     }
     if models.is_empty() {
         return Err(errors.join("; "));
@@ -797,11 +823,42 @@ mod tests {
     }
 
     #[test]
+    fn test_bare_id_routes_to_configured_provider() {
+        with_temp_home(|| {
+            // `pulse provider use mistral <key>`: bare ids belong to Mistral
+            // even though another provider is configured too
+            config::save_api_key("mistral", "sk-test").unwrap();
+            config::save_provider_name("Mistral").unwrap();
+            assert_eq!(configured_provider().unwrap().name(), "Mistral");
+            let (p, id) = provider_for("mistral-large-latest").unwrap();
+            assert_eq!(p.name(), "Mistral");
+            assert_eq!(id, "mistral-large-latest");
+            // an explicit prefix still wins over the configured provider
+            let (p, _) = provider_for("LiteLLM - gpt-4o").unwrap();
+            assert_eq!(p.name(), "LiteLLM");
+        });
+    }
+
+    #[test]
+    fn test_configured_provider_legacy_fallback() {
+        with_temp_home(|| {
+            // a URL saved before provider_name existed still configures Custom
+            assert!(configured_provider().is_none());
+            config::save_provider("https://api.openai.com/v1", "sk-test").unwrap();
+            let p = configured_provider().unwrap();
+            assert_eq!(p.name(), "Custom");
+            let (p, id) = provider_for("gpt-4o").unwrap();
+            assert_eq!(p.name(), "Custom");
+            assert_eq!(id, "gpt-4o");
+        });
+    }
+
+    #[test]
     fn test_missing_key_error_names_setting() {
         let msg = missing_key_error(providers()[0].as_ref());
         assert_eq!(
             msg,
-            "No OpenRouter API key configured — set it with /key openrouter <key>"
+            "No OpenRouter API key configured — set it with: pulse provider use openrouter <api_key>"
         );
     }
 
@@ -815,5 +872,10 @@ mod tests {
         let names = provider_names();
         assert!(names.contains(&"Mistral"));
         assert!(names.contains(&"LiteLLM"));
+        // settings-key lookup: the names `pulse provider use` accepts
+        assert_eq!(provider_by_key("openrouter").unwrap().name(), "OpenRouter");
+        assert_eq!(provider_by_key("OpenCode").unwrap().name(), "OpenCode Go");
+        assert_eq!(provider_by_key("custom").unwrap().name(), "Custom");
+        assert!(provider_by_key("nope").is_none());
     }
 }

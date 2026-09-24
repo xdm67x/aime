@@ -24,17 +24,24 @@ tasks live in `mise.toml`.
 ## Using Pulse
 
 ```sh
+pulse provider                        # the configured provider (or "no provider")
 pulse provider use <url> <api_key>   # any OpenAI-compatible endpoint
+pulse provider use openrouter <key>  # …or a known provider: litellm, mistral,
+                                      #    opencode, openrouter — key only
 pulse models                        # what the provider offers
 pulse workflow new <title>          # blank workflow template in the current directory
 pulse <workflow>                   # run it (by name or file path)
 pulse <workflow> --no-worktree     # run it directly in the current directory
 ```
 
-The provider URL points at an OpenAI-compatible API root (e.g.
-`https://api.openai.com/v1`, a LiteLLM proxy, Ollama's `/v1`); `/chat/completions`
-and `/models` are appended. Pass `""` as the API key for endpoints without
-auth. The URL and key live in the local database (`~/.pulse/pulse.db`),
+The provider is either a base URL pointing at an OpenAI-compatible API root
+(e.g. `https://api.openai.com/v1`, a LiteLLM proxy, Ollama's `/v1`)
+followed by an API key — `/chat/completions` and `/models` are appended,
+and `""` works for endpoints without auth — or the name of a provider whose
+host is built in (`litellm`, `mistral`, `opencode`, `openrouter`), where only
+the API key is needed. Models are named per workflow or per step with bare
+ids (`model: gpt-4o`) — no provider prefix, since the provider is already
+configured. Everything lives in the local database (`~/.pulse/pulse.db`),
 never in the repo.
 
 A workflow file (`./<name>.yml`, or `~/.pulse/workflows/` for shared ones)

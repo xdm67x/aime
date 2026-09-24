@@ -12,8 +12,10 @@ Before making any changes or contributions, read
 provide a YAML workflow file, `pulse <workflow>` executes its steps through
 an agentic tool loop until each step's goal is reached, everything the run
 produces is written to a markdown report in the current directory, and the
-terminal shows which step is running. The provider (an OpenAI-compatible
-base URL + API key) is configured with `pulse provider use`.
+terminal shows which step is running. The provider is configured with
+`pulse provider use` — an OpenAI-compatible base URL + API key, or a known
+provider name (`litellm`, `mistral`, `opencode`, `openrouter`) with just an
+API key; `pulse provider` shows the current one.
 
 ## Layout
 
@@ -25,10 +27,13 @@ base URL + API key) is configured with `pulse provider use`.
     cancellation, `run_task` entry point (resolves the workflow — plain
     prompts run `base`, `/workflow {name}` picks one — and runs its steps).
   - `providers/` — `Provider` trait with `custom` (the OpenAI-compatible
-    endpoint configured by `pulse provider use <url> <key>` — bare model
-    ids route to it), plus `openrouter`, `opencode`, `litellm`, `mistral`
-    implementations; `chat_completion` / `chat_completion_stream` /
-    `list_models` / `list_models_of` (per provider).
+    endpoint configured by `pulse provider use <url> <key>`), plus
+    `openrouter`, `opencode`, `litellm`, `mistral` implementations (any of
+    which `pulse provider use <name> <key>` configures with a key alone);
+    bare model ids route to the configured provider
+    (`providers::configured_provider`); `chat_completion` /
+    `chat_completion_stream` / `list_models` / `list_models_of` (per
+    provider).
   - `tools.rs` — core tools: `read_file`, `write_file`, `edit_file`, `grep`,
     `bash`, plus one `skill_<name>` tool per discovered skill.
   - `skills.rs` — discovers skills from `~/.agents/skills/*/SKILL.md` (YAML
@@ -36,8 +41,9 @@ base URL + API key) is configured with `pulse provider use`.
   - `prompts.rs` + `prompts/` — prompt templates embedded at compile time via
     `include_str!`; `{{key}}` placeholders filled at runtime.
   - `config.rs` — API keys/base URLs stored in the DB (`provider_url` /
-    `provider_api_key` for the configured provider). There are no global
-    model slots: models are named per workflow in the workflow files.
+    `provider_api_key` / `provider_name` for the configured provider).
+    There are no global model slots: models are named per workflow in the
+    workflow files.
   - `db.rs` — SQLite at `~/.pulse/pulse.db` (`config`, `projects`, `beats`
     tables; rusqlite, bundled).
   - `beats.rs` / `projects.rs` — beat + project persistence. A workflow run
@@ -56,7 +62,9 @@ base URL + API key) is configured with `pulse provider use`.
 - `pulse/` — the CLI on top of `pulse-core`. No TUI.
   - `src/main.rs` — entry point: clap dispatch + exit codes.
   - `src/cli.rs` — subcommands: `pulse workflow new|list|edit`,
-    `pulse provider use <url> <key>`, `pulse models`, `pulse version`,
+    `pulse provider [use <url|litellm|mistral|opencode|openrouter> <key>]`
+    (bare `pulse provider` shows the current one), `pulse models`,
+    `pulse version`,
     `pulse update` (installs the latest release automatically when newer), and
     `pulse <workflow> [--no-worktree]` (an external subcommand — any unknown
     subcommand is treated as a workflow name/path to run; `split_run_args`

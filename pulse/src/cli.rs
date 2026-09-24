@@ -1,7 +1,8 @@
 //! CLI subcommands. Pulse is headless: workflows are yaml files (created in
 //! the current directory with `pulse workflow new`, run with
 //! `pulse <workflow>`), the provider is configured with
-//! `pulse provider use <url> <key>`, `pulse models` lists what the provider
+//! `pulse provider use <url|litellm|mistral|opencode|openrouter> <key>`
+//! (shown with `pulse provider`), `pulse models` lists what the provider
 //! offers, and `pulse update` installs a newer release when one exists. Any
 //! unknown subcommand is treated as a workflow name to run — `pulse research
 //! do X` runs the `research` workflow with "do X" as the message.
@@ -28,10 +29,10 @@ pub enum Command {
         #[command(subcommand)]
         action: WorkflowAction,
     },
-    /// Configure the LLM provider (base url + api key)
+    /// Show the configured provider, or configure one (`provider use`)
     Provider {
         #[command(subcommand)]
-        action: ProviderAction,
+        action: Option<ProviderAction>,
     },
     /// List the models offered by the configured provider
     Models,
@@ -62,11 +63,15 @@ pub enum WorkflowAction {
 
 #[derive(Subcommand)]
 pub enum ProviderAction {
-    /// Set the provider base URL and API key used by every run
+    /// Set the provider used by every run: an OpenAI-compatible base URL,
+    /// or a known provider name (litellm, mistral, opencode, openrouter)
+    /// whose host is built in — then only the API key is needed
     Use {
-        /// OpenAI-compatible base URL (e.g. https://api.openai.com/v1 or a
-        /// LiteLLM proxy); `/chat/completions` and `/models` are appended
-        url: String,
+        /// Base URL of any OpenAI-compatible endpoint (e.g.
+        /// https://api.openai.com/v1); `/chat/completions` and `/models` are
+        /// appended — or a known provider name: litellm, mistral, opencode,
+        /// openrouter
+        url_or_provider: String,
         /// API key — pass "" when the endpoint needs no auth
         api_key: String,
     },
@@ -201,12 +206,40 @@ fn run_workflow_cmd(action: WorkflowAction) -> Result<i32, String> {
 
 /* ---- provider ---- */
 
-async fn run_provider(action: ProviderAction) -> Result<i32, String> {
-    let ProviderAction::Use { url, api_key } = action;
-    pulse_core::config::save_provider(&url, &api_key)?;
-    println!("Provider saved: {url}");
+async fn run_provider(action: Option<ProviderAction>) -> Result<i32, String> {
+    // `pulse provider` with no arguments: show what is configured.
+    let Some(ProviderAction::Use {
+        url_or_provider,
+        api_key,
+    }) = action
+    else {
+        match crate::run::provider_label() {
+            Ok(label) => println!("provider: {label}"),
+            Err(_) => println!("no provider"),
+        }
+        println!(
+            "Set one with: pulse provider use \
+             <url|litellm|mistral|opencode|openrouter> <api_key>"
+        );
+        return Ok(0);
+    };
+    let name = match pulse_core::config::parse_provider_target(&url_or_provider)? {
+        pulse_core::config::ProviderTarget::Known(key) => {
+            let p = pulse_core::providers::provider_by_key(key)
+                .ok_or_else(|| format!("Unknown provider: {key}"))?;
+            pulse_core::config::save_api_key(key, &api_key)?;
+            pulse_core::config::save_provider_name(p.name())?;
+            println!("Provider saved: {}", p.name());
+            p.name().to_string()
+        }
+        pulse_core::config::ProviderTarget::Url(url) => {
+            pulse_core::config::save_provider(&url, &api_key)?;
+            println!("Provider saved: {url}");
+            "Custom".into()
+        }
+    };
     // verify the configuration by asking the endpoint for its models
-    match pulse_core::providers::list_models_of("Custom").await {
+    match pulse_core::providers::list_models_of(&name).await {
         Ok(models) => println!(
             "Provider reachable — {} model(s) available (list them: pulse models)",
             models.len()
@@ -221,16 +254,16 @@ async fn run_provider(action: ProviderAction) -> Result<i32, String> {
 /* ---- models ---- */
 
 async fn run_models() -> Result<i32, String> {
-    let url = pulse_core::config::provider_url()?
-        .ok_or("No provider configured — set one first: pulse provider use <url> <api_key>")?;
-    let models = pulse_core::providers::list_models_of("Custom")
+    let p = crate::run::require_provider()?;
+    let label = crate::run::provider_label()?;
+    let models = pulse_core::providers::list_models_of(p.name())
         .await
-        .map_err(|e| format!("{e} (provider: {url})"))?;
+        .map_err(|e| format!("{e} (provider: {label})"))?;
     if models.is_empty() {
-        println!("The provider at {url} offers no models.");
+        println!("The provider {label} offers no models.");
         return Ok(0);
     }
-    println!("Models offered by {url}:\n");
+    println!("Models offered by {label}:\n");
     let width = models
         .iter()
         .map(|m| crate::run::bare_id(&m.id).len())

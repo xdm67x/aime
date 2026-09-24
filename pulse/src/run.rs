@@ -34,8 +34,7 @@ pub async fn run_workflow(name_or_path: &str, use_worktree: bool) -> i32 {
 async fn run_inner(name_or_path: &str, use_worktree: bool) -> Result<i32, String> {
     let (wf, wf_path) = workflows::find(name_or_path)?;
     wf.validate()?;
-    let url = config::provider_url()?
-        .ok_or("No provider configured — set one first: pulse provider use <url> <api_key>")?;
+    let provider = provider_label()?;
 
     let cwd = std::env::current_dir()
         .map_err(|e| format!("Failed to read the current directory: {e}"))?;
@@ -76,7 +75,7 @@ async fn run_inner(name_or_path: &str, use_worktree: bool) -> Result<i32, String
     let md_path = PathBuf::from(format!("{}-{ts}.md", slug(&wf.name)));
     let file = std::fs::File::create(&md_path)
         .map_err(|e| format!("Failed to create {}: {e}", md_path.display()))?;
-    let mut rep = Reporter::new(file, &wf, &wf_path, &url, &ts, worktree.as_deref());
+    let mut rep = Reporter::new(file, &wf, &wf_path, &provider, &ts, worktree.as_deref());
     rep.header();
 
     println!(
@@ -85,7 +84,7 @@ async fn run_inner(name_or_path: &str, use_worktree: bool) -> Result<i32, String
         wf.steps.len(),
         wf_path.display()
     );
-    println!("  provider: {url}");
+    println!("  provider: {provider}");
     if let Some(note) = &worktree_note {
         println!("{note}");
     }
@@ -171,7 +170,7 @@ struct Reporter {
     file: std::fs::File,
     workflow: String,
     path: PathBuf,
-    url: String,
+    provider: String,
     started: String,
     /// The worktree the run executes in, if any.
     worktree: Option<String>,
@@ -184,7 +183,7 @@ impl Reporter {
         file: std::fs::File,
         wf: &Workflow,
         path: &std::path::Path,
-        url: &str,
+        provider: &str,
         started: &str,
         worktree: Option<&str>,
     ) -> Self {
@@ -192,7 +191,7 @@ impl Reporter {
             file,
             workflow: wf.name.clone(),
             path: path.to_path_buf(),
-            url: url.to_string(),
+            provider: provider.to_string(),
             started: started.to_string(),
             worktree: worktree.map(str::to_string),
             step_num: 0,
@@ -222,7 +221,7 @@ impl Reporter {
             self.workflow,
             self.path.display(),
             self.started,
-            self.url,
+            self.provider,
             worktree,
         ));
     }
@@ -411,6 +410,28 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// Shown by every provider-needing CLI path when none is configured.
+pub const NO_PROVIDER: &str =
+    "No provider configured — set one first: pulse provider use <url|litellm|mistral|opencode|openrouter> <api_key>";
+
+/// The provider configured with `pulse provider use`, or the error every
+/// provider-needing command shows.
+pub fn require_provider() -> Result<&'static dyn providers::Provider, String> {
+    providers::configured_provider().ok_or(NO_PROVIDER.to_string())
+}
+
+/// Human label for the configured provider: `Custom (<url>)` for the
+/// URL-configured one, else its display name (e.g. `OpenRouter`).
+pub fn provider_label() -> Result<String, String> {
+    let p = require_provider()?;
+    if p.name() == "Custom" {
+        if let Some(url) = config::provider_url()? {
+            return Ok(format!("Custom ({url})"));
+        }
+    }
+    Ok(p.name().to_string())
 }
 
 /// Bare model id for display: strip the provider prefix the registry adds.
