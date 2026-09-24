@@ -56,7 +56,8 @@ base URL + API key) is configured with `pulse provider use`.
 - `pulse/` — the CLI on top of `pulse-core`. No TUI.
   - `src/main.rs` — entry point: clap dispatch + exit codes.
   - `src/cli.rs` — subcommands: `pulse workflow new|list|edit`,
-    `pulse provider use <url> <key>`, `pulse models`, `pulse update`, and
+    `pulse provider use <url> <key>`, `pulse models`, `pulse version`,
+    `pulse update` (installs the latest release automatically when newer), and
     `pulse <workflow> [--no-worktree]` (an external subcommand — any unknown
     subcommand is treated as a workflow name/path to run; `split_run_args`
     pulls out the flags).

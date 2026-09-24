@@ -248,7 +248,7 @@ fn set_executable(path: &Path) -> Result<(), String> {
 pub async fn startup_notice(current: &str) -> Option<String> {
     match check(current).await {
         Ok(Some(release)) => Some(format!(
-            "→ pulse {} available — run `pulse update --apply` to update",
+            "→ pulse {} available — run `pulse update` to update",
             release.tag
         )),
         Ok(None) => None,

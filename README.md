@@ -82,13 +82,13 @@ mise run release-build  # release binary for aarch64-apple-darwin
 
 ## Updating
 
-`pulse update` checks GitHub releases for a newer version; `pulse update
---apply` downloads the latest release asset and replaces the running binary
-in place (restart pulse afterwards to run the new version):
+`pulse update` checks GitHub releases and, when a newer version exists,
+downloads the latest release asset and replaces the running binary in place
+(restart pulse afterwards to run the new version):
 
 ```sh
-pulse update          # show the latest release when one is newer
-pulse update --apply  # download and install it
+pulse version  # show the installed version
+pulse update   # update to the latest release when one is newer
 ```
 
 The repository is private, so the updater needs a token with read access to

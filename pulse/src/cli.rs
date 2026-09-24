@@ -1,10 +1,10 @@
 //! CLI subcommands. Pulse is headless: workflows are yaml files (created in
 //! the current directory with `pulse workflow new`, run with
 //! `pulse <workflow>`), the provider is configured with
-//! `pulse provider use <url> <key>`, and `pulse models` lists what the
-//! provider offers. Any unknown subcommand is treated as a workflow name to
-//! run — `pulse research do X` runs the `research` workflow with
-//! "do X" as the message.
+//! `pulse provider use <url> <key>`, `pulse models` lists what the provider
+//! offers, and `pulse update` installs a newer release when one exists. Any
+//! unknown subcommand is treated as a workflow name to run — `pulse research
+//! do X` runs the `research` workflow with "do X" as the message.
 
 use clap::{Parser, Subcommand};
 use std::path::Path;
@@ -35,12 +35,10 @@ pub enum Command {
     },
     /// List the models offered by the configured provider
     Models,
-    /// Check for a newer release; --apply installs it
-    Update {
-        /// Download the latest release and replace the running binary
-        #[arg(long)]
-        apply: bool,
-    },
+    /// Print the current version
+    Version,
+    /// Install the latest release when it is newer than this binary
+    Update,
     /// Run a workflow by name or file path — no other arguments. Runs in a
     /// fresh git worktree under ~/.pulse/worktrees by default; --no-worktree
     /// runs in the current directory instead. Any unknown subcommand lands
@@ -81,7 +79,8 @@ impl Command {
             Command::Workflow { .. } => "workflow",
             Command::Provider { .. } => "provider",
             Command::Models => "models",
-            Command::Update { .. } => "update",
+            Command::Version => "version",
+            Command::Update => "update",
             Command::Run(_) => "run",
         }
     }
@@ -131,7 +130,11 @@ pub async fn run(command: Command) -> Result<i32, String> {
         Command::Workflow { action } => run_workflow_cmd(action),
         Command::Provider { action } => run_provider(action).await,
         Command::Models => run_models().await,
-        Command::Update { apply } => run_update(apply).await,
+        Command::Version => {
+            println!("pulse {}", env!("CARGO_PKG_VERSION"));
+            Ok(0)
+        }
+        Command::Update => run_update().await,
         Command::Run(args) => {
             let a = split_run_args(args)?;
             Ok(crate::run::run_workflow(&a.workflow, !a.no_worktree).await)
@@ -253,26 +256,19 @@ async fn run_models() -> Result<i32, String> {
 
 /* ---- update ---- */
 
-async fn run_update(apply: bool) -> Result<i32, String> {
+async fn run_update() -> Result<i32, String> {
     let current = env!("CARGO_PKG_VERSION");
-    if !apply {
-        let release = pulse_core::update::check(current)
-            .await
-            .map_err(|e| format!("Update check failed: {e}"))?
-            .ok_or_else(|| format!("pulse {current} is up to date"))?;
-        println!("New release: {} (installed: v{current})", release.tag);
-        println!("Apply with: pulse update --apply");
+    let release = pulse_core::update::check(current)
+        .await
+        .map_err(|e| format!("Update check failed: {e}"))?;
+    let Some(release) = release else {
+        println!("pulse {current} is up to date");
         return Ok(0);
-    }
-    let tag = async {
-        let release = pulse_core::update::check(current)
-            .await?
-            .ok_or_else(|| format!("pulse {current} is already up to date"))?;
-        println!("Downloading {}…", release.tag);
-        pulse_core::update::apply(&release).await
-    }
-    .await
-    .map_err(|e| format!("Update failed: {e}"))?;
+    };
+    println!("New release: {} (installed: v{current})", release.tag);
+    let tag = pulse_core::update::apply(&release)
+        .await
+        .map_err(|e| format!("Update failed: {e}"))?;
     println!("Updated to {tag} — restart pulse to run the new version.");
     Ok(0)
 }

@@ -48,7 +48,7 @@ the durable record is the position.
 
 - Terminal-first and headless: one binary, zero config files; the CLI is the
   whole product (`pulse workflow new|list|edit`, `pulse provider use <url>
-  <key>`, `pulse models`, `pulse update`, `pulse <workflow>`).
+  `pulse models`, `pulse version`, `pulse update`, `pulse <workflow>`).
 - Provider: one OpenAI-compatible endpoint (base URL + API key) configured
   with `pulse provider use` — OpenAI, LiteLLM, Ollama's `/v1`, vLLM, …;
   `pulse models` lists what it offers. Workflows name the model per workflow
@@ -65,7 +65,7 @@ the durable record is the position.
 - Persistence: SQLite at `~/.pulse/pulse.db` (runs still create beats so
   context accumulates across steps; internal, not a user surface).
 - Distribution: GitHub releases via mise (`mise use -g
-  "github:xdm67x/pulse@latest"`); self-update via `pulse update --apply`
+  "github:xdm67x/pulse@latest"`); self-update via `pulse update`
   (token via `GITHUB_TOKEN`/`MISE_GITHUB_TOKEN`).
 - Development: Rust workspace (`pulse-core` pure library + `pulse` CLI),
   mise-driven (`mise run test|build|run|lint|web-build`), pnpm for `web/`
