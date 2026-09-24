@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-24T23:59:00.000Z",
+  "title": "Design System: Pulse",
+  "extensions": {
+    "colorMeta": {
+      "accent-emerald": {
+        "role": "primary",
+        "displayName": "Signal Emerald",
+        "canonical": "#047857",
+        "tonalRamp": [
+          "#062b1d",
+          "#0a4530",
+          "#0f6144",
+          "#148058",
+          "#1aa06d",
+          "#34d399",
+          "#6ce4b8",
+          "#a8f0d4"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Editor Paper",
+        "canonical": "#f4f4f0",
+        "tonalRamp": [
+          "#f4f4f0",
+          "#ecece6",
+          "#e0e2da",
+          "#c8cdc2",
+          "#8b958e",
+          "#666f69",
+          "#4a534d",
+          "#161b18"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#161b18",
+        "tonalRamp": [
+          "#101512",
+          "#171e1a",
+          "#39413b",
+          "#5a635d",
+          "#8b958e",
+          "#a7b0a9",
+          "#cdd3cd",
+          "#e4e8e2"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The hero title, in Martian Mono; the machine speaks first."
+      },
+      "artifact": {
+        "displayName": "Artifact",
+        "purpose": "File bodies, commands, listings; anything the computer writes."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headings in the human voice."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Human prose on the ground, max 56ch."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "File chrome, status lines, hints, footer metadata."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Default easing for entrances and state transitions."
+      },
+      {
+        "name": "ecg-beat",
+        "value": "stroke-dashoffset 1000 to 0, 1.5s linear infinite",
+        "purpose": "The heartbeat on every live run's status line."
+      },
+      {
+        "name": "run-in",
+        "value": "opacity 0 to 1 + translateY(4px), 0.5s ease-out",
+        "purpose": "Lines the run streams back into a file."
+      },
+      {
+        "name": "scroll-reveal",
+        "value": "opacity + translateY(36px), eased by viewport position, driven from JS",
+        "purpose": "Reveals glide with the scroll in every browser; fully disabled under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "md",
+        "value": "900px"
+      },
+      {
+        "name": "sm",
+        "value": "720px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Copy button",
+      "kind": "button",
+      "refersTo": "button-copy",
+      "description": "The pill that copies the install command; the page's only control.",
+      "html": "<button class=\"ds-copy\">Copy</button>",
+      "css": ".ds-copy { display: inline-flex; align-items: center; padding: 8px 16px; border: 1px solid var(--key, #34d399); border-radius: 999px; background: transparent; color: var(--key, #34d399); font-family: var(--mono, monospace); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background 0.18s, color 0.18s; } .ds-copy:hover { background: var(--key, #34d399); color: #0e120f; } .ds-copy:active { transform: translateY(1px); } .ds-copy:focus-visible { outline: 2px solid var(--key, #34d399); outline-offset: 3px; }"
+    },
+    {
+      "name": "Command line",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "The prompt line that carries the install command: $, code, pill.",
+      "html": "<div class=\"ds-cmdline\"><span class=\"ds-ps1\">$</span><code>mise use -g \"github:xdm67x/pulse@latest\"</code><button class=\"ds-copy\">Copy</button></div>",
+      "css": ".ds-cmdline { display: flex; align-items: center; gap: 12px; font-family: var(--mono, monospace); font-size: 15px; } .ds-cmdline .ds-ps1 { color: var(--key, #34d399); } .ds-cmdline code { color: var(--ink, #e4e8e2); overflow-wrap: anywhere; }"
+    },
+    {
+      "name": "File window",
+      "kind": "card",
+      "refersTo": "file-window",
+      "description": "The system's only container: tab bar, raised body, status line.",
+      "html": "<div class=\"ds-file\"><div class=\"ds-tabbar\"><span class=\"ds-ftab on\">ship.yml</span></div><div class=\"ds-body\"><div class=\"ds-ln\"><span class=\"ds-k\">name:</span> <span class=\"ds-v\">ship</span></div><div class=\"ds-ln\"><span class=\"ds-k\">model:</span> <span class=\"ds-v\">claude-sonnet-5</span></div></div><div class=\"ds-status\">workflow ship \u00b7 goal reached <span class=\"ds-cost\">$0.0120</span></div></div>",
+      "css": ".ds-file { border: 1px solid var(--line, #262e29); border-radius: 10px; background: var(--raise, #171e1a); overflow: hidden; font-family: var(--mono, monospace); } .ds-tabbar { display: flex; border-bottom: 1px solid var(--line, #262e29); background: var(--chrome, #121714); } .ds-ftab { padding: 10px 18px; font-size: 12.5px; color: var(--cmt, #8b958e); border-right: 1px solid var(--line, #262e29); } .ds-ftab.on { background: var(--raise, #171e1a); color: var(--ink, #e4e8e2); box-shadow: inset 0 -2px 0 var(--key, #34d399); } .ds-body { padding: 22px 20px; font-size: 14px; line-height: 1.75; } .ds-ln { display: flex; gap: 0.6em; } .ds-k { color: var(--key, #34d399); } .ds-v { color: var(--ink, #e4e8e2); } .ds-status { display: flex; gap: 14px; padding: 10px 18px; border-top: 1px solid var(--line, #262e29); background: var(--chrome, #121714); font-size: 11.5px; color: var(--cmt, #8b958e); } .ds-cost { color: var(--key, #34d399); font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Annotation row",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Fragment in mono beside human prose, over a hairline; no box.",
+      "html": "<div class=\"ds-anno\"><div class=\"ds-frag\"><span class=\"ds-k\">goal:</span> <span class=\"ds-v\">suite green, nothing skipped</span></div><div class=\"ds-txt\"><h3>The finish line</h3><p>A step re-runs with reviewer feedback until the model confirms the goal is reached.</p></div></div>",
+      "css": ".ds-anno { display: grid; grid-template-columns: minmax(240px, 5fr) 7fr; gap: 40px; padding: 30px 0; border-top: 1px solid var(--line, #262e29); } .ds-frag { font-family: var(--mono, monospace); font-size: 18px; } .ds-frag .ds-k { color: var(--key, #34d399); } .ds-frag .ds-v { color: var(--ink, #e4e8e2); } .ds-txt h3 { font-family: var(--sans, sans-serif); font-weight: 600; font-size: 17px; color: var(--ink, #e4e8e2); margin-bottom: 6px; } .ds-txt p { font-family: var(--sans, sans-serif); color: var(--mut, #a7b0a9); font-size: 15px; }"
+    },
+    {
+      "name": "Listing row",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "A report row in the ls listing: name, date, cost.",
+      "html": "<div class=\"ds-lsrow\"><span class=\"ds-name\">ship-20260924-101500.md</span><span class=\"ds-date\">Sep 24 10:15</span><span class=\"ds-cost\">$0.0120</span></div>",
+      "css": ".ds-lsrow { display: flex; gap: 1.2em; padding: 5px 0; font-family: var(--mono, monospace); font-size: 14px; } .ds-name { color: var(--ink, #e4e8e2); flex: 1; } .ds-date { color: var(--cmt, #8b958e); font-size: 0.9em; } .ds-cost { color: var(--key, #34d399); font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Brand",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Footer wordmark: the beating ECG line next to the name.",
+      "html": "<a class=\"ds-brand\"><svg class=\"ds-ecg\" viewBox=\"0 0 300 80\" preserveAspectRatio=\"none\"><path pathLength=\"1000\" d=\"M0 48 H88 c7 0 11 -10 18 -10 c7 0 11 10 18 10 H136 l5 5 7 -44 6 50 5 -11 c8 -8 16 -8 24 0 H300\" fill=\"none\"/></svg>pulse</a>",
+      "css": ".ds-brand { display: inline-flex; align-items: center; gap: 10px; font-family: var(--mono, monospace); font-size: 14px; font-weight: 600; color: var(--ink, #e4e8e2); text-decoration: none; } .ds-ecg { width: 44px; height: 11px; } .ds-ecg path { stroke: var(--key, #34d399); stroke-width: 14; vector-effect: non-scaling-stroke; stroke-dasharray: 90 910; stroke-dashoffset: 1000; animation: ds-beat 2.4s linear infinite; } @keyframes ds-beat { to { stroke-dashoffset: 0; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Annotated Workflow File",
+    "overview": "Pulse's interface is a YAML file, so the page is one too. Everything a computer writes (workflow files, shell commands, run traces, reports, directory listings) is set in Martian Mono inside file windows with editor chrome; everything a human says is Spline Sans on the open ground. The site is a single dark vertical scroll: a near-black green-cast ground, one emerald accent that means something, and hairlines instead of shadows. No header, no cards, no navigation apparatus.",
+    "keyCharacteristics": [
+      "Light editor ground with three tonal steps (paper, chrome, raised); no shadows anywhere",
+      "One accent: emerald, carrying meaning only (keys, success ticks, cost, the beat)",
+      "Two type voices: Martian Mono for machine artifacts, Spline Sans for human prose",
+      "File chrome (tab bar, body, status line) is the only container pattern",
+      "The ECG pulse line is the brand mark and appears wherever a run is live"
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "Emerald marks meaning (a key, a goal reached, a cost, a live run) and is never spent on decoration, fills, or gradients. One owner-approved exception: emerald-family text gradients on the hero display (the goal word's landing), always emerald to mint, never a second hue.",
+        "section": "colors"
+      },
+      {
+        "name": "The Artifact Rule",
+        "body": "Content Pulse itself produces (files, commands, reports, listings) renders inside file chrome; human commentary stays on the open ground.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Voices Rule",
+        "body": "Martian Mono is for what a computer writes; Spline Sans is for what a person says. Never set a human sentence in mono, never set file content in the sans.",
+        "section": "typography"
+      },
+      {
+        "name": "The No-Shadow Rule",
+        "body": "Never add box-shadow; a new surface gets a new tonal step plus a hairline, or it does not exist.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do put machine artifacts in file windows and human prose on the ground; the split is the system.",
+      "Do use tabular numerals for every cost and use the ECG line wherever a run is shown.",
+      "Do keep all motion to opacity and transform, and disable it fully under prefers-reduced-motion."
+    ],
+    "donts": [
+      "Don't introduce a second accent hue or a glow; emerald alone carries meaning. Text gradients appear only on the hero display, in the emerald family, per the owner's accepted exception.",
+      "Don't add shadows, cards, or nested containers; the file window is the only box.",
+      "Don't ship a header or sticky nav; the page is one scroll from pitch to install."
+    ]
+  }
+}
