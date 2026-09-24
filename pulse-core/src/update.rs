@@ -53,7 +53,7 @@ fn token() -> Result<String, String> {
         }
     }
     Err("GitHub token required (the repository is private): \
-        `/key github <token>` (TUI) or export GITHUB_TOKEN"
+        export GITHUB_TOKEN or MISE_GITHUB_TOKEN"
         .into())
 }
 
@@ -82,7 +82,8 @@ pub async fn latest_release() -> Result<Option<Release>, String> {
         404 => return Ok(None),
         401 => {
             return Err(
-                "GitHub rejected the token — set it again with `/key github <token>` (TUI)".into(),
+                "GitHub rejected the token — export GITHUB_TOKEN or MISE_GITHUB_TOKEN with a token that can read the repo"
+                    .into(),
             )
         }
         code => return Err(format!("GitHub returned HTTP {code}")),

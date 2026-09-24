@@ -11,6 +11,12 @@ pub const AGENT_NOTE: &str = include_str!("prompts/agent-note.md");
 /// Summarizes prior beat messages into a context brief (`{{history}}`).
 pub const SUMMARIZE: &str = include_str!("prompts/summarize.md");
 
+/// Verifies a workflow step's goal against its result (`{{goal}}`, `{{result}}`).
+pub const GOAL_CHECK: &str = include_str!("prompts/goal-check.md");
+
+/// Continuation prompt when a step's goal check fails (`{{goal}}`, `{{reason}}`).
+pub const GOAL_RETRY: &str = include_str!("prompts/goal-retry.md");
+
 /// Built-in session instructions, prepended to every model run's system message.
 pub const SYSTEM: &str = include_str!("prompts/system.md");
 
@@ -81,5 +87,7 @@ mod tests {
         assert!(AGENT_NOTE.contains("Tools are available"));
         assert!(SUMMARIZE.contains("{{history}}"));
         assert!(SYSTEM.contains("Session instructions"));
+        assert!(GOAL_CHECK.contains("{{goal}}") && GOAL_CHECK.contains("{{result}}"));
+        assert!(GOAL_RETRY.contains("{{goal}}") && GOAL_RETRY.contains("{{reason}}"));
     }
 }

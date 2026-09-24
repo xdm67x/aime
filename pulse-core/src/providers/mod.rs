@@ -6,9 +6,11 @@
 //!
 //! Model ids handed around the app are prefixed with the provider's `prefix()`
 //! (e.g. `OpenRouter - anthropic/claude…`, `OpenCode - kimi-k3`) so the picker
-//! and saved config always show which provider a model routes to. Bare legacy
-//! ids still route to OpenRouter.
+//! and saved config always show which provider a model routes to. Bare ids
+//! route to the provider set with `pulse provider use <url> <key>` when one
+//! is configured, else to OpenRouter.
 
+pub mod custom;
 pub mod litellm;
 pub mod mistral;
 pub mod opencode;
@@ -178,6 +180,7 @@ fn providers() -> &'static [Box<dyn Provider>] {
             Box::new(opencode::OpenCode),
             Box::new(litellm::LiteLlm),
             Box::new(mistral::Mistral),
+            Box::new(custom::Custom),
         ]
     })
 }
@@ -218,15 +221,21 @@ pub async fn list_models_of(name: &str) -> Result<Vec<Model>, String> {
 }
 
 /// Resolve a prefixed model id to its provider, stripping the prefix. Bare
-/// legacy ids (saved before prefixing) fall back to OpenRouter — unless
-/// OpenRouter is not configured and exactly one other provider is: then the
-/// id belongs to that provider (a LiteLLM-only setup must not be told to
-/// configure an OpenRouter key).
+/// ids (the normal case for the workflow CLI, which configures one provider
+/// with `pulse provider use`) route to that provider when it is configured;
+/// otherwise bare ids fall back to OpenRouter — unless OpenRouter is not
+/// configured and exactly one other provider is: then the id belongs to that
+/// provider (a LiteLLM-only setup must not be told to configure an OpenRouter
+/// key).
 fn provider_for(model: &str) -> Result<(&'static dyn Provider, String), String> {
     for p in providers() {
         if let Some(id) = model.strip_prefix(p.prefix()) {
             return Ok((p.as_ref(), id.to_string()));
         }
+    }
+    let custom = provider_by_name("Custom").unwrap();
+    if custom.configured() {
+        return Ok((custom, model.to_string()));
     }
     let configured: Vec<&dyn Provider> = providers()
         .iter()
