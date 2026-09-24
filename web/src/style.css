@@ -1217,7 +1217,7 @@ body::before {
 }
 
 .pg-beats:empty::after {
-    content: 'no beats yet, run one';
+    content: 'no reports yet, run one';
     color: var(--dim);
 }
 

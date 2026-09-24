@@ -215,10 +215,10 @@ const tickBeat = document.getElementById('tick-beat')
 const tickState = document.getElementById('tick-state')
 const tickCost = document.getElementById('tick-cost')
 
-const HERO_COST = 0.312
-const HERO_RUN_MS = 5700
+const HERO_COST = 0.012
+const HERO_RUN_MS = 6400
 const HERO_HOLD_MS = 4200
-let heroBeat = 12
+const HERO_WF = 'ship'
 let heroToken = 0
 
 function heroCountCost(token: number) {
@@ -250,10 +250,9 @@ function heroCycle() {
         void el.offsetWidth // restart the CSS animation
         el.style.animation = ''
     }
-    heroBeat += 1
-    heroBeatEl.textContent = `beat-${heroBeat} · workflow base`
+    heroBeatEl.textContent = `workflow ${HERO_WF} · goal reached`
     heroCostEl.textContent = '$0.0000'
-    if (tickBeat) tickBeat.textContent = `beat-${heroBeat}`
+    if (tickBeat) tickBeat.textContent = HERO_WF
     if (tickState) tickState.textContent = 'running'
     if (tickDot) tickDot.classList.add('on')
     navTicker?.classList.add('running')
@@ -262,9 +261,9 @@ function heroCycle() {
 }
 
 if (REDUCED.matches) {
-    heroBeatEl.textContent = 'beat-12 · workflow base'
+    heroBeatEl.textContent = 'workflow ship · goal reached'
     heroCostEl.textContent = `$${HERO_COST.toFixed(4)}`
-    if (tickBeat) tickBeat.textContent = 'beat-12'
+    if (tickBeat) tickBeat.textContent = 'ship'
     if (tickState) tickState.textContent = 'done'
     if (tickDot) tickDot.classList.remove('on')
     navTicker?.classList.remove('running')
@@ -278,70 +277,56 @@ if (REDUCED.matches) {
 
 interface WfStep {
     name: string
-    model: string
+    model?: string
+    goal?: string
     prompt: string
     tools: string[]
+    /** Optional goal-retry line: shown between the tools and the step-done line. */
+    retry?: string
     tokens: number
     cost: number
 }
 
 interface Workflow {
     blurb: string
-    userPrompt: string
+    model: string
     steps: WfStep[]
 }
 
 const WORKFLOWS: Record<string, Workflow> = {
-    base: {
-        blurb: 'The default. Any plain prompt runs straight through one step: one model, the full agentic loop, one beat.',
-        userPrompt: 'add a rate limiter to the api layer',
-        steps: [
-            {
-                name: 'run',
-                model: 'anthropic/claude-3.5-sonnet',
-                prompt: '"{{prompt}}"',
-                tools: [
-                    '⋯ grep "limiter" src/api - 9 matches',
-                    '⋯ read_file api/router.go - 132 lines',
-                    '⋯ edit_file limiter.go - token bucket added',
-                    '✓ bash go test ./... - 18 passed',
-                ],
-                tokens: 1200,
-                cost: 0.0142,
-            },
-        ],
-    },
     review: {
-        blurb: 'Two steps, two models. Claude reads and plans, Mistral applies the patch: one prompt, one beat.',
-        userPrompt: 'review the auth module',
+        blurb: 'Two steps, two models. Claude reads and plans, Mistral patches — and the patch step re-runs until its goal is confirmed met.',
+        model: 'claude-3.5-sonnet',
         steps: [
             {
                 name: 'plan',
-                model: 'anthropic/claude-3.5-sonnet',
-                prompt: '"Review {{prompt}} and outline fixes"',
-                tools: ['⋯ read_file auth.rs - 214 lines', '⋯ grep "session" src - 5 matches'],
+                prompt: '"Review the auth module and outline fixes"',
+                goal: 'fixes outlined, no code touched',
+                tools: ['⋯ read_file auth.rs — 214 lines', '⋯ grep session src — 5 matches'],
                 tokens: 800,
                 cost: 0.0091,
             },
             {
-                name: 'fix',
+                name: 'patch',
                 model: 'mistral-large-latest',
                 prompt: '"Apply the plan above"',
-                tools: ['⋯ edit_file session expiry check added', '✓ bash cargo test - 41 passed'],
+                goal: 'cargo test passes with the patch applied',
+                tools: ['⋯ edit_file session expiry check added'],
+                retry: '↻ goal not reached — retrying (attempt 2): tests still failing',
                 tokens: 1500,
                 cost: 0.0068,
             },
         ],
     },
     ship: {
-        blurb: 'The release routine. The first step proves the build is green, the second one tags and ships it.',
-        userPrompt: 'release the api changes',
+        blurb: 'The release routine. The first step proves the build is green, the second one tags and ships it — both until their goals hold.',
+        model: 'claude-3.5-sonnet',
         steps: [
             {
                 name: 'test',
-                model: 'anthropic/claude-3.5-sonnet',
-                prompt: '"Run the full test suite for {{prompt}}"',
-                tools: ['⋯ bash cargo test - 41 passed, 0 failed'],
+                prompt: '"Run the full test suite"',
+                goal: 'suite green, nothing skipped',
+                tools: ['⋯ bash cargo test — 41 passed, 0 failed'],
                 tokens: 600,
                 cost: 0.0071,
             },
@@ -349,9 +334,24 @@ const WORKFLOWS: Record<string, Workflow> = {
                 name: 'release',
                 model: 'mistral-large-latest',
                 prompt: '"Bump the version, tag and build"',
-                tools: ['⋯ edit_file Cargo.toml - 0.10.1', '✓ bash git tag v0.10.1'],
+                goal: 'version bumped and tagged',
+                tools: ['⋯ edit_file Cargo.toml — 0.10.1', '⋯ bash git tag v0.10.1'],
                 tokens: 1100,
                 cost: 0.0049,
+            },
+        ],
+    },
+    docs: {
+        blurb: 'One step, one goal, one report. The changelog gets written from the commits — and the step re-runs if the goal check finds gaps.',
+        model: 'mistral-large-latest',
+        steps: [
+            {
+                name: 'changelog',
+                prompt: '"Write the changelog since v0.10.0"',
+                goal: 'every merged PR listed with its tag',
+                tools: ['⋯ bash git log v0.10.0..HEAD — 23 commits'],
+                tokens: 700,
+                cost: 0.0038,
             },
         ],
     },
@@ -371,7 +371,7 @@ const chips = Array.from(document.querySelectorAll<HTMLButtonElement>('.chip'))
 
 let runToken = 0
 let beatNo = 11
-let currentWf = 'base'
+let currentWf = 'review'
 
 function sleep(ms: number) {
     return new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -402,11 +402,13 @@ function yamlLines(wf: Workflow) {
     const lines: Tok[][] = []
     const push = (...toks: Tok[]) => lines.push(toks)
     push(key('name:'), str(currentWf))
+    push(key('model:'), str(wf.model))
     push(key('steps:'))
     for (const step of wf.steps) {
         push(dash('-'), key('name:'), str(step.name))
-        push(mut('   '), key('model:'), str(step.model))
-        push(mut('   '), key('prompt:'), str(step.prompt))
+        if (step.model) push(mut('  '), key('model:'), str(step.model))
+        if (step.goal) push(mut('  '), key('goal:'), str(step.goal))
+        push(mut('  '), key('prompt:'), str(step.prompt))
     }
     return lines
 }
@@ -484,66 +486,72 @@ async function runWorkflow(id: string) {
     })
 
     pgBlurb.textContent = wf.blurb
-    pgTitle.textContent = id === 'base' ? 'pulse' : `pulse - /workflow ${id}`
-    pgFile.textContent = `~/.pulse/workflows/${id}.yml`
+    pgTitle.textContent = 'pulse - zsh'
+    pgFile.textContent = `./${id}.yml`
     pgTrace.replaceChildren()
     pgCost.textContent = '$0.0000'
     beatNo += 1
+    const report = `${id}-20260924-10${String(15 + beatNo).padStart(2, '0')}.md`
 
-    /* log the beat: a running row that settles to done with its cost */
+    /* log the report: a running row that settles to done with its cost */
     pgBeats.querySelectorAll('li.running').forEach((row) => row.remove())
     const beatRow = document.createElement('li')
     beatRow.className = 'running'
     const rowDot = document.createElement('span')
     rowDot.className = 'status-dot on'
     const rowId = document.createElement('span')
-    rowId.textContent = `beat-${beatNo}`
-    const rowWf = document.createElement('span')
-    rowWf.className = 'pg-beat-wf'
-    rowWf.textContent = id
+    rowId.className = 'pg-beat-wf'
+    rowId.textContent = report
     const rowCost = document.createElement('span')
     rowCost.className = 'pg-beat-cost'
     rowCost.textContent = '$0.0000'
-    beatRow.append(rowDot, rowId, rowWf, rowCost)
+    beatRow.append(rowDot, rowId, rowCost)
     pgBeats.append(beatRow)
     while (pgBeats.children.length > 5) pgBeats.firstElementChild?.remove()
 
     const yamlMs = renderYaml(wf)
-    pgStatus.textContent = `beat-${beatNo} - workflow ${id} - loading yaml`
+    pgStatus.textContent = `workflow ${id} — loading yaml`
     if (!(await wait(token, yamlMs))) return
 
     const totalCost = wf.steps.reduce((sum, s) => sum + s.cost, 0)
-    const totalTokens = wf.steps.reduce((sum, s) => sum + s.tokens, 0)
     const runMs = 900 + wf.steps.reduce((sum, s) => sum + 500 + s.tools.length * 520 + 400, 0)
     startTicker(token, totalCost, runMs)
     pgStatusBar?.classList.add('running')
-    pgStatus.textContent = `beat-${beatNo} - workflow ${id} - running`
+    pgStatus.textContent = `workflow ${id} — running`
 
-    const typeMs = addTyped(wf.userPrompt)
+    const typeMs = addTyped(`pulse ${id}`)
     if (!(await wait(token, typeMs))) return
 
-    let tokensSoFar = 0
+    addLine('ok', `▶ workflow '${id}' — ${wf.steps.length} steps — ./${id}.yml`)
+    if (!(await wait(token, 450))) return
+    addLine('tool', 'worktree: ~/.pulse/worktrees/…-pulse')
+    if (!(await wait(token, 450))) return
+
     for (const [i, step] of wf.steps.entries()) {
-        addLine('ok', `→ step ${i + 1}/${wf.steps.length} - ${step.name} - ${step.model}`)
+        addLine('ok', `[${i + 1}/${wf.steps.length}] ${step.name}`)
         if (!(await wait(token, 550))) return
         for (const tool of step.tools) {
-            addLine(tool.startsWith('✓') ? 'ok' : 'tool', tool)
+            addLine('tool', tool)
             if (!(await wait(token, 520))) return
         }
-        tokensSoFar += step.tokens
-        addLine('ai', `step ${step.name} done - ${(tokensSoFar / 1000).toFixed(1)}k tokens`)
+        if (step.retry) {
+            addLine('tool', step.retry)
+            if (!(await wait(token, 520))) return
+        }
+        const done = step.retry ? 'goal reached in 2 attempt(s)' : 'goal reached'
+        addLine('ai', `✓ step done — ${done} — $${step.cost.toFixed(4)}`)
         if (!(await wait(token, 450))) return
     }
 
     addLine(
         'ai',
-        `beat saved - ${(totalTokens / 1000).toFixed(1)}k tokens - <span class="cost">$${totalCost.toFixed(4)}</span>`,
+        `✓ workflow complete — report: ${report} — <span class="cost">$${totalCost.toFixed(4)}</span>`,
     )
     pgCost.textContent = `$${totalCost.toFixed(4)}`
-    pgStatus.textContent = `beat-${beatNo} - workflow ${id} - done`
+    pgStatus.textContent = `workflow ${id} — done`
     pgStatusBar?.classList.remove('running')
 
-    /* the logged beat settles: dot goes quiet, cost lands */
+    /* the logged report settles: dot goes quiet, cost lands */
     beatRow.classList.remove('running')
     rowDot.classList.remove('on')
     rowCost.textContent = `$${totalCost.toFixed(4)}`
@@ -551,7 +559,7 @@ async function runWorkflow(id: string) {
 
 for (const chip of chips) {
     chip.addEventListener('click', () => {
-        void runWorkflow(chip.dataset.wf ?? 'base')
+        void runWorkflow(chip.dataset.wf ?? 'review')
     })
     chip.addEventListener('keydown', (e) => {
         if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
@@ -573,7 +581,7 @@ pgRun.addEventListener('click', () => {
 /* First run kicks off when the playground section comes into view */
 const playground = document.getElementById('playground') as HTMLElement
 if (REDUCED.matches || !('IntersectionObserver' in window)) {
-    void runWorkflow('base')
+    void runWorkflow('review')
 } else {
     let started = false
     const io = new IntersectionObserver(
@@ -581,7 +589,7 @@ if (REDUCED.matches || !('IntersectionObserver' in window)) {
             if (started || !entries.some((e) => e.isIntersecting)) return
             started = true
             io.disconnect()
-            void runWorkflow('base')
+            void runWorkflow('review')
         },
         { threshold: 0.35 },
     )

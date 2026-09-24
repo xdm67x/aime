@@ -3,16 +3,16 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Pulse: Every prompt runs a workflow</title>
+        <title>Pulse: Workflows that run until the goal is reached</title>
         <meta
             name="description"
-            content="Pulse is a terminal-native AI agent harness built around workflows. Every prompt runs through a YAML workflow that names the model and the steps, an agentic loop does the work, and every run persists as a beat: live status, tokens and cost, straight from your terminal. macOS, Apple silicon."
+            content="Pulse is a headless workflow runner. Write a YAML workflow, pulse runs each step through an agentic tool loop until its goal is reached, and writes the whole run to a markdown report. Any OpenAI-compatible provider. macOS, Apple silicon."
         />
         <meta name="theme-color" content="#f4f6f5" />
-        <meta property="og:title" content="Pulse: Every prompt runs a workflow" />
+        <meta property="og:title" content="Pulse: Workflows that run until the goal is reached" />
         <meta
             property="og:description"
-            content="A terminal-native AI agent harness. A YAML workflow names the model and the steps, an agentic loop runs the tools, every run persists as a beat."
+            content="A headless workflow runner. A YAML workflow names the model, the steps and their goals; an agentic loop runs the tools; the run lands as a markdown report."
         />
         <meta property="og:type" content="website" />
         <link
@@ -45,20 +45,20 @@
                         <section
                             class="hero slide"
                             id="top"
-                            aria-label="Pulse, an AI agent harness"
+                            aria-label="Pulse, a headless workflow runner"
                         >
                             <div class="wrap hero-grid">
                                 <div class="hero-copy">
                                     <p class="eyebrow rise" style="--sd: 0.05s">
-                                        Pulse, terminal-native agent harness
+                                        Pulse, headless workflow runner
                                     </p>
-                                    <h1 class="hero-h1" aria-label="Every prompt runs a workflow.">
-                                        <span class="rise" style="--sd: 0.12s">Every prompt</span
+                                    <h1 class="hero-h1" aria-label="Every step runs to its goal.">
+                                        <span class="rise" style="--sd: 0.12s">Every step</span
                                         ><br />
                                         <span class="rise" style="--sd: 0.22s">
-                                            runs a
+                                            runs to its
                                             <span class="hl"
-                                                >workflow.<svg
+                                                >goal.<svg
                                                     class="hl-ecg"
                                                     viewBox="0 0 240 22"
                                                     preserveAspectRatio="none"
@@ -73,8 +73,9 @@
                                         </span>
                                     </h1>
                                     <p class="sub rise" style="--sd: 0.32s">
-                                        A YAML workflow names the model and steps, an agentic loop
-                                        runs the tools, every run persists as a beat.
+                                        A YAML workflow names the model, the steps and their goals;
+                                        an agentic loop runs the tools, and the run lands as a
+                                        markdown report.
                                     </p>
                                     <div class="install rise" style="--sd: 0.42s">
                                         <div class="cmd">
@@ -109,29 +110,37 @@
                                         </div>
                                         <div class="term-main">
                                             <div class="t-line user">
-                                                <span class="t-prompt" aria-hidden="true">▸</span>
+                                                <span class="t-prompt" aria-hidden="true">$</span>
                                                 <span
                                                     class="t-type"
-                                                    style="--w: 46ch; --ts: 46; --tw: 2.1s; --td: 0.6s"
-                                                    >refactor the auth module to use git
-                                                    worktrees</span
+                                                    style="--w: 10ch; --ts: 10; --tw: 0.5s; --td: 0.6s"
+                                                    >pulse ship</span
                                                 >
                                             </div>
-                                            <div class="t-line ok" style="--d: 3.1s">
-                                                → workflow base - anthropic/claude-3.5-sonnet
+                                            <div class="t-line ok" style="--d: 2.1s">
+                                                ▶ workflow 'ship' — 2 steps — ./ship.yml
                                             </div>
-                                            <div class="t-line tool" style="--d: 3.5s">
-                                                ⋯ grep "worktree" pulse-core/src - 12 matches
+                                            <div class="t-line tool" style="--d: 2.5s">
+                                                worktree: ~/.pulse/worktrees/101500-pulse
                                             </div>
-                                            <div class="t-line tool" style="--d: 4s">
-                                                ⋯ edit_file harness.rs - worktree branch created
+                                            <div class="t-line tool" style="--d: 2.9s">
+                                                [1/2] test
                                             </div>
-                                            <div class="t-line ok" style="--d: 4.6s">
-                                                ✓ bash cargo test - 41 passed, 0 failed
+                                            <div class="t-line tool" style="--d: 3.4s">
+                                                ⋯ bash cargo test — 41 passed, 0 failed
                                             </div>
-                                            <div class="t-line ai" style="--d: 5.2s">
-                                                beat saved - 1.2k tokens -
-                                                <span class="cost">$0.0142</span>
+                                            <div class="t-line ok" style="--d: 4s">
+                                                ✓ step done — goal reached, $0.0071
+                                            </div>
+                                            <div class="t-line tool" style="--d: 4.6s">
+                                                [2/2] release
+                                            </div>
+                                            <div class="t-line tool" style="--d: 5.1s">
+                                                ⋯ edit_file Cargo.toml — v0.10.1 tagged
+                                            </div>
+                                            <div class="t-line ai" style="--d: 5.7s">
+                                                ✓ complete — report: ship-20260924-101500.md —
+                                                <span class="cost">$0.0120</span>
                                             </div>
                                             <div class="t-input">
                                                 <span aria-hidden="true">❯</span>
@@ -151,8 +160,10 @@
                                                     fill="none"
                                                 />
                                             </svg>
-                                            <span class="ts-left">beat-7 · workflow base</span>
-                                            <span class="ts-cost">$0.3120</span>
+                                            <span class="ts-left"
+                                                >workflow ship · goal reached</span
+                                            >
+                                            <span class="ts-cost">$0.0120</span>
                                         </div>
                                     </div>
                                 </div>
@@ -163,25 +174,25 @@
                         <section
                             class="section routine slide"
                             id="routine"
-                            aria-label="The routine, from prompt to beat"
+                            aria-label="The routine, from workflow to report"
                         >
                             <div class="wrap">
-                                <h2 class="reveal">One prompt. Five moves.</h2>
+                                <h2 class="reveal">One command. Five moves.</h2>
                                 <ol class="steps">
                                     <li class="reveal" style="--rd: 0s; --i: 0">
-                                        <b>prompt</b><span>you type it</span>
+                                        <b>workflow</b><span>the yaml names the steps</span>
                                     </li>
                                     <li class="reveal" style="--rd: 0.07s; --i: 1">
-                                        <b>workflow</b><span>the YAML wakes up</span>
+                                        <b>model</b><span>the file names it</span>
                                     </li>
                                     <li class="reveal" style="--rd: 0.14s; --i: 2">
-                                        <b>model</b><span>the file names it</span>
+                                        <b>goal</b><span>the finish line, per step</span>
                                     </li>
                                     <li class="reveal" style="--rd: 0.21s; --i: 3">
                                         <b>agentic loop</b><span>tools run the work</span>
                                     </li>
                                     <li class="reveal" style="--rd: 0.28s; --i: 4">
-                                        <b>beat</b><span>the run persists, live</span>
+                                        <b>report</b><span>the run lands in markdown</span>
                                     </li>
                                 </ol>
                             </div>
@@ -192,100 +203,100 @@
                                     <div class="bw-group">
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-3</span>
-                                            <span class="bw-name">mvp-launch</span>
+                                            <span class="bw-id">mvp-launch</span>
+                                            <span class="bw-name">mvp-launch-0924.md</span>
                                             <span class="bw-cost">$1.04</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-4</span>
-                                            <span class="bw-name">docs-refresh</span>
+                                            <span class="bw-id">docs-refresh</span>
+                                            <span class="bw-name">docs-refresh-0923.md</span>
                                             <span class="bw-cost">$0.18</span>
                                         </div>
                                         <div class="bw-pill running">
                                             <span class="status-dot on" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-5</span>
-                                            <span class="bw-name">landing-page</span>
+                                            <span class="bw-id">landing-page</span>
+                                            <span class="bw-name">landing-page-0924.md</span>
                                             <span class="bw-cost">$0.62</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-6</span>
-                                            <span class="bw-name">api-retry</span>
+                                            <span class="bw-id">api-retry</span>
+                                            <span class="bw-name">api-retry-0922.md</span>
                                             <span class="bw-cost">$0.27</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-8</span>
-                                            <span class="bw-name">db-index</span>
+                                            <span class="bw-id">db-index</span>
+                                            <span class="bw-name">db-index-0921.md</span>
                                             <span class="bw-cost">$0.09</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-9</span>
-                                            <span class="bw-name">deps-audit</span>
+                                            <span class="bw-id">deps-audit</span>
+                                            <span class="bw-name">deps-audit-0924.md</span>
                                             <span class="bw-cost">$0.44</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-10</span>
-                                            <span class="bw-name">copy-pass</span>
+                                            <span class="bw-id">copy-pass</span>
+                                            <span class="bw-name">copy-pass-0923.md</span>
                                             <span class="bw-cost">$0.12</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-11</span>
-                                            <span class="bw-name">readme-fix</span>
+                                            <span class="bw-id">readme-fix</span>
+                                            <span class="bw-name">readme-fix-0920.md</span>
                                             <span class="bw-cost">$0.07</span>
                                         </div>
                                     </div>
                                     <div class="bw-group bw-dup" aria-hidden="true">
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-3</span>
-                                            <span class="bw-name">mvp-launch</span>
+                                            <span class="bw-id">mvp-launch</span>
+                                            <span class="bw-name">mvp-launch-0924.md</span>
                                             <span class="bw-cost">$1.04</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-4</span>
-                                            <span class="bw-name">docs-refresh</span>
+                                            <span class="bw-id">docs-refresh</span>
+                                            <span class="bw-name">docs-refresh-0923.md</span>
                                             <span class="bw-cost">$0.18</span>
                                         </div>
                                         <div class="bw-pill running">
                                             <span class="status-dot on" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-5</span>
-                                            <span class="bw-name">landing-page</span>
+                                            <span class="bw-id">landing-page</span>
+                                            <span class="bw-name">landing-page-0924.md</span>
                                             <span class="bw-cost">$0.62</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-6</span>
-                                            <span class="bw-name">api-retry</span>
+                                            <span class="bw-id">api-retry</span>
+                                            <span class="bw-name">api-retry-0922.md</span>
                                             <span class="bw-cost">$0.27</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-8</span>
-                                            <span class="bw-name">db-index</span>
+                                            <span class="bw-id">db-index</span>
+                                            <span class="bw-name">db-index-0921.md</span>
                                             <span class="bw-cost">$0.09</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-9</span>
-                                            <span class="bw-name">deps-audit</span>
+                                            <span class="bw-id">deps-audit</span>
+                                            <span class="bw-name">deps-audit-0924.md</span>
                                             <span class="bw-cost">$0.44</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-10</span>
-                                            <span class="bw-name">copy-pass</span>
+                                            <span class="bw-id">copy-pass</span>
+                                            <span class="bw-name">copy-pass-0923.md</span>
                                             <span class="bw-cost">$0.12</span>
                                         </div>
                                         <div class="bw-pill">
                                             <span class="status-dot" aria-hidden="true"></span>
-                                            <span class="bw-id">beat-11</span>
-                                            <span class="bw-name">readme-fix</span>
+                                            <span class="bw-id">readme-fix</span>
+                                            <span class="bw-name">readme-fix-0920.md</span>
                                             <span class="bw-cost">$0.07</span>
                                         </div>
                                     </div>
@@ -303,9 +314,9 @@
                                 <header class="pg-head">
                                     <h2 class="reveal">Pick a workflow. Watch it run.</h2>
                                     <p class="reveal" style="--rd: 0.08s">
-                                        Real workflows from <code>~/.pulse/workflows/</code>. Select
-                                        one: the YAML loads, the loop starts, the beat lands. That
-                                        is the whole product.
+                                        Workflow files in your project directory. Pick one: the YAML
+                                        loads, the loop runs until each goal is reached, the report
+                                        lands. That is the whole product.
                                     </p>
                                 </header>
 
@@ -316,21 +327,11 @@
                                                 class="chip"
                                                 role="tab"
                                                 aria-selected="false"
-                                                data-wf="base"
-                                                type="button"
-                                            >
-                                                <span class="chip-id">base</span>
-                                                <span class="chip-desc">the everyday driver</span>
-                                            </button>
-                                            <button
-                                                class="chip"
-                                                role="tab"
-                                                aria-selected="false"
                                                 data-wf="review"
                                                 type="button"
                                             >
                                                 <span class="chip-id">review</span>
-                                                <span class="chip-desc">plan, then patch</span>
+                                                <span class="chip-desc">read, patch, prove it</span>
                                             </button>
                                             <button
                                                 class="chip"
@@ -342,18 +343,28 @@
                                                 <span class="chip-id">ship</span>
                                                 <span class="chip-desc">tests green, tag it</span>
                                             </button>
+                                            <button
+                                                class="chip"
+                                                role="tab"
+                                                aria-selected="false"
+                                                data-wf="docs"
+                                                type="button"
+                                            >
+                                                <span class="chip-id">docs</span>
+                                                <span class="chip-desc">changelog, written</span>
+                                            </button>
                                         </div>
 
                                         <p class="pg-blurb" id="pg-blurb"></p>
 
                                         <ul class="pg-legend">
-                                            <li>a plain prompt runs <b>base</b></li>
-                                            <li><b>/workflow review</b> picks any other</li>
-                                            <li>each step names its own <b>model</b></li>
+                                            <li><b>pulse provider use</b> sets the endpoint</li>
+                                            <li><b>pulse &lt;workflow&gt;</b> runs it</li>
+                                            <li>steps run until their <b>goal:</b> is met</li>
                                         </ul>
 
                                         <div class="pg-beats-box">
-                                            <span class="pg-beats-h">beats this session</span>
+                                            <span class="pg-beats-h">reports this session</span>
                                             <ul class="pg-beats" id="pg-beats"></ul>
                                         </div>
 
@@ -375,13 +386,11 @@
                                         </div>
                                         <div class="pg-body">
                                             <div class="pg-pane">
-                                                <div class="pane-h" id="pg-file">
-                                                    ~/.pulse/workflows/base.yml
-                                                </div>
+                                                <div class="pane-h" id="pg-file">./review.yml</div>
                                                 <pre class="pg-yaml" id="pg-yaml"></pre>
                                             </div>
                                             <div class="pg-pane">
-                                                <div class="pane-h">pulse - run</div>
+                                                <div class="pane-h">pulse — run</div>
                                                 <div
                                                     class="pg-trace"
                                                     id="pg-trace"
@@ -430,24 +439,25 @@
                                             </p>
                                         </div>
                                         <div class="f-art">
-                                            <span class="fa-line"
-                                                >model: anthropic/claude-3.5-sonnet</span
-                                            >
+                                            <span class="fa-line">model: claude-3.5-sonnet</span>
                                             <span class="fa-line">model: mistral-large-latest</span>
                                         </div>
                                     </div>
 
                                     <div class="feat feat-tint reveal" style="--rd: 0.07s">
                                         <div class="f-copy">
-                                            <h3>{{prompt}} goes in</h3>
+                                            <h3>Your endpoint, your key</h3>
                                             <p>
-                                                One placeholder. Whatever you type lands where the
-                                                workflow expects it, and the steps take it from
-                                                there.
+                                                Any OpenAI-compatible provider — one command to
+                                                point Pulse at it, one to list the models it offers.
+                                                Nothing hardcoded, nothing global.
                                             </p>
                                         </div>
                                         <div class="f-art">
-                                            <span class="fa-line">prompt: "{{prompt}}"</span>
+                                            <span class="fa-line"
+                                                >$ pulse provider use &lt;url&gt; &lt;key&gt;</span
+                                            >
+                                            <span class="fa-line">$ pulse models</span>
                                         </div>
                                     </div>
 
@@ -457,7 +467,7 @@
                                             <p>
                                                 read_file, write_file, edit_file, grep and bash. The
                                                 loop calls them, streams the results, and keeps
-                                                going until the step is done.
+                                                going until the goal is met.
                                             </p>
                                         </div>
                                         <div class="f-art">
@@ -470,11 +480,12 @@
 
                                     <div class="feat feat-dark reveal" style="--rd: 0.14s">
                                         <div class="f-copy">
-                                            <h3>Every run is a beat</h3>
+                                            <h3>Every run is a report</h3>
                                             <p>
-                                                Status, tokens and cost, persisted for good. Beats
-                                                born inside a project even get their own git
-                                                worktree.
+                                                Prompts, tool calls, streamed output and results
+                                                land in a markdown report next to you — and the work
+                                                happens in a git worktree, so your checkout stays
+                                                clean.
                                             </p>
                                         </div>
                                         <div class="f-art f-art-status">
@@ -490,7 +501,7 @@
                                                     fill="none"
                                                 />
                                             </svg>
-                                            <span>beat-7 · running</span>
+                                            <span>ship-20260924.md</span>
                                             <span class="cost">$0.31</span>
                                         </div>
                                     </div>
@@ -514,7 +525,7 @@
                                         fill="none"
                                     />
                                 </svg>
-                                <h2 class="reveal">Run your first beat.</h2>
+                                <h2 class="reveal">Run your first workflow.</h2>
                                 <div class="cmd cta-cmd reveal" style="--rd: 0.08s">
                                     <span class="dollar" aria-hidden="true">$</span>
                                     <code data-install
@@ -525,7 +536,9 @@
                                     </button>
                                 </div>
                                 <p class="hint reveal" style="--rd: 0.16s">
-                                    macOS, Apple silicon. One binary, zero config files.
+                                    macOS, Apple silicon. One binary, zero config files. Point it at
+                                    any OpenAI-compatible provider with
+                                    <code>pulse provider use</code>.
                                 </p>
                             </div>
                         </section>
@@ -552,7 +565,7 @@
         <div class="deck-count" aria-hidden="true"><b id="count-cur">01</b> / 05</div>
         <p class="nav-ticker" id="nav-ticker" aria-hidden="true">
             <span class="status-dot on" id="tick-dot"></span>
-            <span id="tick-beat">beat-12</span>
+            <span id="tick-beat">ship</span>
             <span class="nt-state" id="tick-state">running</span>
             <span class="nt-cost" id="tick-cost">$0.0000</span>
         </p>
