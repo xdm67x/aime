@@ -755,11 +755,12 @@ pub async fn run_task_with_model(
     let mut sink = |ev: TaskEvent| {
         on_event(TaggedEvent { beat_id, ev });
     };
-    let res = BEAT.scope(
-        beat_id,
-        run_task_with_model_inner(beat_id, prompt, model, workflow, images, &mut sink),
-    )
-    .await;
+    let res = BEAT
+        .scope(
+            beat_id,
+            run_task_with_model_inner(beat_id, prompt, model, workflow, images, &mut sink),
+        )
+        .await;
     match &res {
         Ok(r) => crate::log::info(format!(
             "beat {beat_id}: model task finished in {:.1}s — model={} cost=${:.4} tools={}",
@@ -989,8 +990,7 @@ async fn run_task_inner(
     let mut tagged = |te: TaggedEvent| {
         on_event(te.ev);
     };
-    let result =
-        workflows::run(beat_id, &wf, user_prompt.as_deref(), &images, &mut tagged).await?;
+    let result = workflows::run(beat_id, &wf, user_prompt.as_deref(), &images, &mut tagged).await?;
     // a single step IS the task — no headings; multiple steps get one
     // section per step
     let answer = if result.steps.len() == 1 {

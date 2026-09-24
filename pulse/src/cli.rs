@@ -271,8 +271,8 @@ async fn run_models() -> Result<i32, String> {
         .unwrap_or(5)
         .max(5);
     println!(
-        "{:<width$}  {:>12}  {}",
-        "MODEL", "CONTEXT", "PRICE (per 1M tokens: in / out)"
+        "{:<width$}  {:>12}  PRICE (per 1M tokens: in / out)",
+        "MODEL", "CONTEXT"
     );
     for m in &models {
         println!(

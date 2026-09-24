@@ -197,9 +197,14 @@ async fn final_answer_is_not_duplicated() {
     let beat_id = new_beat();
 
     let mut events: Vec<Value> = vec![];
-    let r = harness::run_task(beat_id, "what is the answer?".to_string(), vec![], &mut |ev| {
-        events.push(serde_json::to_value(&ev).unwrap());
-    })
+    let r = harness::run_task(
+        beat_id,
+        "what is the answer?".to_string(),
+        vec![],
+        &mut |ev| {
+            events.push(serde_json::to_value(&ev).unwrap());
+        },
+    )
     .await
     .unwrap();
     assert_eq!(r.answer, "The answer is 42.");
@@ -209,18 +214,29 @@ async fn final_answer_is_not_duplicated() {
     let answer_steps = events
         .iter()
         .filter(|e| e["type"] == "step")
-        .filter(|e| e["text"].as_str().map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
-            == Some("The answer is 42.".to_string()))
+        .filter(|e| {
+            e["text"]
+                .as_str()
+                .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
+                == Some("The answer is 42.".to_string())
+        })
         .count();
-    assert_eq!(answer_steps, 0, "restated summary must not be emitted as a step");
+    assert_eq!(
+        answer_steps, 0,
+        "restated summary must not be emitted as a step"
+    );
 
     // persisted: the end_turn reply IS the answer — exactly one copy
     let persisted = beats::get_beat_messages(beat_id).unwrap();
     let answer_entries = persisted
         .iter()
-        .filter(|m| m["role"] == "assistant"
-            && m["content"].as_str().map(|c| c.split_whitespace().collect::<Vec<_>>().join(" "))
-                == Some("The answer is 42.".to_string()))
+        .filter(|m| {
+            m["role"] == "assistant"
+                && m["content"]
+                    .as_str()
+                    .map(|c| c.split_whitespace().collect::<Vec<_>>().join(" "))
+                    == Some("The answer is 42.".to_string())
+        })
         .count();
     assert_eq!(answer_entries, 1, "answer must be persisted exactly once");
 
@@ -251,13 +267,18 @@ async fn final_answer_is_not_duplicated() {
         .filter(|e| e["type"] == "step")
         .filter(|e| e["text"].as_str() == Some("Here is the result."))
         .count();
-    assert_eq!(result_steps, 0, "streamed narration must not be re-emitted as a step");
+    assert_eq!(
+        result_steps, 0,
+        "streamed narration must not be re-emitted as a step"
+    );
 
     // persisted: exactly one assistant entry holds the answer
     let persisted = beats::get_beat_messages(beat_id).unwrap();
     let result_entries = persisted
         .iter()
-        .filter(|m| m["role"] == "assistant" && m["content"].as_str() == Some("Here is the result."))
+        .filter(|m| {
+            m["role"] == "assistant" && m["content"].as_str() == Some("Here is the result.")
+        })
         .count();
     assert_eq!(result_entries, 1, "answer must be persisted exactly once");
 }
