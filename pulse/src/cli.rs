@@ -1,40 +1,77 @@
-//! CLI subcommands: workflow management and release updates. These run before
-//! any terminal setup and exit — the TUI only launches when no subcommand is
-//! given. Settings (API keys) live in the TUI via /key and /keys; models are
-//! picked per workflow in the workflow files themselves.
+//! CLI subcommands. Pulse is headless: workflows are yaml files (created in
+//! the current directory with `pulse workflow new`, run with
+//! `pulse <workflow>`), the provider is configured with
+//! `pulse provider use <url> <key>`, and `pulse models` lists what the
+//! provider offers. Any unknown subcommand is treated as a workflow name to
+//! run — `pulse research do X` runs the `research` workflow with
+//! "do X" as the message.
 
 use clap::{Parser, Subcommand};
+use std::path::Path;
 
 #[derive(Parser)]
-#[command(name = "pulse", about = "Pulse — AI agent harness with a terminal UI")]
+#[command(
+    name = "pulse",
+    version,
+    about = "Run YAML workflows through an AI agent until each step's goal is reached.\n\nRuns work in a fresh git worktree by default (--no-worktree to disable).\nRun a workflow with: pulse <workflow>",
+    arg_required_else_help = true
+)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Option<Command>,
+    pub command: Command,
 }
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Manage workflows (run them in the chat with /workflow <name>)
+    /// Manage workflow yaml files
     Workflow {
         #[command(subcommand)]
         action: WorkflowAction,
     },
+    /// Configure the LLM provider (base url + api key)
+    Provider {
+        #[command(subcommand)]
+        action: ProviderAction,
+    },
+    /// List the models offered by the configured provider
+    Models,
     /// Check for a newer release; --apply installs it
     Update {
         /// Download the latest release and replace the running binary
         #[arg(long)]
         apply: bool,
     },
+    /// Run a workflow by name or file path — no other arguments. Runs in a
+    /// fresh git worktree under ~/.pulse/worktrees by default; --no-worktree
+    /// runs in the current directory instead. Any unknown subcommand lands
+    /// here: `pulse <workflow>`
+    #[command(external_subcommand)]
+    Run(Vec<String>),
 }
 
 #[derive(Subcommand)]
 pub enum WorkflowAction {
-    /// List discovered workflows
+    /// Create a blank workflow template in the current directory
+    New {
+        /// Workflow title — used as the file name (`<slug>.yml`)
+        title: String,
+    },
+    /// List workflows in the current directory and ~/.pulse/workflows
     List,
-    /// Create a workflow from a template and open it in $EDITOR
-    New { name: String },
-    /// Open an existing workflow in $EDITOR
+    /// Open a workflow in $EDITOR
     Edit { name: String },
+}
+
+#[derive(Subcommand)]
+pub enum ProviderAction {
+    /// Set the provider base URL and API key used by every run
+    Use {
+        /// OpenAI-compatible base URL (e.g. https://api.openai.com/v1 or a
+        /// LiteLLM proxy); `/chat/completions` and `/models` are appended
+        url: String,
+        /// API key — pass "" when the endpoint needs no auth
+        api_key: String,
+    },
 }
 
 impl Command {
@@ -42,19 +79,181 @@ impl Command {
     pub fn label(&self) -> &'static str {
         match self {
             Command::Workflow { .. } => "workflow",
+            Command::Provider { .. } => "provider",
+            Command::Models => "models",
             Command::Update { .. } => "update",
+            Command::Run(_) => "run",
         }
     }
 }
 
-pub async fn run(command: Command) -> Result<(), String> {
+/// The parsed `pulse <workflow>` invocation.
+#[derive(Debug)]
+pub struct RunArgs {
+    pub workflow: String,
+    /// `--no-worktree`: run in the current directory, not a git worktree.
+    pub no_worktree: bool,
+}
+
+/// Split the raw external-subcommand args: the single bare word is the
+/// workflow name/path, `--no-worktree` is a flag, and anything else — extra
+/// words or unknown flags — is an error: the run command takes only a
+/// workflow name.
+pub fn split_run_args(args: Vec<String>) -> Result<RunArgs, String> {
+    let mut workflow: Option<String> = None;
+    let mut no_worktree = false;
+    for a in args {
+        if a == "--no-worktree" {
+            no_worktree = true;
+        } else if a.starts_with('-') && a != "-" {
+            return Err(format!(
+                "Unknown flag: {a} — the run command only takes --no-worktree"
+            ));
+        } else if workflow.is_none() {
+            workflow = Some(a);
+        } else {
+            return Err(format!(
+                "Unexpected argument: '{a}' — the run command takes only a workflow \
+                 name: pulse <workflow> [--no-worktree]"
+            ));
+        }
+    }
+    let workflow = workflow.ok_or("No workflow given — run one with: pulse <workflow>")?;
+    Ok(RunArgs {
+        workflow,
+        no_worktree,
+    })
+}
+
+/// Run a command; the Ok value is the process exit code.
+pub async fn run(command: Command) -> Result<i32, String> {
     match command {
-        Command::Workflow { action } => run_workflow(action),
+        Command::Workflow { action } => run_workflow_cmd(action),
+        Command::Provider { action } => run_provider(action).await,
+        Command::Models => run_models().await,
         Command::Update { apply } => run_update(apply).await,
+        Command::Run(args) => {
+            let a = split_run_args(args)?;
+            Ok(crate::run::run_workflow(&a.workflow, !a.no_worktree).await)
+        }
     }
 }
 
-async fn run_update(apply: bool) -> Result<(), String> {
+/* ---- workflow ---- */
+
+fn run_workflow_cmd(action: WorkflowAction) -> Result<i32, String> {
+    match action {
+        WorkflowAction::New { title } => {
+            let name = crate::run::slug(&title);
+            if name.is_empty() {
+                return Err(format!("'{title}' is not a usable workflow name"));
+            }
+            let path = std::path::PathBuf::from(format!("{name}.yml"));
+            if path.is_file() {
+                return Err(format!(
+                    "Workflow already exists: {} (current directory)",
+                    path.display()
+                ));
+            }
+            std::fs::write(&path, pulse_core::workflows::template(&name))
+                .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+            pulse_core::log::info(format!("workflow created: {}", path.display()));
+            println!("Created {} in the current directory", path.display());
+            println!("Set a `model:` in it (list ids with: pulse models), then run: pulse {name}");
+            Ok(0)
+        }
+        WorkflowAction::List => {
+            let mut found = pulse_core::workflows::discover_dir(Path::new("."));
+            found.extend(pulse_core::workflows::discover_dir(
+                &pulse_core::workflows::dir()?,
+            ));
+            if found.is_empty() {
+                println!("No workflows found (current directory + ~/.pulse/workflows)");
+                println!("Create one with: pulse workflow new <title>");
+                return Ok(0);
+            }
+            let width = found
+                .iter()
+                .map(|(wf, _)| wf.name.len())
+                .max()
+                .unwrap_or(8)
+                .max(8);
+            for (wf, path) in found {
+                let desc = if wf.description.is_empty() {
+                    "-"
+                } else {
+                    &wf.description
+                };
+                println!("{:<width$}  {desc}  ({})", wf.name, path.display());
+            }
+            Ok(0)
+        }
+        WorkflowAction::Edit { name } => {
+            let (_, path) = pulse_core::workflows::find(&name)?;
+            open_editor(&path.to_string_lossy());
+            Ok(0)
+        }
+    }
+}
+
+/* ---- provider ---- */
+
+async fn run_provider(action: ProviderAction) -> Result<i32, String> {
+    let ProviderAction::Use { url, api_key } = action;
+    pulse_core::config::save_provider(&url, &api_key)?;
+    println!("Provider saved: {url}");
+    // verify the configuration by asking the endpoint for its models
+    match pulse_core::providers::list_models_of("Custom").await {
+        Ok(models) => println!(
+            "Provider reachable — {} model(s) available (list them: pulse models)",
+            models.len()
+        ),
+        Err(e) => {
+            println!("Warning: provider configured, but the check failed: {e}");
+        }
+    }
+    Ok(0)
+}
+
+/* ---- models ---- */
+
+async fn run_models() -> Result<i32, String> {
+    let url = pulse_core::config::provider_url()?
+        .ok_or("No provider configured — set one first: pulse provider use <url> <api_key>")?;
+    let models = pulse_core::providers::list_models_of("Custom")
+        .await
+        .map_err(|e| format!("{e} (provider: {url})"))?;
+    if models.is_empty() {
+        println!("The provider at {url} offers no models.");
+        return Ok(0);
+    }
+    println!("Models offered by {url}:\n");
+    let width = models
+        .iter()
+        .map(|m| crate::run::bare_id(&m.id).len())
+        .max()
+        .unwrap_or(5)
+        .max(5);
+    println!(
+        "{:<width$}  {:>12}  {}",
+        "MODEL", "CONTEXT", "PRICE (per 1M tokens: in / out)"
+    );
+    for m in &models {
+        println!(
+            "{:<width$}  {:>12}  {}",
+            crate::run::bare_id(&m.id),
+            m.context_length
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "-".into()),
+            crate::run::price_per_m(&m.pricing),
+        );
+    }
+    Ok(0)
+}
+
+/* ---- update ---- */
+
+async fn run_update(apply: bool) -> Result<i32, String> {
     let current = env!("CARGO_PKG_VERSION");
     if !apply {
         let release = pulse_core::update::check(current)
@@ -63,7 +262,7 @@ async fn run_update(apply: bool) -> Result<(), String> {
             .ok_or_else(|| format!("pulse {current} is up to date"))?;
         println!("New release: {} (installed: v{current})", release.tag);
         println!("Apply with: pulse update --apply");
-        return Ok(());
+        return Ok(0);
     }
     let tag = async {
         let release = pulse_core::update::check(current)
@@ -75,75 +274,46 @@ async fn run_update(apply: bool) -> Result<(), String> {
     .await
     .map_err(|e| format!("Update failed: {e}"))?;
     println!("Updated to {tag} — restart pulse to run the new version.");
-    Ok(())
-}
-
-fn run_workflow(action: WorkflowAction) -> Result<(), String> {
-    match action {
-        WorkflowAction::List => {
-            let workflows = pulse_core::workflows::discover()
-                .map_err(|e| format!("Failed to discover workflows: {e}"))?;
-            if workflows.is_empty() {
-                println!("No workflows found in ~/.pulse/workflows");
-                println!("Create one with: pulse workflow new <name>");
-                return Ok(());
-            }
-            for wf in workflows {
-                println!("{} — {}", wf.name, wf.description);
-            }
-            Ok(())
-        }
-        WorkflowAction::New { name } => {
-            if name.trim().is_empty() {
-                return Err("Workflow name cannot be empty".into());
-            }
-            let path = workflow_path(&name);
-            if std::path::Path::new(&path).is_file() {
-                return Err(format!("Workflow already exists: {path}"));
-            }
-            let template = format!(
-                "name: {name}\n\
-                 description: A new workflow\n\
-                 model: # required — pick from /models, e.g. OpenRouter - anthropic/claude-3.5-sonnet\n\
-                 steps:\n\
-                 \x20 - name: step1\n\
-                 \x20   prompt: |\n\
-                 \x20     Do something useful. {{prompt}} inserts the user's message.\n"
-            );
-            std::fs::write(&path, template).map_err(|e| format!("Failed to write {path}: {e}"))?;
-            pulse_core::log::info(format!("workflow created: {path}"));
-            open_editor(&path);
-            println!("Created {path}");
-            Ok(())
-        }
-        WorkflowAction::Edit { name } => {
-            let path = find_workflow_file(&name)
-                .ok_or_else(|| format!("Workflow not found: ~/.pulse/workflows/{name}.yml"))?;
-            open_editor(&path);
-            Ok(())
-        }
-    }
-}
-
-fn workflow_path(name: &str) -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let dir = format!("{home}/.pulse/workflows");
-    let _ = std::fs::create_dir_all(&dir);
-    format!("{dir}/{name}.yml")
-}
-
-fn find_workflow_file(name: &str) -> Option<String> {
-    let home = std::env::var("HOME").unwrap_or_default();
-    for ext in ["yml", "yaml"] {
-        let path = format!("{home}/.pulse/workflows/{name}.{ext}");
-        if std::path::Path::new(&path).is_file() {
-            return Some(path);
-        }
-    }
-    None
+    Ok(0)
 }
 
 fn open_editor(path: &str) {
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".into());
     let _ = std::process::Command::new(&editor).arg(path).status();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(args: &[&str]) -> Result<RunArgs, String> {
+        split_run_args(args.iter().map(|s| s.to_string()).collect())
+    }
+
+    #[test]
+    fn test_split_run_args() {
+        // bare run
+        let a = run(&["ship"]).unwrap();
+        assert_eq!(a.workflow, "ship");
+        assert!(!a.no_worktree);
+        // the flag in any position
+        let a = run(&["ship", "--no-worktree"]).unwrap();
+        assert_eq!(a.workflow, "ship");
+        assert!(a.no_worktree);
+        let a = run(&["--no-worktree", "./flows/ship.yml"]).unwrap();
+        assert_eq!(a.workflow, "./flows/ship.yml");
+        assert!(a.no_worktree);
+        // the run command takes only a workflow name
+        assert!(run(&["ship", "fix", "it"])
+            .unwrap_err()
+            .contains("takes only a workflow"));
+        assert!(run(&["ship", "--yes"])
+            .unwrap_err()
+            .contains("Unknown flag: --yes"));
+        assert!(run(&["ship", "--"])
+            .unwrap_err()
+            .contains("Unknown flag: --"));
+        // no workflow at all
+        assert!(run(&["--no-worktree"]).is_err());
+    }
 }

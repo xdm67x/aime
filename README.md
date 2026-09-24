@@ -1,23 +1,68 @@
 # Pulse
 
-Pulse is an AI agent harness with a terminal UI (plus a marketing website).
-You send prompts to LLM providers; every prompt runs through a **workflow**
-(YAML in `~/.pulse/workflows/`) that names the model and the steps, an agentic
-tool loop executes the work, and results persist as "beats". Beats born from
-a project get their own git worktree, and plain prompts run the `base`
-workflow (`/workflow <name>` picks any other).
+Pulse is a headless workflow runner (plus a marketing website). You write a
+**workflow** — a YAML file that names the model, the steps, and each step's
+optional `goal:` — and `pulse <workflow>` executes the steps through an
+agentic tool loop (`read_file`, `write_file`, `edit_file`, `grep`, `bash`,
+plus discovered skills) until each goal is reached. The terminal shows which
+step is running; everything the run produces — prompts, tool calls, streamed
+output, results — is written to a markdown report (`<workflow>-<timestamp>.md`)
+in the directory where you launched it.
 
 The project is a Rust workspace:
 
 - `pulse-core/` — the agent harness as a pure library (no UI dependencies):
-  providers (OpenRouter, OpenCode, LiteLLM), core tools (`read_file`,
-  `write_file`, `edit_file`, `grep`, `bash`), skill discovery, workflow
-  execution, prompt templates, SQLite persistence.
-- `pulse/` — the terminal app: a CLI + TUI hybrid on top of `pulse-core`.
+  providers (any OpenAI-compatible endpoint, plus OpenRouter, OpenCode,
+  LiteLLM, Mistral), core tools, skill discovery, workflow + goal engine,
+  prompt templates, SQLite persistence.
+- `pulse/` — the CLI on top of `pulse-core`.
 - `web/` — the static marketing site (Vite + pnpm, deployed to GitHub Pages).
 
 Development is driven by [mise](https://mise.jdx.dev); the tool versions and
 tasks live in `mise.toml`.
+
+## Using Pulse
+
+```sh
+pulse provider use <url> <api_key>   # any OpenAI-compatible endpoint
+pulse models                        # what the provider offers
+pulse workflow new <title>          # blank workflow template in the current directory
+pulse <workflow>                   # run it (by name or file path)
+pulse <workflow> --no-worktree     # run it directly in the current directory
+```
+
+The provider URL points at an OpenAI-compatible API root (e.g.
+`https://api.openai.com/v1`, a LiteLLM proxy, Ollama's `/v1`); `/chat/completions`
+and `/models` are appended. Pass `""` as the API key for endpoints without
+auth. The URL and key live in the local database (`~/.pulse/pulse.db`),
+never in the repo.
+
+A workflow file (`./<name>.yml`, or `~/.pulse/workflows/` for shared ones)
+looks like this:
+
+```yaml
+name: ship
+description: Tests green, tag it
+model: gpt-4o            # required somewhere — per workflow or per step
+steps:
+  - name: test
+    prompt: |
+      Run the full test suite.
+  - name: release
+    goal: |              # optional: the step re-runs with reviewer feedback
+      The version is bumped and tagged.   # until the model confirms the goal
+    prompt: |            # is reached (max 3 runs)
+      Bump the version, tag and build.
+```
+
+A run works in a **fresh git worktree** by default —
+`~/.pulse/worktrees/<run id>-<directory name>` on its own branch, so your
+checkout is never touched mid-run — and lands its changes there for you to
+merge or discard. A non-repo directory runs in place; pass `--no-worktree`
+to work in the current directory directly. During a run the terminal shows
+the current step (`[2/2] release`), tool calls and results, plus the worktree
+and report paths; the full transcript is written to `ship-<timestamp>.md` as
+it happens. First Ctrl-C cancels the run (exit 130); a second force-quits.
 
 ## Development
 
@@ -29,24 +74,11 @@ Requirements: [mise](https://mise.jdx.dev/getting-started.html) — nothing else
 mise install        # rust 1.98.1 + node 24 + pnpm 12.4.1
 mise run test       # cargo test
 mise run build      # cargo build
-mise run run        # cargo run -p pulse (the TUI)
+mise run run        # cargo run -p pulse (the CLI)
 mise run lint       # web/ lint + format check
 mise run web-build  # build the static site
 mise run release-build  # release binary for aarch64-apple-darwin
 ```
-
-Headless CLI subcommands also work without the TUI:
-
-```sh
-cargo run -p pulse -- workflow list
-```
-
-Settings live in the TUI: `/key <name> <value>` sets an API key (openrouter,
-opencode, litellm, mistral, github) and `/keys` shows their status. Models are
-not configured globally — each workflow names its model (`model:` at the
-workflow or step level), and `/models [provider]` lists available model ids.
-On first run with no workflows, the TUI walks you through creating the `base`
-workflow plain prompts run through.
 
 ## Updating
 
@@ -59,13 +91,9 @@ pulse update          # show the latest release when one is newer
 pulse update --apply  # download and install it
 ```
 
-The TUI also checks at startup and shows a notice in the transcript when a
-new release exists. The repository is private, so the updater needs a token:
-the `github` key or `GITHUB_TOKEN`/`MISE_GITHUB_TOKEN` — in the TUI:
-
-```sh
-/key github <token with Contents: read>
-```
+The repository is private, so the updater needs a token with read access to
+it — export `GITHUB_TOKEN` or `MISE_GITHUB_TOKEN` (mise clients already have
+the latter).
 
 ## Install (clients, macOS ARM only)
 

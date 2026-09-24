@@ -8,10 +8,12 @@ Before making any changes or contributions, read
 
 ## What this repo is
 
-**Pulse** — an AI agent harness with a terminal UI (plus a marketing website)
-where users send prompts to LLM providers; every prompt runs through a
-workflow (YAML in `~/.pulse/workflows/`) that names the model and steps, an
-agentic tool loop executes work, and results persist as "beats".
+**Pulse** — a headless workflow runner (plus a marketing website): users
+provide a YAML workflow file, `pulse <workflow>` executes its steps through
+an agentic tool loop until each step's goal is reached, everything the run
+produces is written to a markdown report in the current directory, and the
+terminal shows which step is running. The provider (an OpenAI-compatible
+base URL + API key) is configured with `pulse provider use`.
 
 ## Layout
 
@@ -22,8 +24,10 @@ agentic tool loop executes work, and results persist as "beats".
   - `harness.rs` — agentic loop, task events (`TaskEvent`, `TaggedEvent`),
     cancellation, `run_task` entry point (resolves the workflow — plain
     prompts run `base`, `/workflow {name}` picks one — and runs its steps).
-  - `providers/` — `Provider` trait with `openrouter`, `opencode`, `litellm`,
-    `mistral` implementations; `chat_completion` / `chat_completion_stream` /
+  - `providers/` — `Provider` trait with `custom` (the OpenAI-compatible
+    endpoint configured by `pulse provider use <url> <key>` — bare model
+    ids route to it), plus `openrouter`, `opencode`, `litellm`, `mistral`
+    implementations; `chat_completion` / `chat_completion_stream` /
     `list_models` / `list_models_of` (per provider).
   - `tools.rs` — core tools: `read_file`, `write_file`, `edit_file`, `grep`,
     `bash`, plus one `skill_<name>` tool per discovered skill.
@@ -31,27 +35,40 @@ agentic tool loop executes work, and results persist as "beats".
     frontmatter gives name/description; full file loads on demand).
   - `prompts.rs` + `prompts/` — prompt templates embedded at compile time via
     `include_str!`; `{{key}}` placeholders filled at runtime.
-  - `config.rs` — API keys/base URLs stored in the DB. There are no global
+  - `config.rs` — API keys/base URLs stored in the DB (`provider_url` /
+    `provider_api_key` for the configured provider). There are no global
     model slots: models are named per workflow in the workflow files.
   - `db.rs` — SQLite at `~/.pulse/pulse.db` (`config`, `projects`, `beats`
     tables; rusqlite, bundled).
-  - `beats.rs` / `projects.rs` — beat + project persistence. Beats born from a
-    project get their own git worktree under `~/.pulse/worktrees/<beat>-<name>`.
-  - `workflows.rs` — the workflow engine: YAML files in
-    `~/.pulse/workflows/`, per-step/workflow `model:` (required somewhere),
-    `{{prompt}}` placeholders filled with the user's message on implicit
-    (base workflow) runs.
-- `pulse/` — the terminal app: a CLI + TUI hybrid on top of `pulse-core`.
-  - `src/main.rs` — entry point: CLI subcommand dispatch, TUI event loop, key
-    dispatch.
-  - `src/cli.rs` — CLI subcommands: `pulse workflow list|new|edit` and
-    `pulse update`. These run headless, before any terminal setup. Settings
-    (API keys) live in the TUI slash commands: `/key`, `/keys`.
-  - `src/app.rs` — application state and modes; `src/task.rs` runs harness
-    tasks; `src/event.rs` bridges input events. First run with no workflows
-    opens the guided onboarding popup that creates the `base` workflow.
-  - `src/ui/` — the chat view: transcript + input bar, with the sessions
-    sidebar (opened with Left/Tab) and the `@` project picker popup.
+  - `beats.rs` / `projects.rs` — beat + project persistence. A workflow run
+    creates a beat so context accumulates across its steps, and (by default)
+    a git worktree under `~/.pulse/worktrees/<run id>-<dir>` via
+    `projects::ensure_worktree`, recorded on the beat so every tool of the
+    run executes there instead of the user's checkout.
+  - `workflows.rs` — the workflow engine: YAML files (current directory
+    first, then `~/.pulse/workflows/`), per-step/workflow `model:` (required
+    somewhere), per-step optional `goal:` (the step re-runs with reviewer
+    feedback until the model confirms the goal is reached, max
+    `MAX_GOAL_ATTEMPTS` runs). `{{prompt}}` placeholders are filled with a
+    runtime-supplied message (`harness::run_task`'s plain prompts use this;
+    the workflow CLI passes none). `run_hooked` exposes progress
+    hooks; `run` is the no-op-hooks wrapper.
+- `pulse/` — the CLI on top of `pulse-core`. No TUI.
+  - `src/main.rs` — entry point: clap dispatch + exit codes.
+  - `src/cli.rs` — subcommands: `pulse workflow new|list|edit`,
+    `pulse provider use <url> <key>`, `pulse models`, `pulse update`, and
+    `pulse <workflow> [--no-worktree]` (an external subcommand — any unknown
+    subcommand is treated as a workflow name/path to run; `split_run_args`
+    pulls out the flags).
+  - `src/run.rs` — the headless runner: executes steps via
+    `workflows::run_hooked`, prints step progress (`[i/n] step` + tool
+    lines) to the terminal, and writes everything (prompts, goals, tool
+    calls, streamed output, results) to `<workflow>-<timestamp>.md` in the
+    current directory, flushed as it happens. Unless `--no-worktree` is
+    passed, the run first creates a worktree (`<timestamp>-<dir name>`
+    under `~/.pulse/worktrees`) — a non-repo directory runs in place, a
+    repo whose worktree cannot be created aborts. First Ctrl-C cancels the
+    run (exit 130), second force-quits.
 - `web/` — static GitHub Pages site (project landing page + release
   downloads). Deployed under `/pulse/`, so `vite.config.ts` uses `base: './'`.
 
@@ -64,8 +81,9 @@ agentic tool loop executes work, and results persist as "beats".
 ```sh
 cargo test                      # all workspace tests
 cargo build                     # workspace
-cargo run -p pulse              # run the terminal app (TUI)
-cargo run -p pulse -- workflow list
+cargo run -p pulse -- workflow new my-task   # create ./my-task.yml
+cargo run -p pulse -- my-task     # run a workflow by name (or path)
+cargo run -p pulse -- my-task --no-worktree   # run in the current directory, no git worktree
 pnpm --dir web lint && pnpm --dir web format:check
 pnpm --dir web build            # static site (base: './')
 ```
@@ -80,7 +98,7 @@ the naming in sync when changing it.
 
 - **Keep `pulse-core` UI-agnostic.** New agent features (providers, tools,
   skills, routing, persistence, workflows) go in `pulse-core`; `pulse`
-  only adds the CLI, terminal views, and input handling.
+  only adds the CLI, terminal output, and input handling.
 - **Errors** are `Result<_, String>` throughout the core — follow that
   pattern; don't introduce a custom error type piecemeal.
 - **Async**: core uses tokio (`rt`, `time`, `process`, `macros` features).

@@ -22,7 +22,7 @@ alias = "b"
 run = "cargo build"
 
 [tasks.run]
-description = "Run the terminal app (TUI)"
+description = "Run the pulse CLI"
 run = "cargo run -p pulse"
 
 [tasks.lint]
