@@ -59,7 +59,8 @@ the durable record is the position.
 - Workflows: YAML files — `./.pulse/workflows` first, then the current
   directory, then
   `~/.pulse/workflows/`; per-step optional `goal:` re-runs the step with
-  reviewer feedback until confirmed reached (max 3 runs).
+  reviewer feedback until confirmed reached (max 3 runs); `{{steps.<name>}}` placeholders in a step's prompt
+  insert an earlier step's final result, linking the steps.
 - Runs: by default the run executes in a fresh git worktree
   (`~/.pulse/worktrees/<run id>-<dir name>`, own branch) so the user's
   checkout is untouched; `--no-worktree` runs in the launch directory. The
@@ -88,7 +89,9 @@ Confirmed functionality:
   `~/.agents/skills/*/SKILL.md`.
 - Workflow engine: per-step and per-workflow `model:` (required somewhere);
   per-step optional `goal:` (the step re-runs with reviewer feedback until
-  the model confirms the goal is reached, max 3 runs). Workflows are
+  the model confirms the goal is reached, max 3 runs); `{{steps.<name>}}`
+  placeholders in a step's prompt are filled with the named earlier
+  step's final result, linking the steps. Workflows are
   self-contained — the run command takes only the workflow name.
 - Workflow files: `pulse workflow new <title>` writes a blank template in
   `./.pulse/workflows` (`--global` writes it to `~/.pulse/workflows` instead);

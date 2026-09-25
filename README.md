@@ -61,7 +61,13 @@ steps:
       The version is bumped and tagged.   # until the model confirms the goal
     prompt: |            # is reached (max 3 runs)
       Bump the version, tag and build.
+      Test results from the previous step: {{steps.test}}
 ```
+
+A step's prompt can reference the final result of an earlier step with a
+`{{steps.<name>}}` placeholder — it is replaced with that step's answer
+before the step runs, so steps can build on each other (a reference to a
+step that doesn't run earlier is an error before anything executes).
 
 A run works in a **fresh git worktree** by default —
 `~/.pulse/worktrees/<run id>-<directory name>` on its own branch, so your
