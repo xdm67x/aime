@@ -4,9 +4,10 @@
 //! by [`MAX_GOAL_ATTEMPTS`]).
 //!
 //! Workflows live as files the user points at — `pulse workflow new <title>`
-//! writes a blank template into the current directory, and
-//! [`find`] resolves a workflow by name (current directory first, then
-//! `~/.pulse/workflows`) or by file path. Each step names the model that
+//! writes a blank template into `./.pulse/workflows` (or `~/.pulse/workflows`
+//! with `--global`), and
+//! [`find`] resolves a workflow by name (`./.pulse/workflows` first, then the
+//! current directory, then `~/.pulse/workflows`) or by file path. Each step names the model that
 //! runs it (step-level `model:`, falling back to the workflow-level
 //! `model:`); a step with neither is an error. A runtime that supplies a
 //! user message (e.g. `harness::run_task` for plain prompts) fills
@@ -140,12 +141,25 @@ pub struct RunHooks<'a> {
     pub on_event: OnEvent<'a>,
 }
 
-/// The directory of "installed" workflows: `~/.pulse/workflows`.
+/// The directory of "installed" (global) workflows: `~/.pulse/workflows`.
 pub fn dir() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let dir = PathBuf::from(home).join(".pulse").join("workflows");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
+}
+
+/// The directory of local workflows for the current directory:
+/// `./.pulse/workflows` (created if missing).
+pub fn local_dir() -> Result<PathBuf, String> {
+    let dir = PathBuf::from(".").join(".pulse").join("workflows");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// `./.pulse/workflows` without creating it — for read-only lookups.
+fn local_dir_opt() -> PathBuf {
+    PathBuf::from(".").join(".pulse").join("workflows")
 }
 
 /// Load a single workflow by name from `~/.pulse/workflows` (looks for
@@ -209,8 +223,8 @@ pub fn load_file(path: &Path) -> Result<(Workflow, PathBuf), String> {
 
 /// Resolve a workflow by name or file path. A value with a path separator or
 /// a `.yml`/`.yaml` suffix is treated as a path; otherwise `{name}.yml` /
-/// `{name}.yaml` is looked up in the current directory first, then in
-/// `~/.pulse/workflows`.
+/// `{name}.yaml` is looked up in `./.pulse/workflows` first, then the current
+/// directory, then in `~/.pulse/workflows`.
 pub fn find(name_or_path: &str) -> Result<(Workflow, PathBuf), String> {
     let s = name_or_path.trim();
     if s.is_empty() {
@@ -224,7 +238,7 @@ pub fn find(name_or_path: &str) -> Result<(Workflow, PathBuf), String> {
         return load_file(&path);
     }
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    for dir in [cwd, dir()?] {
+    for dir in [local_dir_opt(), cwd, dir()?] {
         for ext in ["yml", "yaml"] {
             let path = dir.join(format!("{s}.{ext}"));
             if path.is_file() {
@@ -233,7 +247,7 @@ pub fn find(name_or_path: &str) -> Result<(Workflow, PathBuf), String> {
         }
     }
     Err(format!(
-        "Workflow '{s}' not found — looked for ./{s}.yml and ~/.pulse/workflows/{s}.yml"
+        "Workflow '{s}' not found — looked for ./.pulse/workflows/{s}.yml, ./{s}.yml and ~/.pulse/workflows/{s}.yml"
     ))
 }
 

@@ -1,5 +1,5 @@
 //! CLI subcommands. Pulse is headless: workflows are yaml files (created in
-//! the current directory with `pulse workflow new`, or globally in
+//! ./.pulse/workflows with `pulse workflow new`, or globally in
 //! ~/.pulse/workflows with `pulse workflow new --global`, run with
 //! `pulse <workflow>`), the provider is configured with
 //! `pulse provider use <url|litellm|mistral|opencode|openrouter> <key>`
@@ -51,17 +51,18 @@ pub enum Command {
 
 #[derive(Subcommand)]
 pub enum WorkflowAction {
-    /// Create a blank workflow template: in the current directory, or in
+    /// Create a blank workflow template: in ./.pulse/workflows, or in
     /// ~/.pulse/workflows with --global
     New {
         /// Workflow title — used as the file name (`<slug>.yml`)
         title: String,
-        /// Save the workflow to ~/.pulse/workflows instead of the current
-        /// directory
+        /// Save the workflow to ~/.pulse/workflows instead of
+        /// ./.pulse/workflows
         #[arg(long)]
         global: bool,
     },
-    /// List workflows in the current directory and ~/.pulse/workflows
+    /// List workflows in the current directory, ./.pulse/workflows and
+    /// ~/.pulse/workflows
     List,
     /// Open a workflow in $EDITOR
     Edit { name: String },
@@ -165,7 +166,7 @@ fn run_workflow_cmd(action: WorkflowAction) -> Result<i32, String> {
             let (dir, dir_label) = if global {
                 (pulse_core::workflows::dir()?, "~/.pulse/workflows")
             } else {
-                (std::path::PathBuf::from("."), "the current directory")
+                (pulse_core::workflows::local_dir()?, "./.pulse/workflows")
             };
             let path = dir.join(format!("{name}.yml"));
             if path.is_file() {
@@ -183,11 +184,14 @@ fn run_workflow_cmd(action: WorkflowAction) -> Result<i32, String> {
         }
         WorkflowAction::List => {
             let mut found = pulse_core::workflows::discover_dir(Path::new("."));
+            found.extend(pulse_core::workflows::discover_dir(Path::new(
+                "./.pulse/workflows",
+            )));
             found.extend(pulse_core::workflows::discover_dir(
                 &pulse_core::workflows::dir()?,
             ));
             if found.is_empty() {
-                println!("No workflows found (current directory + ~/.pulse/workflows)");
+                println!("No workflows found (current directory, ./.pulse/workflows + ~/.pulse/workflows)");
                 println!("Create one with: pulse workflow new <title> [--global]");
                 return Ok(0);
             }

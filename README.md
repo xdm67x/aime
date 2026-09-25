@@ -29,7 +29,7 @@ pulse provider use <url> <api_key>   # any OpenAI-compatible endpoint
 pulse provider use openrouter <key>  # …or a known provider: litellm, mistral,
                                       #    opencode, openrouter — key only
 pulse models                        # what the provider offers
-pulse workflow new <title>          # blank workflow template in the current directory
+pulse workflow new <title>          # blank template in ./.pulse/workflows
 pulse workflow new <title> --global # …or a global one in ~/.pulse/workflows
 pulse <workflow>                   # run it (by name or file path)
 pulse <workflow> --no-worktree     # run it directly in the current directory
@@ -45,7 +45,7 @@ ids (`model: gpt-4o`) — no provider prefix, since the provider is already
 configured. Everything lives in the local database (`~/.pulse/pulse.db`),
 never in the repo.
 
-A workflow file (`./<name>.yml`, or `~/.pulse/workflows/` for shared ones)
+A workflow file (`./.pulse/workflows/<name>.yml`, or `~/.pulse/workflows/` for shared ones)
 looks like this:
 
 ```yaml

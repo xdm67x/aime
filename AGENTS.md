@@ -51,8 +51,9 @@ API key; `pulse provider` shows the current one.
     a git worktree under `~/.pulse/worktrees/<run id>-<dir>` via
     `projects::ensure_worktree`, recorded on the beat so every tool of the
     run executes there instead of the user's checkout.
-  - `workflows.rs` — the workflow engine: YAML files (current directory
-    first, then `~/.pulse/workflows/`), per-step/workflow `model:` (required
+  - `workflows.rs` — the workflow engine: YAML files (`./.pulse/workflows`
+    first, then the current directory, then `~/.pulse/workflows/`),
+    per-step/workflow `model:` (required
     somewhere), per-step optional `goal:` (the step re-runs with reviewer
     feedback until the model confirms the goal is reached, max
     `MAX_GOAL_ATTEMPTS` runs). `{{prompt}}` placeholders are filled with a
@@ -90,7 +91,7 @@ API key; `pulse provider` shows the current one.
 ```sh
 cargo test                      # all workspace tests
 cargo build                     # workspace
-cargo run -p pulse -- workflow new my-task   # create ./my-task.yml
+cargo run -p pulse -- workflow new my-task   # create ./.pulse/workflows/my-task.yml
 cargo run -p pulse -- workflow new my-task --global  # create ~/.pulse/workflows/my-task.yml
 cargo run -p pulse -- my-task     # run a workflow by name (or path)
 cargo run -p pulse -- my-task --no-worktree   # run in the current directory, no git worktree
