@@ -9,9 +9,13 @@
 //! [`find`] resolves a workflow by name (`./.pulse/workflows` first, then the
 //! current directory, then `~/.pulse/workflows`) or by file path. Each step names the model that
 //! runs it (step-level `model:`, falling back to the workflow-level
-//! `model:`); a step with neither is an error. A runtime that supplies a
-//! user message (e.g. `harness::run_task` for plain prompts) fills
-//! `{{prompt}}` placeholders with it — the workflow CLI passes none.
+//! `model:`); a step with neither is an error. A step's prompt can
+//! reference the final result of an earlier step with a `{{steps.<name>}}`
+//! placeholder, so steps build on each other; [`Workflow::validate`]
+//! rejects references that don't resolve before any provider call is made.
+//! A runtime that supplies a user message (e.g. `harness::run_task` for
+//! plain prompts) fills `{{prompt}}` placeholders with it — the workflow
+//! CLI passes none.
 
 use crate::harness::{self, OnEvent, TaskResult};
 use crate::prompts;
@@ -75,14 +79,26 @@ impl Workflow {
             })
     }
 
-    /// Everything a run needs up front: at least one step, and a resolvable
-    /// model for every step. Fails before any provider call is made.
+    /// Everything a run needs up front: at least one step, a resolvable
+    /// model for every step, and `{{steps.<name>}}` references that only
+    /// point at steps running earlier. Fails before any provider call is
+    /// made.
     pub fn validate(&self) -> Result<(), String> {
         if self.steps.is_empty() {
             return Err(format!("Workflow '{}' has no steps", self.name));
         }
+        let mut done: Vec<&str> = Vec::with_capacity(self.steps.len());
         for step in &self.steps {
             self.step_model(step)?;
+            for name in step_refs(&step.prompt) {
+                if !done.contains(&name.as_str()) {
+                    return Err(format!(
+                        "Workflow '{}' step '{}' uses '{{{{steps.{name}}}}}' but no earlier step is named '{name}' — steps can only reference the results of steps that run before them",
+                        self.name, step.name
+                    ));
+                }
+            }
+            done.push(step.name.as_str());
         }
         Ok(())
     }
@@ -100,6 +116,48 @@ pub struct WorkflowStep {
     /// with reviewer feedback until the model confirms the goal is reached.
     #[serde(default)]
     pub goal: Option<String>,
+}
+
+/// `{{steps.<name>}}` references in a prompt, in order of appearance. Names
+/// are taken verbatim between the marker and the closing `}}`.
+fn step_refs(prompt: &str) -> Vec<String> {
+    const OPEN: &str = "{{steps.";
+    let mut refs = Vec::new();
+    let mut rest = prompt;
+    while let Some(open) = rest.find(OPEN) {
+        let Some(close) = rest[open + OPEN.len()..].find("}}") else {
+            break;
+        };
+        let after = &rest[open + OPEN.len()..];
+        let name = &after[..close];
+        if !name.is_empty() && !name.contains("{{") {
+            refs.push(name.to_string());
+        }
+        rest = &after[close + 2..];
+    }
+    refs
+}
+
+/// The prompt a step runs with: `{{steps.<name>}}` placeholders filled with
+/// the answers of the steps that ran before it (the first earlier step wins
+/// when names repeat), and `{{prompt}}` with the runtime-supplied message
+/// when there is one. [`Workflow::validate`] guarantees the references
+/// resolve; anything else stays visible, like `prompts::fill` does for
+/// template typos.
+fn effective_prompt(
+    step: &WorkflowStep,
+    user_prompt: Option<&str>,
+    done: &[WorkflowStepResult],
+) -> String {
+    let mut vars: Vec<(String, String)> = done
+        .iter()
+        .map(|s| (format!("steps.{}", s.name), s.answer.clone()))
+        .collect();
+    if let Some(p) = user_prompt {
+        vars.push(("prompt".to_string(), p.to_string()));
+    }
+    let vars: Vec<(&str, &str)> = vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    prompts::fill(&step.prompt, &vars)
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -269,6 +327,10 @@ pub fn template(name: &str) -> String {
          \x20   # until the goal is confirmed reached (max {MAX_GOAL_ATTEMPTS} runs):\n\
          \x20   goal: |\n\
          \x20     What must be true when this step is done.\n\
+         \x20   # Optional: {{{{steps.<name>}}}} inserts the final result of an\n\
+
+         \x20   # earlier step into this prompt, so steps can build on each other:\n\
+
          \x20   prompt: |\n\
          \x20     Instructions for the model.\n"
     )
@@ -404,6 +466,7 @@ pub async fn run_hooked(
         on_goal_retry,
         on_event,
     } = hooks;
+    workflow.validate()?;
     let mut steps = Vec::with_capacity(workflow.steps.len());
     let mut total_cost = 0.0;
     crate::log::info(format!(
@@ -415,10 +478,7 @@ pub async fn run_hooked(
     for (idx, step) in workflow.steps.iter().enumerate() {
         let model = workflow.step_model(step)?;
         let goal = non_empty(step.goal.as_deref());
-        let mut prompt = match user_prompt {
-            Some(p) => prompts::fill(&step.prompt, &[("prompt", p)]),
-            None => step.prompt.clone(),
-        };
+        let mut prompt = effective_prompt(step, user_prompt, &steps);
         if let Some(goal) = goal {
             prompt.push_str("\n\nGoal — work until this is fully reached:\n");
             prompt.push_str(goal);
@@ -548,6 +608,130 @@ steps:
         );
         // runnable as-is
         assert!(wf.validate().is_ok());
+    }
+
+    #[test]
+    fn test_step_refs_extracted() {
+        assert_eq!(step_refs("no refs here"), Vec::<String>::new());
+        assert_eq!(
+            step_refs("Use {{steps.analyze}} then {{steps.build}}. and"),
+            vec!["analyze", "build"]
+        );
+        assert_eq!(
+            step_refs("{{steps.a}} {{steps.b}} {{steps.a}}"),
+            vec!["a", "b", "a"]
+        );
+        assert_eq!(step_refs("{{prompt}} and {{steps.x}}"), vec!["x"]);
+        assert_eq!(step_refs("{{steps.unterminated"), Vec::<String>::new());
+        assert_eq!(step_refs("{{steps.}}"), Vec::<String>::new());
+        assert_eq!(step_refs("{{steps.a{{b}}"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_effective_prompt_fills_step_results() {
+        let step = WorkflowStep {
+            name: "report".into(),
+            prompt: "Based on {{steps.analyze}} (and {{prompt}}), report.".into(),
+            model: None,
+            goal: None,
+        };
+        let done = vec![WorkflowStepResult {
+            name: "analyze".into(),
+            answer: "3 modules".into(),
+            model: "m".into(),
+            cost_usd: 0.0,
+            attempts: None,
+            goal_met: None,
+        }];
+        assert_eq!(
+            effective_prompt(&step, Some("go deep"), &done),
+            "Based on 3 modules (and go deep), report."
+        );
+        assert_eq!(
+            effective_prompt(&step, None, &done),
+            "Based on 3 modules (and {{prompt}}), report."
+        );
+        assert_eq!(
+            effective_prompt(&step, None, &[]),
+            "Based on {{steps.analyze}} (and {{prompt}}), report."
+        );
+    }
+
+    #[test]
+    fn test_validate_step_refs() {
+        let yaml = r#"
+name: chain
+model: m
+steps:
+  - name: build
+    prompt: "Start from {{steps.report}}."
+  - name: report
+    prompt: Report.
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        let err = wf.validate().unwrap_err();
+        assert!(
+            err.contains("no earlier step is named 'report'"),
+            "got: {err}"
+        );
+
+        let yaml = r#"
+name: loop
+model: m
+steps:
+  - name: build
+    prompt: "Echo {{steps.build}}."
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        let err = wf.validate().unwrap_err();
+        assert!(
+            err.contains("no earlier step is named 'build'"),
+            "got: {err}"
+        );
+
+        let yaml = r#"
+name: chain-ok
+model: m
+steps:
+  - name: build
+    prompt: Build.
+  - name: report
+    prompt: "Report on {{steps.build}}."
+  - name: ship
+    prompt: "Ship {{steps.build}} via {{steps.report}}."
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        assert!(wf.validate().is_ok());
+
+        let yaml = r#"
+name: typo
+model: m
+steps:
+  - name: a
+    prompt: A.
+  - name: b
+    prompt: "Use {{steps.c}}."
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        let err = wf.validate().unwrap_err();
+        assert!(err.contains("no earlier step is named 'c'"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_run_fails_fast_on_unresolvable_step_ref() {
+        let yaml = r#"
+name: runtime
+model: m
+steps:
+  - name: a
+    prompt: "Use {{steps.missing}}."
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        let err = run(1, &wf, None, &[], &mut |_| {}).await.unwrap_err();
+        assert!(
+            err.contains("no earlier step is named 'missing'"),
+            "got: {err}"
+        );
     }
 
     #[test]
