@@ -23,7 +23,8 @@ inspectable, costed record.
 ## Product Purpose
 
 Pulse is a headless workflow runner. The user writes a YAML workflow file
-(created with `pulse workflow new <title>` in the current directory) that
+(created with `pulse workflow new <title>` in the current directory, or in
+~/.pulse/workflows with `--global`) that
 names the model, the steps, and each step's optional `goal:`; `pulse
 <workflow>` executes the steps through an agentic tool loop
 (`read_file`, `write_file`, `edit_file`, `grep`, `bash`, plus discovered
@@ -89,7 +90,8 @@ Confirmed functionality:
   the model confirms the goal is reached, max 3 runs). Workflows are
   self-contained — the run command takes only the workflow name.
 - Workflow files: `pulse workflow new <title>` writes a blank template in the
-  current directory; `pulse <workflow>` resolves by name (cwd, then
+  current directory (`--global` writes it to `~/.pulse/workflows` instead);
+  `pulse <workflow>` resolves by name (cwd, then
   `~/.pulse/workflows/`) or file path.
 - Every run writes `<workflow>-<timestamp>.md` (prompts, goals, tool calls,
   streamed output, results, cost) in the launch directory as it happens.

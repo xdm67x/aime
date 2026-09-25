@@ -91,6 +91,7 @@ API key; `pulse provider` shows the current one.
 cargo test                      # all workspace tests
 cargo build                     # workspace
 cargo run -p pulse -- workflow new my-task   # create ./my-task.yml
+cargo run -p pulse -- workflow new my-task --global  # create ~/.pulse/workflows/my-task.yml
 cargo run -p pulse -- my-task     # run a workflow by name (or path)
 cargo run -p pulse -- my-task --no-worktree   # run in the current directory, no git worktree
 pnpm --dir web lint && pnpm --dir web format:check

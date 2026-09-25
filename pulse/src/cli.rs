@@ -1,5 +1,6 @@
 //! CLI subcommands. Pulse is headless: workflows are yaml files (created in
-//! the current directory with `pulse workflow new`, run with
+//! the current directory with `pulse workflow new`, or globally in
+//! ~/.pulse/workflows with `pulse workflow new --global`, run with
 //! `pulse <workflow>`), the provider is configured with
 //! `pulse provider use <url|litellm|mistral|opencode|openrouter> <key>`
 //! (shown with `pulse provider`), `pulse models` lists what the provider
@@ -50,10 +51,15 @@ pub enum Command {
 
 #[derive(Subcommand)]
 pub enum WorkflowAction {
-    /// Create a blank workflow template in the current directory
+    /// Create a blank workflow template: in the current directory, or in
+    /// ~/.pulse/workflows with --global
     New {
         /// Workflow title — used as the file name (`<slug>.yml`)
         title: String,
+        /// Save the workflow to ~/.pulse/workflows instead of the current
+        /// directory
+        #[arg(long)]
+        global: bool,
     },
     /// List workflows in the current directory and ~/.pulse/workflows
     List,
@@ -151,22 +157,27 @@ pub async fn run(command: Command) -> Result<i32, String> {
 
 fn run_workflow_cmd(action: WorkflowAction) -> Result<i32, String> {
     match action {
-        WorkflowAction::New { title } => {
+        WorkflowAction::New { title, global } => {
             let name = crate::run::slug(&title);
             if name.is_empty() {
                 return Err(format!("'{title}' is not a usable workflow name"));
             }
-            let path = std::path::PathBuf::from(format!("{name}.yml"));
+            let (dir, dir_label) = if global {
+                (pulse_core::workflows::dir()?, "~/.pulse/workflows")
+            } else {
+                (std::path::PathBuf::from("."), "the current directory")
+            };
+            let path = dir.join(format!("{name}.yml"));
             if path.is_file() {
                 return Err(format!(
-                    "Workflow already exists: {} (current directory)",
+                    "Workflow already exists: {} ({dir_label})",
                     path.display()
                 ));
             }
             std::fs::write(&path, pulse_core::workflows::template(&name))
                 .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
             pulse_core::log::info(format!("workflow created: {}", path.display()));
-            println!("Created {} in the current directory", path.display());
+            println!("Created {} in {dir_label}", path.display());
             println!("Set a `model:` in it (list ids with: pulse models), then run: pulse {name}");
             Ok(0)
         }
@@ -177,7 +188,7 @@ fn run_workflow_cmd(action: WorkflowAction) -> Result<i32, String> {
             ));
             if found.is_empty() {
                 println!("No workflows found (current directory + ~/.pulse/workflows)");
-                println!("Create one with: pulse workflow new <title>");
+                println!("Create one with: pulse workflow new <title> [--global]");
                 return Ok(0);
             }
             let width = found

@@ -30,6 +30,7 @@ pulse provider use openrouter <key>  # …or a known provider: litellm, mistral,
                                       #    opencode, openrouter — key only
 pulse models                        # what the provider offers
 pulse workflow new <title>          # blank workflow template in the current directory
+pulse workflow new <title> --global # …or a global one in ~/.pulse/workflows
 pulse <workflow>                   # run it (by name or file path)
 pulse <workflow> --no-worktree     # run it directly in the current directory
 ```
