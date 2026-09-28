@@ -3,377 +3,440 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <title>Pulse: Workflows that run until the goal is reached</title>
+        <title>Pulse: an AI agent harness you program with workflows</title>
         <meta
             name="description"
-            content="Pulse is a headless workflow runner. Write a YAML workflow, pulse runs each step through an agentic tool loop until its goal is reached, and writes the whole run to a markdown report. Any OpenAI-compatible provider. macOS, Apple silicon."
+            content="Pulse is a headless agent harness. Put the steps, the goals and the models in a YAML workflow: the agent runs each step with real tools until its goal is confirmed, then files a markdown report. Any OpenAI-compatible provider. macOS, Apple silicon."
         />
-        <meta name="theme-color" content="#f4f4f0" />
-        <meta property="og:title" content="Pulse: Workflows that run until the goal is reached" />
+        <meta name="theme-color" content="#f1f2ed" />
+        <meta property="og:title" content="Pulse: an AI agent harness you program with workflows" />
         <meta
             property="og:description"
-            content="A headless workflow runner. Write the routine once as YAML. Pulse runs each step with real tools until its goal is reached, and the whole run lands as a markdown report."
+            content="A YAML file holds the steps, the goals, the models. The agent runs them with real tools and files a markdown report."
         />
         <meta property="og:type" content="website" />
         <link
             rel="icon"
-            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 80'%3E%3Cpath d='M0 48H88c7 0 11-10 18-10c7 0 11 10 18 10H136l5 5 7-44 6 50 5-11c8-8 16-8 24 0H300' fill='none' stroke='%23047857' stroke-width='10'/%3E%3C/svg%3E"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 80'%3E%3Cpath d='M0 48H88c7 0 11-10 18-10c7 0 11 10 18 10H136l5 5 7-44 6 50 5-11c8-8 16-8 24 0H300' fill='none' stroke='%23e0500f' stroke-width='10'/%3E%3C/svg%3E"
         />
         <link
             rel="preload"
-            href="./src/fonts/martian-mono-latin.woff2"
+            href="./src/fonts/archivo-latin-var.woff2"
             as="font"
             type="font/woff2"
             crossorigin
         />
         <link
             rel="preload"
-            href="./src/fonts/spline-sans-latin.woff2"
+            href="./src/fonts/plexmono-latin-400.woff2"
             as="font"
             type="font/woff2"
             crossorigin
         />
-        <link rel="stylesheet" href="/src/style.css" />
+        <link rel="stylesheet" href="./src/style.css" />
     </head>
 
     <body>
-        <div class="progress" aria-hidden="true"></div>
         <main id="top">
-            <!-- 01 · HERO: the install command, then the file itself -->
-            <section class="hero" aria-label="Pulse, a headless workflow runner">
-                <div class="wrap hero-in">
-                    <div class="hero-copy">
-                        <h1 class="hero-title rise">
-                            <span class="w" style="--i: 0">Every</span>
-                            <span class="w" style="--i: 1">step</span>
-                            <span class="w" style="--i: 2">runs</span>
-                            <span class="w" style="--i: 3">to</span>
-                            <span class="w" style="--i: 4">its</span>
-                            <span class="w goal" style="--i: 5">goal.</span>
-                        </h1>
-                        <p class="hero-sub rise" style="--sd: 0.12s">
-                            Write the routine once as a YAML file: the model, the steps, the goal
-                            each step runs to. Pulse runs it with real tools and leaves the whole
-                            run as a markdown report next to you.
-                        </p>
-                    </div>
-                    <article class="file hero-file rise" style="--sd: 0.32s" id="hero-file">
-                        <div class="file-tabbar">
-                            <span class="ftab on">ship.yml</span>
-                        </div>
-                        <div class="file-body">
-                            <div class="ln">
-                                <span class="k">name:</span> <span class="v">ship</span>
-                            </div>
-                            <div class="ln">
-                                <span class="k">model:</span>
-                                <span class="v">claude-sonnet-5</span>
-                                <span class="c"
-                                    ><span class="hash" aria-hidden="true"># </span>any
-                                    OpenAI-compatible provider</span
-                                >
-                            </div>
-                            <div class="ln"><span class="k">steps:</span></div>
-                            <div class="ln ind">
-                                <span class="dash" aria-hidden="true">-</span>
-                                <span class="k">name:</span> <span class="v">test</span>
-                            </div>
-                            <div class="ln ind2">
-                                <span class="k">goal:</span>
-                                <span class="v">suite green, nothing skipped</span>
-                            </div>
-                            <div class="ln ind2">
-                                <span class="k">prompt:</span>
-                                <span class="v">"Run the full test suite"</span>
-                            </div>
-                            <div class="ln run tool" style="--d: 2s">
-                                <span class="c"
-                                    ><span class="hash" aria-hidden="true"># </span>⋯ bash cargo
-                                    test — 41 passed, 0 failed</span
-                                >
-                            </div>
-                            <div class="ln run ok" style="--d: 3.2s">
-                                <span class="c ok"
-                                    ><span class="hash" aria-hidden="true"># </span>✓ goal reached,
-                                    $0.0071</span
-                                >
-                            </div>
-                            <div class="ln ind">
-                                <span class="dash" aria-hidden="true">-</span>
-                                <span class="k">name:</span> <span class="v">release</span>
-                            </div>
-                            <div class="ln ind2">
-                                <span class="k">model:</span>
-                                <span class="v">mistral-large-latest</span>
-                                <span class="c"
-                                    ><span class="hash" aria-hidden="true"># </span>a model per
-                                    step</span
-                                >
-                            </div>
-                            <div class="ln ind2">
-                                <span class="k">goal:</span>
-                                <span class="v">version bumped and tagged</span>
-                            </div>
-                            <div class="ln ind2">
-                                <span class="k">prompt:</span>
-                                <span class="v">"Bump the version, tag and build"</span>
-                            </div>
-                            <div class="ln run tool" style="--d: 4.4s">
-                                <span class="c"
-                                    ><span class="hash" aria-hidden="true"># </span>⋯ edit_file
-                                    Cargo.toml — v0.10.1 tagged</span
-                                >
-                            </div>
-                            <div class="ln run tool" style="--d: 5.2s">
-                                <span class="c"
-                                    ><span class="hash" aria-hidden="true"># </span>⋯ bash git tag
-                                    v0.10.1</span
-                                >
-                            </div>
-                            <div class="ln run ok" style="--d: 6.4s">
-                                <span class="c ok"
-                                    ><span class="hash" aria-hidden="true"># </span>✓ goal reached,
-                                    $0.0049</span
-                                >
-                            </div>
-                        </div>
-                        <div class="file-status" id="hero-status">
-                            <svg
-                                class="ecg"
-                                viewBox="0 0 300 80"
-                                preserveAspectRatio="none"
-                                aria-hidden="true"
-                            >
-                                <path
-                                    pathLength="1000"
-                                    d="M0 48 H88 c7 0 11 -10 18 -10 c7 0 11 10 18 10 H136 l5 5 7 -44 6 50 5 -11 c8 -8 16 -8 24 0 H300"
-                                    fill="none"
-                                />
-                            </svg>
-                            <span class="fs-state" id="hero-state">workflow ship · running</span>
-                            <span class="fs-cost" id="hero-cost">$0.0000</span>
-                        </div>
-                    </article>
-                    <div class="hero-install">
-                        <div class="cmdline rise" style="--sd: 0.2s">
-                            <span class="ps1" aria-hidden="true">$</span>
+            <!-- ============================================================= -->
+            <!-- HERO: the pitch, the install command, and the run itself       -->
+            <!-- ============================================================= -->
+            <section class="hero wrap" aria-label="Pulse, a headless agent harness">
+                <div class="hero-copy">
+                    <h1 class="hero-title">
+                        <span class="ht-line">Describe the job once.</span>
+                        <span class="ht-line"
+                            >The agent runs it <em class="ht-em">to the goal.</em></span
+                        >
+                    </h1>
+                    <p class="hero-sub">
+                        A YAML file holds the steps, the goals, the models. The agent runs them with
+                        real tools and files a markdown report.
+                    </p>
+                    <div class="hero-cta">
+                        <div class="cmd-chip" role="group" aria-label="Install command">
+                            <span class="cmd-prompt" aria-hidden="true">$</span>
                             <code data-install>mise use -g "github:xdm67x/pulse@latest"</code>
-                            <button class="copy" data-copy aria-live="polite" type="button">
-                                Copy
-                            </button>
+                            <button class="copy-btn" data-copy type="button">copy</button>
                         </div>
-                        <p class="hint rise" style="--sd: 0.25s">
-                            <span class="hash" aria-hidden="true"># </span>requires
-                            <a href="https://mise.jdx.dev/" rel="noopener">mise</a> and a GitHub
-                            token with read access (<code>MISE_GITHUB_TOKEN</code>). macOS, Apple
-                            silicon.
+                        <a class="hero-link" href="#anatomy">See what a workflow looks like</a>
+                    </div>
+                </div>
+
+                <figure class="hero-run reveal" aria-label="A demo run of the release workflow">
+                    <div class="term" aria-hidden="true">
+                        <div class="term-bar">
+                            <span class="term-dot"></span>
+                            <span class="term-title">terminal</span>
+                        </div>
+                        <div class="term-body" id="run"></div>
+                    </div>
+                    <figcaption class="hero-cap">
+                        A demo run of <code>release.yml</code>, three steps, each held to its goal.
+                        Costs and timings vary per run.
+                    </figcaption>
+                </figure>
+            </section>
+
+            <!-- ============================================================= -->
+            <!-- ANATOMY: the workflow file, annotated                          -->
+            <!-- ============================================================= -->
+            <section class="section" id="anatomy" aria-labelledby="anatomy-h">
+                <div class="wrap">
+                    <header class="sec-head reveal">
+                        <h2 id="anatomy-h">The whole brief is one YAML file.</h2>
+                        <p class="sec-sub">
+                            No chat threads to reconstruct, no prompt folders to keep in sync. The
+                            routine lives next to the code, in version control, readable by anyone.
                         </p>
-                    </div>
-                </div>
-            </section>
+                    </header>
 
-            <!-- 02 · THE WORKFLOW SIDE: three lines carry the idea -->
-            <section class="section" id="workflow" aria-label="The workflow side">
-                <div class="wrap">
-                    <h2 class="reveal">Three lines do the work.</h2>
-                    <div class="anno-cards">
-                        <div class="anno-card reveal">
-                            <div class="anno-frag">
-                                <span class="k">goal:</span>
-                                <span class="v">suite green, nothing skipped</span>
+                    <div class="anatomy">
+                        <figure
+                            class="file reveal"
+                            aria-label="An example workflow file, release.yml"
+                        >
+                            <div class="file-bar">
+                                <span class="file-path">.pulse/workflows/release.yml</span>
                             </div>
-                            <div class="anno-txt">
-                                <h3>The finish line</h3>
-                                <p>
-                                    A step re-runs with reviewer feedback until the model confirms
-                                    the goal is reached, at most three attempts.
-                                </p>
-                            </div>
-                        </div>
-                        <div class="anno-card reveal">
-                            <div class="anno-frag">
-                                <span class="k">model:</span>
-                                <span class="v">claude-sonnet-5</span>
-                                <span class="c"
-                                    ><span class="hash" aria-hidden="true"># </span>or mistral, per
-                                    step</span
-                                >
-                            </div>
-                            <div class="anno-txt">
-                                <h3>Yours to name</h3>
-                                <p>
-                                    Any model, for the whole run or per step. One command points
-                                    Pulse at your endpoint, and your key stays on your machine.
-                                </p>
-                            </div>
-                        </div>
-                        <div class="anno-card reveal">
-                            <div class="anno-frag tools">
-                                <span class="v">read_file</span>
-                                <span class="v">write_file</span>
-                                <span class="v">edit_file</span>
-                                <span class="v">grep</span>
-                                <span class="v">bash</span>
-                            </div>
-                            <div class="anno-txt">
-                                <h3>Real tools in the loop</h3>
-                                <p>
-                                    Plus one skill tool per skill in
-                                    <code>~/.agents/skills</code>. The loop calls them, streams the
-                                    results, and keeps going until the goal is met.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
+                            <pre
+                                class="file-body"
+                            ><code><span class="y-key">name</span><span class="y-pun">:</span> <span class="y-str">release</span>
+<span class="y-key">description</span><span class="y-pun">:</span> <span class="y-str">Cut a release from a bumped version</span>
+<span class="y-key">model</span><span class="y-pun">:</span> <span class="y-str">claude-sonnet-5-5</span> <span class="mark" data-m="3">3</span>
 
-            <!-- 03 · THE REPORT -->
-            <section class="section" id="report" aria-label="Every run is a report">
-                <div class="wrap">
-                    <h2 class="reveal">Every run is a report.</h2>
-                    <div class="report-cols reveal" style="--rd: 0.08s">
-                        <article class="file">
-                            <div class="file-tabbar">
-                                <span class="ftab on">ship-20260924-101500.md</span>
-                            </div>
-                            <div class="file-body md-body">
-                                <div class="md-h"># workflow ship</div>
-                                <div class="md-h2">## [1/2] test</div>
-                                <div class="md-ln">⋯ bash cargo test — 41 passed, 0 failed</div>
-                                <div class="md-ln ok">✓ goal reached</div>
-                                <div class="md-h2">## [2/2] release</div>
-                                <div class="md-ln">⋯ edit_file Cargo.toml — v0.10.1 tagged</div>
-                                <div class="md-ln ok">
-                                    ✓ complete — <span class="cost">$0.0120</span> total
+<span class="y-key">steps</span><span class="y-pun">:</span> <span class="mark" data-m="1">1</span>
+  <span class="y-pun">-</span> <span class="y-key">name</span><span class="y-pun">:</span> <span class="y-str">bump</span>
+    <span class="y-key">prompt</span><span class="y-pun">:</span> <span class="y-pun">|</span>
+      <span class="y-txt">Bump the crate version to 0.7.1</span>
+      <span class="y-txt">and make the build pass.</span>
+    <span class="y-key">goal</span><span class="y-pun">:</span> <span class="mark" data-m="2">2</span> <span class="y-txt">Cargo.toml and Cargo.lock are bumped</span>
+      <span class="y-txt">and cargo build succeeds.</span>
+  <span class="y-pun">-</span> <span class="y-key">name</span><span class="y-pun">:</span> <span class="y-str">changelog</span>
+    <span class="y-key">prompt</span><span class="y-pun">:</span> <span class="y-pun">|</span>
+      <span class="y-txt">Add a 0.7.1 section to CHANGELOG.md.</span>
+      <span class="y-txt">What the bump step found: {{ steps.bump }}</span>
+    <span class="y-key">model</span><span class="y-pun">:</span> <span class="y-str">glm-5-3</span>
+    <span class="y-key">goal</span><span class="y-pun">:</span> <span class="y-txt">CHANGELOG.md has a 0.7.1 entry.</span></code></pre>
+                        </figure>
+
+                        <div class="legend">
+                            <article class="legend-item reveal">
+                                <span class="mark" aria-hidden="true">1</span>
+                                <div>
+                                    <h3>steps</h3>
+                                    <p>
+                                        The routine, as an ordered list. Each step is a prompt, and
+                                        one step can use what came before:
+                                        <code>{{ steps.bump }}</code> drops the earlier step's
+                                        result straight into the text. References are checked before
+                                        anything runs.
+                                    </p>
                                 </div>
-                            </div>
-                        </article>
-                        <div class="report-prose">
+                            </article>
+                            <article class="legend-item reveal">
+                                <span class="mark" aria-hidden="true">2</span>
+                                <div>
+                                    <h3>goal</h3>
+                                    <p>
+                                        The finish line, and it is checked, not assumed. A reviewer
+                                        pass reads the result against the goal; until it confirms,
+                                        the step runs again with the feedback. Three runs, then the
+                                        report says so plainly.
+                                    </p>
+                                </div>
+                            </article>
+                            <article class="legend-item reveal">
+                                <span class="mark" aria-hidden="true">3</span>
+                                <div>
+                                    <h3>model</h3>
+                                    <p>
+                                        Named in the file, per workflow or per step. Point it at any
+                                        OpenAI-compatible endpoint, or use litellm, mistral,
+                                        opencode or openrouter with just an API key.
+                                        <code>pulse models</code> lists what's available.
+                                    </p>
+                                </div>
+                            </article>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================================================= -->
+            <!-- LOOP: how one step runs                                         -->
+            <!-- ============================================================= -->
+            <section class="section" id="loop" aria-labelledby="loop-h">
+                <div class="wrap">
+                    <header class="sec-head reveal">
+                        <h2 id="loop-h">Inside a step: work, check, continue.</h2>
+                        <p class="sec-sub">
+                            Every step runs the same disciplined loop. The model gets the brief,
+                            works with real tools, and only moves on when the goal is confirmed.
+                        </p>
+                    </header>
+
+                    <ol class="loop reveal" aria-label="How one step runs">
+                        <li class="loop-step">
+                            <span class="loop-n" aria-hidden="true">1</span>
+                            <h3>Brief</h3>
                             <p>
-                                Prompts, tool calls, streamed output and results land in a markdown
-                                report next to you. Read what the loop did, in order, with the
-                                costs.
+                                The step's prompt goes in, earlier results filled in at their
+                                <code>{{ steps.* }}</code> marks.
                             </p>
+                        </li>
+                        <li class="loop-step">
+                            <span class="loop-n" aria-hidden="true">2</span>
+                            <h3>Work</h3>
                             <p>
-                                The work happens in its own git worktree, so your checkout stays
-                                clean while the run writes wherever it needs to.
+                                The model acts: reads, writes, edits, greps, runs bash. Every call
+                                and result streams into the report as it happens.
+                            </p>
+                        </li>
+                        <li class="loop-step">
+                            <span class="loop-n" aria-hidden="true">3</span>
+                            <h3>Verify</h3>
+                            <p>
+                                A reviewer pass checks the result against the goal. Confirmed, the
+                                next step starts. Not confirmed, the reason goes back in and it runs
+                                again.
+                            </p>
+                        </li>
+                    </ol>
+
+                    <div class="facts">
+                        <div class="fact reveal">
+                            <h3>Validated up front</h3>
+                            <p>
+                                A workflow with references that don't resolve fails before the first
+                                prompt is sent, not halfway through a run.
+                            </p>
+                        </div>
+                        <div class="fact reveal">
+                            <h3>Isolated by default</h3>
+                            <p>
+                                Each run gets its own git worktree under
+                                <code>~/.pulse/worktrees</code>, so your checkout is never the
+                                sandbox. <code>--no-worktree</code> runs in place.
+                            </p>
+                        </div>
+                        <div class="fact reveal">
+                            <h3>Stoppable, safely</h3>
+                            <p>
+                                One Ctrl-C cancels after the current tool; everything written so far
+                                stays in the report. A second press force-quits.
                             </p>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <!-- 05 · THE REPORTS PILE UP -->
-            <section class="section" id="runs" aria-label="The reports pile up">
-                <div class="wrap">
-                    <h2 class="reveal">The reports pile up.</h2>
-                    <div class="runs-cols reveal" style="--rd: 0.1s">
-                        <div class="runs-txt">
-                            <p class="section-sub reveal" style="--rd: 0.06s">
-                                Every run leaves one next to your work. They stay readable, so the
-                                routine keeps its history.
+            <!-- ============================================================= -->
+            <!-- REPORT: what the run leaves behind                             -->
+            <!-- ============================================================= -->
+            <section class="section" id="report" aria-labelledby="report-h">
+                <div class="wrap report">
+                    <div class="report-copy">
+                        <header class="sec-head reveal">
+                            <h2 id="report-h">The run leaves a document.</h2>
+                            <p class="sec-sub">
+                                Not a chat log you scroll for the part that matters. One markdown
+                                file, written next to you as the run happens: each prompt, each
+                                goal, every tool call with its result, each step's final answer.
                             </p>
-                            <ul class="runs-facts reveal" style="--rd: 0.12s">
-                                <li>
-                                    prompts, tool calls, streamed output, results: all of it lands
-                                    in the file
-                                </li>
-                                <li>the cost sits at the bottom of every report</li>
-                                <li>plain markdown: grep it, diff it, keep it</li>
+                        </header>
+                        <ul class="report-points reveal">
+                            <li>Flushed as it happens, so a crash keeps what was written.</li>
+                            <li>Named after the run: <code>release-20260928-140312.md</code>.</li>
+                            <li>Plain markdown. File it with the work, diff it, delete it.</li>
+                        </ul>
+                    </div>
+
+                    <figure class="file report-file reveal" aria-label="An excerpt of a run report">
+                        <div class="file-bar">
+                            <span class="file-path">release-20260928-140312.md</span>
+                        </div>
+                        <pre
+                            class="file-body md"
+                        ><code><span class="md-h"># Workflow: release</span>
+
+<span class="md-meta">- File: .pulse/workflows/release.yml</span>
+<span class="md-meta">- Started: 2026-09-28 14:03 UTC</span>
+<span class="md-meta">- Provider: OpenRouter</span>
+<span class="md-meta">- Worktree: ~/.pulse/worktrees/20260928-140312-pulse</span>
+
+<span class="md-h">## Step 1/3: bump</span>
+<span class="md-meta">**Goal:** Cargo.toml and Cargo.lock are bumped and cargo build succeeds.</span>
+
+<span class="md-tool">**Tool `edit_file`**</span>
+$ crates/core/Cargo.toml
+<span class="md-dim">version bumped to 0.7.1</span>
+
+<span class="md-tool">**Tool `bash`**</span>
+$ cargo build --quiet
+<span class="md-dim">build finished</span>
+
+<span class="md-h">### Result</span>
+<span class="md-dim">*Model: claude-sonnet-5-5, cost: $0.0021, goal reached in 1 attempt(s)*</span></code></pre>
+                    </figure>
+                </div>
+            </section>
+
+            <!-- ============================================================= -->
+            <!-- TOOLS: what the agent can put its hands on                     -->
+            <!-- ============================================================= -->
+            <section class="section" id="tools" aria-labelledby="tools-h">
+                <div class="wrap">
+                    <header class="sec-head reveal">
+                        <h2 id="tools-h">Real tools, any provider.</h2>
+                        <p class="sec-sub">
+                            The harness gives the agent a small, honest toolbox, then stays out of
+                            the way. You choose the model that wields it.
+                        </p>
+                    </header>
+
+                    <div class="bento">
+                        <article class="cell cell-tools reveal">
+                            <h3>Core tools</h3>
+                            <ul class="tools">
+                                <li><code>read_file</code><span>open any file in the run</span></li>
+                                <li><code>write_file</code><span>create files whole</span></li>
+                                <li><code>edit_file</code><span>surgical edits</span></li>
+                                <li><code>grep</code><span>find by pattern</span></li>
+                                <li><code>bash</code><span>run real commands</span></li>
                             </ul>
-                        </div>
-                        <article class="file ls-file reveal" style="--rd: 0.12s">
-                            <div class="file-tabbar">
-                                <span class="ftab on">~/myproject</span>
-                            </div>
-                            <div class="file-body">
-                                <div class="ln cmt-ln">
-                                    <span class="c"
-                                        ><span class="hash" aria-hidden="true"># </span>ls -lt
-                                        *.md</span
-                                    >
-                                </div>
-                                <div class="ls-row">
-                                    <span class="ls-name">ship-20260924-101500.md</span>
-                                    <span class="ls-date">Sep 24 10:15</span>
-                                    <span class="ls-cost">$0.0120</span>
-                                </div>
-                                <div class="ls-row">
-                                    <span class="ls-name">landing-page-0924.md</span>
-                                    <span class="ls-date">Sep 24 09:41</span>
-                                    <span class="ls-cost">$0.6200</span>
-                                </div>
-                                <div class="ls-row">
-                                    <span class="ls-name">deps-audit-0924.md</span>
-                                    <span class="ls-date">Sep 24 08:12</span>
-                                    <span class="ls-cost">$0.4400</span>
-                                </div>
-                                <div class="ls-row">
-                                    <span class="ls-name">docs-refresh-0923.md</span>
-                                    <span class="ls-date">Sep 23 17:05</span>
-                                    <span class="ls-cost">$0.1800</span>
-                                </div>
-                                <div class="ls-row">
-                                    <span class="ls-name">copy-pass-0923.md</span>
-                                    <span class="ls-date">Sep 23 11:22</span>
-                                    <span class="ls-cost">$0.1200</span>
-                                </div>
-                                <div class="ls-row">
-                                    <span class="ls-name">api-retry-0922.md</span>
-                                    <span class="ls-date">Sep 22 14:48</span>
-                                    <span class="ls-cost">$0.2700</span>
-                                </div>
-                            </div>
+                            <p class="cell-note">
+                                Every tool runs inside the run's worktree, not your checkout.
+                            </p>
+                        </article>
+
+                        <article class="cell cell-skills reveal">
+                            <h3>Skills</h3>
+                            <p>
+                                Drop a <code>SKILL.md</code> into <code>~/.agents/skills</code> and
+                                the agent gets a <code>skill_&lt;name&gt;</code> tool. The
+                                description is the manual entry it reads; the skill file loads only
+                                when used.
+                            </p>
+                        </article>
+
+                        <article class="cell cell-provider reveal">
+                            <h3>Any provider</h3>
+                            <pre
+                                class="cell-term"
+                            ><code><span class="t-p">$</span> pulse provider use openrouter &lt;key&gt;
+<span class="t-p">$</span> pulse provider use https://your-endpoint/v1 &lt;key&gt;</code></pre>
+                            <p>
+                                One command, any OpenAI-compatible endpoint, or litellm, mistral,
+                                opencode or openrouter with just a key. The key lives in
+                                <code>~/.pulse/pulse.db</code>, never in your repo.
+                            </p>
                         </article>
                     </div>
                 </div>
             </section>
 
-            <!-- 06 · INSTALL -->
-            <section class="section cta" id="install" aria-label="Install Pulse">
+            <!-- ============================================================= -->
+            <!-- INSTALL                                                        -->
+            <!-- ============================================================= -->
+            <section class="section" id="install" aria-labelledby="install-h">
                 <div class="wrap">
-                    <svg
-                        class="ecg ecg-wide rise"
-                        style="--sd: 0.05s"
-                        viewBox="0 0 300 80"
-                        preserveAspectRatio="none"
-                        aria-hidden="true"
-                    >
+                    <header class="sec-head reveal">
+                        <h2 id="install-h">From zero to a running agent.</h2>
+                        <p class="sec-sub">
+                            Three commands on macOS, Apple silicon. The binary updates itself with
+                            <code>pulse update</code> when a new release lands.
+                        </p>
+                    </header>
+
+                    <ol class="setup">
+                        <li class="setup-row reveal">
+                            <span class="setup-n" aria-hidden="true">1</span>
+                            <div class="setup-cmd">
+                                <div class="cmd-chip">
+                                    <code>export MISE_GITHUB_TOKEN=&lt;token&gt;</code>
+                                    <button
+                                        class="copy-btn"
+                                        data-copy
+                                        data-cmd="export MISE_GITHUB_TOKEN=<token>"
+                                        type="button"
+                                    >
+                                        copy
+                                    </button>
+                                </div>
+                                <p class="setup-note">
+                                    A fine-grained GitHub token with Contents: read on the repo.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="setup-row reveal">
+                            <span class="setup-n" aria-hidden="true">2</span>
+                            <div class="setup-cmd">
+                                <div class="cmd-chip">
+                                    <code data-install
+                                        >mise use -g "github:xdm67x/pulse@latest"</code
+                                    >
+                                    <button class="copy-btn" data-copy type="button">copy</button>
+                                </div>
+                                <p class="setup-note">
+                                    mise installs the release binary and puts
+                                    <code>pulse</code> on your PATH.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="setup-row reveal">
+                            <span class="setup-n" aria-hidden="true">3</span>
+                            <div class="setup-cmd">
+                                <div class="cmd-chip">
+                                    <code>pulse create my-task</code>
+                                    <button
+                                        class="copy-btn"
+                                        data-copy
+                                        data-cmd="pulse create my-task"
+                                        type="button"
+                                    >
+                                        copy
+                                    </button>
+                                </div>
+                                <p class="setup-note">
+                                    Scaffolds <code>./.pulse/workflows/my-task.yml</code>. Edit it,
+                                    then <code>pulse run</code> to pick one and go.
+                                </p>
+                            </div>
+                        </li>
+                    </ol>
+                </div>
+            </section>
+
+            <!-- ============================================================= -->
+            <!-- CLOSE                                                          -->
+            <!-- ============================================================= -->
+            <section class="close" aria-labelledby="close-h">
+                <div class="wrap close-in">
+                    <svg class="close-mark" viewBox="0 0 300 80" aria-hidden="true">
                         <path
-                            pathLength="1000"
-                            d="M0 48 H88 c7 0 11 -10 18 -10 c7 0 11 10 18 10 H136 l5 5 7 -44 6 50 5 -11 c8 -8 16 -8 24 0 H300"
-                            fill="none"
+                            d="M0 48H88c7 0 11-10 18-10c7 0 11 10 18 10H136l5 5 7-44 6 50 5-11c8-8 16-8 24 0H300"
                         />
                     </svg>
-                    <h2 class="reveal">Run your first workflow.</h2>
-                    <p class="cta-lead reveal" style="--rd: 0.06s">
-                        Put the next refactor, review or release in a workflow, and read the report
-                        when it's done.
+                    <h2 id="close-h">Stop repeating the routine. File it.</h2>
+                    <p class="close-sub">
+                        Write the workflow once, run it every release, every week, whenever. The
+                        agent does the rest, to the goal.
                     </p>
-                    <div class="cmdline cmdline-big reveal" style="--rd: 0.12s">
-                        <span class="ps1" aria-hidden="true">$</span>
-                        <code data-install>mise use -g "github:xdm67x/pulse@latest"</code>
-                        <button class="copy" data-copy aria-live="polite" type="button">
-                            Copy
-                        </button>
-                    </div>
-                    <p class="hint reveal" style="--rd: 0.18s">
-                        <span class="hash" aria-hidden="true"># </span>one binary, zero config
-                        files. Point it at any OpenAI-compatible provider with
-                        <code>pulse provider use</code>.
-                    </p>
+                    <a class="close-btn" href="https://github.com/xdm67x/pulse"
+                        >The code is on GitHub</a
+                    >
                 </div>
             </section>
+
+            <footer class="footer">
+                <div class="wrap footer-in">
+                    <span class="footer-name">pulse</span>
+                    <p class="footer-tag">A headless workflow runner. The file is the interface.</p>
+                    <a class="footer-gh" href="https://github.com/xdm67x/pulse">GitHub</a>
+                </div>
+            </footer>
         </main>
-
-        <footer class="foot">
-            <div class="wrap foot-in">
-                <span>an open agent harness</span>
-                <a href="https://github.com/xdm67x/pulse" rel="noopener">GitHub</a>
-            </div>
-        </footer>
-
-        <script type="module" src="/src/main.ts"></script>
+        <script src="./src/main.ts" type="module"></script>
     </body>
 </html>

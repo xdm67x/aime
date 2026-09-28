@@ -1,117 +1,183 @@
+/* ------------------------------------------------------------------ */
+/* Pulse site: copy buttons, the demo run, section reveals.            */
+/* ------------------------------------------------------------------ */
+
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)')
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 /* ------------------------------------------------------------------ */
-/* Install command - every [data-copy] button copies the same command  */
+/* Copy buttons                                                        */
 /* ------------------------------------------------------------------ */
-
-const INSTALL_CMD = document.querySelector<HTMLElement>('[data-install]')?.textContent?.trim() ?? ''
 
 for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
     btn.addEventListener('click', async () => {
-        const prev = btn.textContent
+        const chip = btn.closest('.cmd-chip')
+        const cmd = btn.dataset.cmd ?? chip?.querySelector('code')?.textContent?.trim() ?? ''
         try {
-            await navigator.clipboard.writeText(INSTALL_CMD)
-            btn.textContent = '✓ copied'
+            await navigator.clipboard.writeText(cmd)
+            btn.textContent = 'copied'
+            btn.classList.add('copied')
         } catch {
             btn.textContent = 'copy failed'
         }
-        btn.classList.remove('pop')
-        void btn.offsetWidth // restart the pop
-        btn.classList.add('pop')
         setTimeout(() => {
-            btn.textContent = prev
-            btn.classList.remove('pop')
+            btn.textContent = 'copy'
+            btn.classList.remove('copied')
         }, 2000)
     })
 }
 
 /* ------------------------------------------------------------------ */
-/* Scroll-linked motion: reveals glide with the scroll position and   */
-/* the progress line runs across the top. JS-driven so it works in    */
-/* every browser, not only where animation-timeline is enabled.       */
+/* The demo run: a faithful replay of `pulse release.yml`, looping     */
+/* while the terminal is on screen.                                    */
 /* ------------------------------------------------------------------ */
 
-const TRAVEL = 36 // px of rise over the first 40% of viewport entry
+type Line = { t: string; c?: string; type?: boolean; pause?: number }
+
+function demoLines(): Line[] {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const now = new Date()
+    const ts =
+        `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+        `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+    const report = `release-${ts}.md`
+    return [
+        { t: '$ pulse release.yml', type: true, pause: 500 },
+        {
+            t: `▶ workflow 'release' - 3 steps - ./.pulse/workflows/release.yml`,
+            c: 't-dim',
+            pause: 220,
+        },
+        { t: '  provider: OpenRouter', c: 't-dim', pause: 220 },
+        { t: `  worktree: ~/.pulse/worktrees/${ts}-pulse`, c: 't-dim', pause: 220 },
+        { t: `  report:   ${report}`, c: 't-dim', pause: 700 },
+
+        { t: '[1/3] bump', pause: 320 },
+        { t: '  goal: Cargo.toml and Cargo.lock are bumped, build passes', c: 't-dim', pause: 620 },
+        { t: '  ↳ edit_file crates/core/Cargo.toml [ok]', c: 't-dim', pause: 620 },
+        { t: '  ↳ bash cargo build --quiet [ok]', c: 't-dim', pause: 900 },
+        { t: '  ✓ step done - goal reached in 1 attempt(s), $0.0021', c: 't-ok', pause: 700 },
+
+        { t: '[2/3] changelog', pause: 320 },
+        { t: '  goal: CHANGELOG.md has a 0.7.1 entry', c: 't-dim', pause: 620 },
+        { t: "  ↳ grep '^## ' CHANGELOG.md [ok]", c: 't-dim', pause: 620 },
+        { t: '  ↳ edit_file CHANGELOG.md [ok]', c: 't-dim', pause: 900 },
+        { t: '  ✓ step done - goal reached in 1 attempt(s), $0.0017', c: 't-ok', pause: 700 },
+
+        { t: '[3/3] commit', pause: 320 },
+        { t: '  goal: one commit contains the release changes', c: 't-dim', pause: 620 },
+        { t: '  ↳ bash git add -A && git commit -m "release 0.7.1" [ok]', c: 't-dim', pause: 900 },
+        {
+            t: '  ↻ goal not reached - retrying (attempt 2): no version in commit',
+            c: 't-retry',
+            pause: 620,
+        },
+        { t: '  ↳ bash git commit --amend -m "release 0.7.1" [ok]', c: 't-dim', pause: 900 },
+        { t: '  ✓ step done - goal reached in 2 attempt(s), $0.0034', c: 't-ok', pause: 800 },
+
+        { t: `✓ workflow complete - 3 steps, $0.0072 total`, c: 't-ok', pause: 300 },
+        { t: `  report: ${report}`, c: 't-dim', pause: 5200 },
+    ]
+}
+
+const runEl = document.getElementById('run')
+
+function lineNode(l: Line): HTMLSpanElement {
+    const el = document.createElement('span')
+    el.className = `l${l.c ? ` ${l.c}` : ''}`
+    if (l.type) {
+        const p = document.createElement('span')
+        p.className = 'p'
+        p.textContent = l.t.slice(0, 1)
+        el.appendChild(p)
+        el.appendChild(document.createTextNode(l.t.slice(1)))
+    } else {
+        el.textContent = l.t
+    }
+    return el
+}
+
+function renderStatic(): void {
+    if (!runEl) return
+    runEl.textContent = ''
+    for (const l of demoLines()) runEl.appendChild(lineNode(l))
+    runEl.scrollTop = runEl.scrollHeight
+}
+
+let runToken = 0
+let playing = false
+
+async function playRun(): Promise<void> {
+    const token = ++runToken
+    if (!runEl) return
+    runEl.textContent = ''
+    for (const l of demoLines()) {
+        if (token !== runToken) return
+        const el = lineNode(l)
+        let cur: HTMLElement | null = null
+        if (l.type) {
+            cur = document.createElement('span')
+            cur.className = 'cur'
+            el.appendChild(cur)
+        }
+        runEl.appendChild(el)
+        runEl.scrollTop = runEl.scrollHeight
+        if (l.type && cur) {
+            // type the command out, cursor in tow
+            const text = el.lastChild as Text
+            const full = l.t.slice(1)
+            text.textContent = ''
+            for (const ch of full) {
+                if (token !== runToken) return
+                text.textContent += ch
+                await sleep(28)
+            }
+            cur.remove()
+        }
+        await sleep(l.pause ?? 350)
+    }
+    if (token === runToken) playRun()
+}
+
+if (runEl) {
+    if (REDUCED.matches) {
+        renderStatic()
+    } else {
+        const io = new IntersectionObserver(
+            (entries) => {
+                for (const e of entries) {
+                    if (e.isIntersecting && !playing) {
+                        playing = true
+                        void playRun()
+                    } else if (!e.isIntersecting && playing) {
+                        playing = false
+                        runToken++ // stop the loop; a later entry restarts it
+                    }
+                }
+            },
+            { threshold: 0.25 },
+        )
+        io.observe(runEl)
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Section reveals                                                     */
+/* ------------------------------------------------------------------ */
 
 if (!REDUCED.matches) {
-    document.documentElement.classList.add('js')
-    const reveals = Array.from(document.querySelectorAll<HTMLElement>('.reveal'))
-    const progress = document.querySelector<HTMLElement>('.progress')
-    let ticking = false
-
-    function frame() {
-        ticking = false
-        const vh = window.innerHeight
-        const max = document.documentElement.scrollHeight - vh
-        if (progress)
-            progress.style.transform = `scaleX(${max > 0 ? Math.min(1, window.scrollY / max) : 0})`
-        for (const el of reveals) {
-            const top = el.getBoundingClientRect().top
-            const p = Math.min(1, Math.max(0, (vh - top) / (vh * 0.4)))
-            const e = 1 - Math.pow(1 - p, 3) // ease-out cubic: fast start, soft landing
-            el.style.opacity = String(e)
-            el.style.transform = `translateY(${((1 - e) * TRAVEL).toFixed(1)}px)`
-        }
-    }
-
-    function request() {
-        if (ticking) return
-        ticking = true
-        requestAnimationFrame(frame)
-    }
-
-    window.addEventListener('scroll', request, { passive: true })
-    window.addEventListener('resize', request)
-    frame()
-}
-
-/* ------------------------------------------------------------------ */
-/* Hero: the file runs, in place                                       */
-/* ------------------------------------------------------------------ */
-
-const heroFile = document.getElementById('hero-file') as HTMLElement
-const heroRuns = Array.from(heroFile.querySelectorAll<HTMLElement>('.ln.run'))
-const heroState = document.getElementById('hero-state')
-const heroCost = document.getElementById('hero-cost')
-
-const HERO_COST = 0.012
-const HERO_RUN_MS = 6900
-const HERO_HOLD_MS = 4500
-let heroToken = 0
-
-function heroCount(token: number) {
-    const t0 = performance.now()
-    const step = () => {
-        if (token !== heroToken) return
-        const p = Math.min(1, (performance.now() - t0) / HERO_RUN_MS)
-        const eased = 1 - Math.pow(1 - p, 3)
-        const v = `$${(HERO_COST * eased).toFixed(4)}`
-        if (heroCost) heroCost.textContent = v
-        if (p < 1) {
-            requestAnimationFrame(step)
-        } else {
-            if (heroState) heroState.textContent = 'workflow ship · goal reached'
-        }
-    }
-    requestAnimationFrame(step)
-}
-
-function heroCycle() {
-    const token = ++heroToken
-    for (const el of heroRuns) {
-        el.style.animation = 'none'
-        void el.offsetWidth // restart the run-in animation
-        el.style.animation = ''
-    }
-    if (heroState) heroState.textContent = 'workflow ship · running'
-    if (heroCost) heroCost.textContent = '$0.0000'
-    heroCount(token)
-    setTimeout(heroCycle, HERO_RUN_MS + HERO_HOLD_MS)
-}
-
-if (REDUCED.matches) {
-    if (heroState) heroState.textContent = 'workflow ship · goal reached'
-    if (heroCost) heroCost.textContent = `$${HERO_COST.toFixed(4)}`
+    const io = new IntersectionObserver(
+        (entries) => {
+            for (const e of entries) {
+                if (e.isIntersecting) {
+                    e.target.classList.add('in')
+                    io.unobserve(e.target)
+                }
+            }
+        },
+        { threshold: 0.12 },
+    )
+    for (const el of document.querySelectorAll('.reveal')) io.observe(el)
 } else {
-    heroCycle()
+    for (const el of document.querySelectorAll('.reveal')) el.classList.add('in')
 }
