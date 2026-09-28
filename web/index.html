@@ -3,13 +3,13 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <title>Pulse: an AI agent harness you program with workflows</title>
+        <title>Aime: an AI agent harness you program with workflows</title>
         <meta
             name="description"
-            content="Pulse is a headless agent harness. Put the steps, the goals and the models in a YAML workflow: the agent runs each step with real tools until its goal is confirmed, then files a markdown report. Any OpenAI-compatible provider. macOS, Apple silicon."
+            content="Aime is a headless agent harness. Put the steps, the goals and the models in a YAML workflow: the agent runs each step with real tools until its goal is confirmed, then files a markdown report. Any OpenAI-compatible provider. macOS, Apple silicon."
         />
         <meta name="theme-color" content="#f1f2ed" />
-        <meta property="og:title" content="Pulse: an AI agent harness you program with workflows" />
+        <meta property="og:title" content="Aime: an AI agent harness you program with workflows" />
         <meta
             property="og:description"
             content="A YAML file holds the steps, the goals, the models. The agent runs them with real tools and files a markdown report."
@@ -17,7 +17,7 @@
         <meta property="og:type" content="website" />
         <link
             rel="icon"
-            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 80'%3E%3Cpath d='M0 48H88c7 0 11-10 18-10c7 0 11 10 18 10H136l5 5 7-44 6 50 5-11c8-8 16-8 24 0H300' fill='none' stroke='%23e0500f' stroke-width='10'/%3E%3C/svg%3E"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23dc4f0f' stroke-width='6'%3E%3Ccircle cx='32' cy='32' r='19'/%3E%3Cpath d='M32 3v9M32 52v9M3 32h9M52 32h9'/%3E%3C/g%3E%3Ccircle cx='32' cy='32' r='6' fill='%23dc4f0f'/%3E%3C/svg%3E"
         />
         <link
             rel="preload"
@@ -41,8 +41,19 @@
             <!-- ============================================================= -->
             <!-- HERO: the pitch, the install command, and the run itself       -->
             <!-- ============================================================= -->
-            <section class="hero wrap" aria-label="Pulse, a headless agent harness">
+            <section class="hero wrap" aria-label="Aime, a headless agent harness">
                 <div class="hero-copy">
+                    <div class="hero-brand">
+                        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+                            <g fill="none" stroke="currentColor" stroke-width="6">
+                                <circle cx="32" cy="32" r="19"></circle>
+                                <path d="M32 3v9M32 52v9M3 32h9M52 32h9"></path>
+                            </g>
+                            <circle cx="32" cy="32" r="6" fill="currentColor"></circle>
+                        </svg>
+                        <span class="brand-name">aime</span>
+                        <span class="brand-def">say it “aim”: AI, pointed at a goal</span>
+                    </div>
                     <h1 class="hero-title">
                         <span class="ht-line">Describe the job once.</span>
                         <span class="ht-line"
@@ -56,7 +67,7 @@
                     <div class="hero-cta">
                         <div class="cmd-chip" role="group" aria-label="Install command">
                             <span class="cmd-prompt" aria-hidden="true">$</span>
-                            <code data-install>mise use -g "github:xdm67x/pulse@latest"</code>
+                            <code data-install>mise use -g "github:xdm67x/aime@latest"</code>
                             <button class="copy-btn" data-copy type="button">copy</button>
                         </div>
                         <a class="hero-link" href="#anatomy">See what a workflow looks like</a>
@@ -97,7 +108,7 @@
                             aria-label="An example workflow file, release.yml"
                         >
                             <div class="file-bar">
-                                <span class="file-path">.pulse/workflows/release.yml</span>
+                                <span class="file-path">.aime/workflows/release.yml</span>
                             </div>
                             <pre
                                 class="file-body"
@@ -154,7 +165,7 @@
                                         Named in the file, per workflow or per step. Point it at any
                                         OpenAI-compatible endpoint, or use litellm, mistral,
                                         opencode or openrouter with just an API key.
-                                        <code>pulse models</code> lists what's available.
+                                        <code>aime models</code> lists what's available.
                                     </p>
                                 </div>
                             </article>
@@ -216,7 +227,7 @@
                             <h3>Isolated by default</h3>
                             <p>
                                 Each run gets its own git worktree under
-                                <code>~/.pulse/worktrees</code>, so your checkout is never the
+                                <code>~/.aime/worktrees</code>, so your checkout is never the
                                 sandbox. <code>--no-worktree</code> runs in place.
                             </p>
                         </div>
@@ -260,10 +271,10 @@
                             class="file-body md"
                         ><code><span class="md-h"># Workflow: release</span>
 
-<span class="md-meta">- File: .pulse/workflows/release.yml</span>
+<span class="md-meta">- File: .aime/workflows/release.yml</span>
 <span class="md-meta">- Started: 2026-09-28 14:03 UTC</span>
 <span class="md-meta">- Provider: OpenRouter</span>
-<span class="md-meta">- Worktree: ~/.pulse/worktrees/20260928-140312-pulse</span>
+<span class="md-meta">- Worktree: ~/.aime/worktrees/20260928-140312-aime</span>
 
 <span class="md-h">## Step 1/3: bump</span>
 <span class="md-meta">**Goal:** Cargo.toml and Cargo.lock are bumped and cargo build succeeds.</span>
@@ -324,12 +335,12 @@ $ cargo build --quiet
                             <h3>Any provider</h3>
                             <pre
                                 class="cell-term"
-                            ><code><span class="t-p">$</span> pulse provider use openrouter &lt;key&gt;
-<span class="t-p">$</span> pulse provider use https://your-endpoint/v1 &lt;key&gt;</code></pre>
+                            ><code><span class="t-p">$</span> aime provider use openrouter &lt;key&gt;
+<span class="t-p">$</span> aime provider use https://your-endpoint/v1 &lt;key&gt;</code></pre>
                             <p>
                                 One command, any OpenAI-compatible endpoint, or litellm, mistral,
                                 opencode or openrouter with just a key. The key lives in
-                                <code>~/.pulse/pulse.db</code>, never in your repo.
+                                <code>~/.aime/aime.db</code>, never in your repo.
                             </p>
                         </article>
                     </div>
@@ -345,7 +356,7 @@ $ cargo build --quiet
                         <h2 id="install-h">From zero to a running agent.</h2>
                         <p class="sec-sub">
                             Three commands on macOS, Apple silicon. The binary updates itself with
-                            <code>pulse update</code> when a new release lands.
+                            <code>aime update</code> when a new release lands.
                         </p>
                     </header>
 
@@ -374,13 +385,13 @@ $ cargo build --quiet
                             <div class="setup-cmd">
                                 <div class="cmd-chip">
                                     <code data-install
-                                        >mise use -g "github:xdm67x/pulse@latest"</code
+                                        >mise use -g "github:xdm67x/aime@latest"</code
                                     >
                                     <button class="copy-btn" data-copy type="button">copy</button>
                                 </div>
                                 <p class="setup-note">
                                     mise installs the release binary and puts
-                                    <code>pulse</code> on your PATH.
+                                    <code>aime</code> on your PATH.
                                 </p>
                             </div>
                         </li>
@@ -388,19 +399,19 @@ $ cargo build --quiet
                             <span class="setup-n" aria-hidden="true">3</span>
                             <div class="setup-cmd">
                                 <div class="cmd-chip">
-                                    <code>pulse create my-task</code>
+                                    <code>aime create my-task</code>
                                     <button
                                         class="copy-btn"
                                         data-copy
-                                        data-cmd="pulse create my-task"
+                                        data-cmd="aime create my-task"
                                         type="button"
                                     >
                                         copy
                                     </button>
                                 </div>
                                 <p class="setup-note">
-                                    Scaffolds <code>./.pulse/workflows/my-task.yml</code>. Edit it,
-                                    then <code>pulse run</code> to pick one and go.
+                                    Scaffolds <code>./.aime/workflows/my-task.yml</code>. Edit it,
+                                    then <code>aime run</code> to pick one and go.
                                 </p>
                             </div>
                         </li>
@@ -413,17 +424,19 @@ $ cargo build --quiet
             <!-- ============================================================= -->
             <section class="close" aria-labelledby="close-h">
                 <div class="wrap close-in">
-                    <svg class="close-mark" viewBox="0 0 300 80" aria-hidden="true">
-                        <path
-                            d="M0 48H88c7 0 11-10 18-10c7 0 11 10 18 10H136l5 5 7-44 6 50 5-11c8-8 16-8 24 0H300"
-                        />
+                    <svg class="close-mark" viewBox="0 0 64 64" aria-hidden="true">
+                        <g fill="none" stroke="currentColor" stroke-width="5">
+                            <circle cx="32" cy="32" r="19"></circle>
+                            <path d="M32 3v9M32 52v9M3 32h9M52 32h9"></path>
+                        </g>
+                        <circle cx="32" cy="32" r="6" fill="currentColor"></circle>
                     </svg>
                     <h2 id="close-h">Stop repeating the routine. File it.</h2>
                     <p class="close-sub">
                         Write the workflow once, run it every release, every week, whenever. The
                         agent does the rest, to the goal.
                     </p>
-                    <a class="close-btn" href="https://github.com/xdm67x/pulse"
+                    <a class="close-btn" href="https://github.com/xdm67x/aime"
                         >The code is on GitHub</a
                     >
                 </div>
@@ -431,9 +444,9 @@ $ cargo build --quiet
 
             <footer class="footer">
                 <div class="wrap footer-in">
-                    <span class="footer-name">pulse</span>
+                    <span class="footer-name">aime</span>
                     <p class="footer-tag">A headless workflow runner. The file is the interface.</p>
-                    <a class="footer-gh" href="https://github.com/xdm67x/pulse">GitHub</a>
+                    <a class="footer-gh" href="https://github.com/xdm67x/aime">GitHub</a>
                 </div>
             </footer>
         </main>

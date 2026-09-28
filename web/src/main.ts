@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------ */
-/* Pulse site: copy buttons, the demo run, section reveals.            */
+/* Aime site: copy buttons, the demo run, section reveals.            */
 /* ------------------------------------------------------------------ */
 
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -28,7 +28,7 @@ for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
 }
 
 /* ------------------------------------------------------------------ */
-/* The demo run: a faithful replay of `pulse release.yml`, looping     */
+/* The demo run: a faithful replay of `aime release.yml`, looping     */
 /* while the terminal is on screen.                                    */
 /* ------------------------------------------------------------------ */
 
@@ -42,14 +42,14 @@ function demoLines(): Line[] {
         `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
     const report = `release-${ts}.md`
     return [
-        { t: '$ pulse release.yml', type: true, pause: 500 },
+        { t: '$ aime release.yml', type: true, pause: 500 },
         {
-            t: `▶ workflow 'release' - 3 steps - ./.pulse/workflows/release.yml`,
+            t: `▶ workflow 'release' - 3 steps - ./.aime/workflows/release.yml`,
             c: 't-dim',
             pause: 220,
         },
         { t: '  provider: OpenRouter', c: 't-dim', pause: 220 },
-        { t: `  worktree: ~/.pulse/worktrees/${ts}-pulse`, c: 't-dim', pause: 220 },
+        { t: `  worktree: ~/.aime/worktrees/${ts}-aime`, c: 't-dim', pause: 220 },
         { t: `  report:   ${report}`, c: 't-dim', pause: 700 },
 
         { t: '[1/3] bump', pause: 320 },

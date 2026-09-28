@@ -8,23 +8,23 @@ Before making any changes or contributions, read
 
 ## What this repo is
 
-**Pulse** — a headless workflow runner (plus a marketing website): users
-provide a YAML workflow file, `pulse <workflow>` executes its steps through
+**Aime** — a headless workflow runner (plus a marketing website): users
+provide a YAML workflow file, `aime <workflow>` executes its steps through
 an agentic tool loop until each step's goal is reached, everything the run
 produces is written to a markdown report in the current directory, and the
 terminal shows which step is running. The provider is configured with
-`pulse provider use` — an OpenAI-compatible base URL + API key, or a known
+`aime provider use` — an OpenAI-compatible base URL + API key, or a known
 provider name (`litellm`, `mistral`, `opencode`, `openrouter`) with just an
-API key; `pulse provider` shows the current one.
+API key; `aime provider` shows the current one.
 
 ## Layout
 
 Rust workspace with the crates under `crates/` (package names stay
-`pulse-core` and `pulse` — the `-p` flags, `pulse_core::` imports, and the
+`aime-core` and `aime` — the `-p` flags, `aime_core::` imports, and the
 release asset naming are unchanged):
 
-- `crates/core/` (`pulse-core`) — the agent harness as a pure Rust library.
-  **No UI dependencies.** Consumed today by the `pulse` binary; designed to
+- `crates/core/` (`aime-core`) — the agent harness as a pure Rust library.
+  **No UI dependencies.** Consumed today by the `aime` binary; designed to
   also back other runtimes. Progress flows through a caller-supplied `harness::OnEvent`
   callback, so any runtime can drive it.
   - `harness.rs` — agentic loop, task events (`TaskEvent`, `TaggedEvent`),
@@ -34,9 +34,9 @@ release asset naming are unchanged):
     retry, streaming, and model-cache plumbing; wire types (chat
     requests/results, model metadata) in `types.rs`; one file per backend:
     `custom` (the OpenAI-compatible
-    endpoint configured by `pulse provider use <url> <key>`), plus
+    endpoint configured by `aime provider use <url> <key>`), plus
     `openrouter`, `opencode`, `litellm`, `mistral` (any of
-    which `pulse provider use <name> <key>` configures with a key alone);
+    which `aime provider use <name> <key>` configures with a key alone);
     bare model ids route to the configured provider
     (`providers::configured_provider`); `chat_completion` /
     `chat_completion_stream` / `list_models` / `list_models_of` (per
@@ -51,15 +51,15 @@ release asset naming are unchanged):
     `provider_api_key` / `provider_name` for the configured provider).
     There are no global model slots: models are named per workflow in the
     workflow files.
-  - `db.rs` — SQLite at `~/.pulse/pulse.db` (`config`, `projects`, `beats`
+  - `db.rs` — SQLite at `~/.aime/aime.db` (`config`, `projects`, `beats`
     tables; rusqlite, bundled).
   - `beats.rs` / `projects.rs` — beat + project persistence. A workflow run
     creates a beat so context accumulates across its steps, and (by default)
-    a git worktree under `~/.pulse/worktrees/<run id>-<dir>` via
+    a git worktree under `~/.aime/worktrees/<run id>-<dir>` via
     `projects::ensure_worktree`, recorded on the beat so every tool of the
     run executes there instead of the user's checkout.
-  - `workflows.rs` — the workflow engine: YAML files (`./.pulse/workflows`
-    first, then the current directory, then `~/.pulse/workflows/`),
+  - `workflows.rs` — the workflow engine: YAML files (`./.aime/workflows`
+    first, then the current directory, then `~/.aime/workflows/`),
     per-step/workflow `model:` (required
     somewhere), per-step optional `goal:` (the step re-runs with reviewer
     feedback until the model confirms the goal is reached, max
@@ -71,22 +71,22 @@ release asset naming are unchanged):
     (`{{ steps.<name> }}` is the same reference), and `Workflow::validate`
     rejects references that don't resolve before the run starts. `run_hooked` exposes progress
     hooks; `run` is the no-op-hooks wrapper.
-- `crates/cli/` (`pulse`) — the CLI on top of `pulse-core` (plus a one-screen crossterm
-  picker TUI for `pulse run`; `pulse-core` stays UI-agnostic).
+- `crates/cli/` (`aime`) — the CLI on top of `aime-core` (plus a one-screen crossterm
+  picker TUI for `aime run`; `aime-core` stays UI-agnostic).
   - `src/main.rs` — entry point: clap dispatch + exit codes.
-  - `src/cli.rs` — subcommands: `pulse create`, `pulse edit`, `pulse provider
+  - `src/cli.rs` — subcommands: `aime create`, `aime edit`, `aime provider
     [use <url|litellm|mistral|opencode|openrouter> <key>]`
-    (bare `pulse provider` shows the current one), `pulse models`,
-    `pulse version`,
-    `pulse update` (installs the latest release automatically when newer),
-    `pulse run [<workflow>] [--no-worktree]` (bare `pulse run` lists the
+    (bare `aime provider` shows the current one), `aime models`,
+    `aime version`,
+    `aime update` (installs the latest release automatically when newer),
+    `aime run [<workflow>] [--no-worktree]` (bare `aime run` lists the
     discovered workflows and opens the picker; with a name/path it runs
-    directly), and `pulse <workflow> [--no-worktree]` (an external
+    directly), and `aime <workflow> [--no-worktree]` (an external
     subcommand — any unknown subcommand is treated as a workflow name/path
     to run; `split_run_args` pulls out the flags).
-  - `src/picker.rs` — the `pulse run` workflow picker: a one-screen TUI
+  - `src/picker.rs` — the `aime run` workflow picker: a one-screen TUI
     (crossterm only, no ratatui) over the workflows discovered in the
-    current directory, ./.pulse/workflows and ~/.pulse/workflows —
+    current directory, ./.aime/workflows and ~/.aime/workflows —
     type to filter, arrows to move, Enter runs, Esc cancels; raw mode +
     alternate screen restored on drop, so even a panic leaves the
     terminal intact.
@@ -96,41 +96,41 @@ release asset naming are unchanged):
     calls, streamed output, results) to `<workflow>-<timestamp>.md` in the
     current directory, flushed as it happens. Unless `--no-worktree` is
     passed, the run first creates a worktree (`<timestamp>-<dir name>`
-    under `~/.pulse/worktrees`) — a non-repo directory runs in place, a
+    under `~/.aime/worktrees`) — a non-repo directory runs in place, a
     repo whose worktree cannot be created aborts. First Ctrl-C cancels the
     run (exit 130), second force-quits.
 - `web/` — static GitHub Pages site (project landing page + release
-  downloads). Deployed under `/pulse/`, so `vite.config.ts` uses `base: './'`.
+  downloads). Deployed under `/aime/`, so `vite.config.ts` uses `base: './'`.
 
 ## Toolchains & commands
 
-- Rust workspace (`Cargo.toml`): members are `crates/core` (`pulse-core`)
-  and `crates/cli` (`pulse`).
+- Rust workspace (`Cargo.toml`): members are `crates/core` (`aime-core`)
+  and `crates/cli` (`aime`).
 - JS: pnpm 12.4.1, only for `web/` (which has its own workspace + lockfile).
 - Frontend lint/format: **oxlint** and **oxfmt** (not eslint/prettier).
 
 ```sh
 cargo test                      # all workspace tests
 cargo build                     # workspace
-cargo run -p pulse -- create my-task   # create ./.pulse/workflows/my-task.yml
-cargo run -p pulse -- create my-task --global  # create ~/.pulse/workflows/my-task.yml
-cargo run -p pulse -- run         # list workflows + pick one in the TUI
-  cargo run -p pulse -- my-task     # run a workflow by name (or path)
-cargo run -p pulse -- my-task --no-worktree   # run in the current directory, no git worktree
+cargo run -p aime -- create my-task   # create ./.aime/workflows/my-task.yml
+cargo run -p aime -- create my-task --global  # create ~/.aime/workflows/my-task.yml
+cargo run -p aime -- run         # list workflows + pick one in the TUI
+  cargo run -p aime -- my-task     # run a workflow by name (or path)
+cargo run -p aime -- my-task --no-worktree   # run in the current directory, no git worktree
 pnpm --dir web lint && pnpm --dir web format:check
 pnpm --dir web build            # static site (base: './')
 ```
 
-Releases: `.github/workflows/release.yml` builds the `pulse` binary for
+Releases: `.github/workflows/release.yml` builds the `aime` binary for
 `aarch64-apple-darwin` on tag push, packages it as
-`pulse-<tag>-aarch64-apple-darwin.tar.gz`, and attaches it to the GitHub
+`aime-<tag>-aarch64-apple-darwin.tar.gz`, and attaches it to the GitHub
 release. The website's download button links to the latest such asset — keep
 the naming in sync when changing it.
 
 ## Conventions & gotchas
 
-- **Keep `pulse-core` UI-agnostic.** New agent features (providers, tools,
-  skills, routing, persistence, workflows) go in `pulse-core`; `pulse`
+- **Keep `aime-core` UI-agnostic.** New agent features (providers, tools,
+  skills, routing, persistence, workflows) go in `aime-core`; `aime`
   only adds the CLI, terminal output, and input handling.
 - **Errors** are `Result<_, String>` throughout the core — follow that
   pattern; don't introduce a custom error type piecemeal.
@@ -140,9 +140,9 @@ the naming in sync when changing it.
   strings in code. Keep `{{placeholder}}` names in sync with `prompts::fill`.
 - **DB migrations**: schema is created with `CREATE TABLE IF NOT EXISTS` in
   `db.rs::open()`. Add columns there; there is no migration framework.
-- **API keys** live in the local DB (`~/.pulse/pulse.db`), never in code or
+- **API keys** live in the local DB (`~/.aime/aime.db`), never in code or
   the repo. Valid providers are hardcoded in `config.rs`.
-- **Tests**: unit tests live inline in `pulse-core` modules plus
+- **Tests**: unit tests live inline in `aime-core` modules plus
   integration tests in `crates/core/tests/`. Add tests alongside the code you
   change; run `cargo test` before committing.
 - **Website**: keep `web` self-contained (own package.json/lockfile); don't

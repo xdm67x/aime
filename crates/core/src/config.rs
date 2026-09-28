@@ -61,13 +61,13 @@ mod tests {
     }
 }
 
-/* ---- the provider set with `pulse provider use` ---- */
+/* ---- the provider set with `aime provider use` ---- */
 
-/// Providers whose host is built in, so `pulse provider use <name> <api_key>`
+/// Providers whose host is built in, so `aime provider use <name> <api_key>`
 /// configures them with an API key alone — no base URL needed.
 pub const KNOWN_PROVIDERS: &[&str] = &["litellm", "mistral", "opencode", "openrouter"];
 
-/// What `pulse provider use <target> <api_key>` configures.
+/// What `aime provider use <target> <api_key>` configures.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProviderTarget {
     /// A [`KNOWN_PROVIDERS`] entry — only the API key is stored.
@@ -76,7 +76,7 @@ pub enum ProviderTarget {
     Url(String),
 }
 
-/// Parse the first argument of `pulse provider use`: one of
+/// Parse the first argument of `aime provider use`: one of
 /// [`KNOWN_PROVIDERS`] (case-insensitive) or an http(s) base URL.
 pub fn parse_provider_target(target: &str) -> Result<ProviderTarget, String> {
     let t = target.trim();
@@ -105,7 +105,7 @@ pub fn provider_api_key() -> Result<Option<String>, String> {
     db::get_setting("provider_api_key")
 }
 
-/// Point Pulse at one OpenAI-compatible provider. Empty key = no auth.
+/// Point Aime at one OpenAI-compatible provider. Empty key = no auth.
 /// Also records "Custom" as the configured provider (`provider_name`).
 pub fn save_provider(url: &str, api_key: &str) -> Result<(), String> {
     let url = url.trim().trim_end_matches('/');
@@ -122,7 +122,7 @@ pub fn save_provider(url: &str, api_key: &str) -> Result<(), String> {
     db::set_setting("provider_name", "Custom")
 }
 
-/// Display name of the provider `pulse provider use` configured (e.g.
+/// Display name of the provider `aime provider use` configured (e.g.
 /// "Custom", "OpenRouter") — resolved against the registry by
 /// `providers::configured_provider`. Unset for providers configured before
 /// this setting existed; those fall back to Custom via `provider_url`.
@@ -130,7 +130,7 @@ pub fn provider_name() -> Result<Option<String>, String> {
     Ok(db::get_setting("provider_name")?.filter(|n| !n.trim().is_empty()))
 }
 
-/// Record which provider `pulse provider use` configured.
+/// Record which provider `aime provider use` configured.
 pub fn save_provider_name(name: &str) -> Result<(), String> {
     db::set_setting("provider_name", name.trim())
 }

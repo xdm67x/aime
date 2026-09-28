@@ -98,7 +98,7 @@ fn get_project(id: i64) -> Result<Project, String> {
 }
 
 /// Clone a GitHub repo (`owner/name` or a full URL) with `gh repo clone` into
-/// `~/.pulse/repos/<name>` and register it. Returns the new project.
+/// `~/.aime/repos/<name>` and register it. Returns the new project.
 pub async fn clone_project(repo: &str) -> Result<Project, String> {
     let repo = repo.trim().to_string();
     if repo.is_empty() {
@@ -116,7 +116,7 @@ pub async fn clone_project(repo: &str) -> Result<Project, String> {
         return Err(format!("Cannot derive a project name from '{repo}'"));
     }
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let base = Path::new(&home).join(".pulse").join("repos");
+    let base = Path::new(&home).join(".aime").join("repos");
     std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let dest = base.join(&name);
     if dest.exists() {
@@ -156,7 +156,7 @@ pub async fn clone_project(repo: &str) -> Result<Project, String> {
     get_project(id)
 }
 
-/// Remove a project from Pulse. The directory on disk is left untouched; beats
+/// Remove a project from Aime. The directory on disk is left untouched; beats
 /// attached to it keep running but lose their working directory.
 pub fn remove_project(id: i64) -> Result<(), String> {
     let c = conn()?;
@@ -195,12 +195,12 @@ pub fn working_dir(beat_id: i64) -> Result<Option<String>, String> {
 }
 
 /* ---- git worktrees: a beat spawned from a project works in a dedicated
-worktree under ~/.pulse/worktrees so its edits never touch the main repo
+worktree under ~/.aime/worktrees so its edits never touch the main repo
 checkout. Created with the beat, dropped when the archived beat is deleted. ---- */
 
 fn worktrees_base() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let base = Path::new(&home).join(".pulse").join("worktrees");
+    let base = Path::new(&home).join(".aime").join("worktrees");
     std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     Ok(base)
 }
@@ -261,7 +261,7 @@ fn is_git_repo(path: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Set up a run worktree for a beat: `~/.pulse/worktrees/<name>` on a new
+/// Set up a run worktree for a beat: `~/.aime/worktrees/<name>` on a new
 /// branch off the repo's current HEAD, recorded on the beat so every tool of
 /// the run executes there instead of the user's checkout. `Ok(None)` when
 /// `project_path` is not inside a git work tree (nothing to isolate);
@@ -480,15 +480,14 @@ mod tests {
             .is_none());
 
         // a repo (run from a subdirectory of it): worktree under
-        // ~/.pulse/worktrees, and the beat's tools dir resolves to it
+        // ~/.aime/worktrees, and the beat's tools dir resolves to it
         let sub = proj.join("nested");
         std::fs::create_dir_all(&sub).unwrap();
-        let (branch, path) =
-            ensure_worktree(beat.id, "20260924-1055-pulse", &sub.to_string_lossy())
-                .unwrap()
-                .expect("worktree");
-        assert_eq!(branch, "20260924-1055-pulse");
-        assert!(path.contains(".pulse/worktrees"), "{path}");
+        let (branch, path) = ensure_worktree(beat.id, "20260924-1055-aime", &sub.to_string_lossy())
+            .unwrap()
+            .expect("worktree");
+        assert_eq!(branch, "20260924-1055-aime");
+        assert!(path.contains(".aime/worktrees"), "{path}");
         assert!(Path::new(&path).is_dir());
         assert_eq!(
             working_dir(beat.id).unwrap().as_deref(),
@@ -506,7 +505,7 @@ mod tests {
             .output()
             .unwrap();
         let listed = String::from_utf8_lossy(&listed.stdout);
-        assert!(!listed.contains("20260924-1055-pulse"));
+        assert!(!listed.contains("20260924-1055-aime"));
 
         std::env::set_var("HOME", std::env::temp_dir());
     }

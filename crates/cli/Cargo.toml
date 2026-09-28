@@ -1,14 +1,14 @@
 [package]
-name = "pulse"
+name = "aime"
 version.workspace = true
 edition = "2021"
 
 [[bin]]
-name = "pulse"
+name = "aime"
 path = "src/main.rs"
 
 [dependencies]
-pulse-core = { path = "../core" }
+aime-core = { path = "../core" }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "signal", "time"] }
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"

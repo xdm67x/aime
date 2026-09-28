@@ -1,11 +1,11 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
-/// Opens ~/.pulse/pulse.db, creating the directory and config table as needed.
+/// Opens ~/.aime/aime.db, creating the directory and config table as needed.
 pub fn open() -> Result<Connection, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let dir = std::path::Path::new(&home).join(".pulse");
+    let dir = std::path::Path::new(&home).join(".aime");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let conn = Connection::open(dir.join("pulse.db")).map_err(|e| e.to_string())?;
+    let conn = Connection::open(dir.join("aime.db")).map_err(|e| e.to_string())?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
         [],
@@ -163,8 +163,8 @@ mod tests {
     #[test]
     fn test_db_roundtrip() {
         let _g = crate::log::HOME_LOCK.lock().unwrap();
-        // redirect home to a temp dir so we never touch the real ~/.pulse
-        let tmp = std::env::temp_dir().join(format!("pulse-test-{}", std::process::id()));
+        // redirect home to a temp dir so we never touch the real ~/.aime
+        let tmp = std::env::temp_dir().join(format!("aime-test-{}", std::process::id()));
         std::env::set_var("HOME", &tmp);
         let k = "test_key";
         assert_eq!(get_setting(k).unwrap(), None);

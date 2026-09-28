@@ -2,7 +2,7 @@
 //! same text emitted as both a streaming delta and a step) nor persisted
 //! (the same reply stored as two adjacent assistant entries).
 
-use pulse_core::{beats, db, harness, workflows::BASE};
+use aime_core::{beats, db, harness, workflows::BASE};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -124,12 +124,12 @@ fn configure(url: &str) {
     db::set_setting("litellm_api_key", "test").unwrap();
     // Plain prompts run through the base workflow: one step that hands the
     // user's message to the worker model.
-    pulse_core::workflows::create(BASE, "", "LiteLLM - worker", "{{prompt}}").unwrap();
+    aime_core::workflows::create(BASE, "", "LiteLLM - worker", "{{prompt}}").unwrap();
 }
 
 fn new_beat() -> i64 {
     let proj_dir = tempfile::tempdir().unwrap();
-    let proj = pulse_core::projects::add_project(proj_dir.path().to_str().unwrap()).unwrap();
+    let proj = aime_core::projects::add_project(proj_dir.path().to_str().unwrap()).unwrap();
     let id = beats::create_beat("repro", "", Some(proj.id)).unwrap().id;
     std::mem::forget(proj_dir);
     id

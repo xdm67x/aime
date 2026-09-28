@@ -1,7 +1,7 @@
 //! End-to-end repro: drive harness::run_task against a local mock
 //! OpenAI-compatible server and dump the event sequence the UI would see.
 
-use pulse_core::{beats, db, harness};
+use aime_core::{beats, db, harness};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -109,10 +109,10 @@ async fn blank_final_turn_never_ends_run_silently() {
     db::set_setting("litellm_api_key", "test").unwrap();
     // Plain prompts run through the base workflow: one step that hands the
     // user's message to the worker model.
-    pulse_core::workflows::create("base", "", "LiteLLM - worker", "{{prompt}}").unwrap();
+    aime_core::workflows::create("base", "", "LiteLLM - worker", "{{prompt}}").unwrap();
 
     let proj_dir = tempfile::tempdir().unwrap();
-    let proj = pulse_core::projects::add_project(proj_dir.path().to_str().unwrap()).unwrap();
+    let proj = aime_core::projects::add_project(proj_dir.path().to_str().unwrap()).unwrap();
     let beat = beats::create_beat("repro", "", Some(proj.id)).unwrap();
     let mut events: Vec<Value> = vec![];
     let result = harness::run_task(beat.id, "do a thing".to_string(), vec![], &mut |ev| {

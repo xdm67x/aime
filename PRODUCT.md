@@ -22,10 +22,10 @@ inspectable, costed record.
 
 ## Product Purpose
 
-Pulse is a headless workflow runner. The user writes a YAML workflow file
-(created with `pulse create <title>` in ./.pulse/workflows, or in
-~/.pulse/workflows with `--global`) that
-names the model, the steps, and each step's optional `goal:`; `pulse
+Aime is a headless workflow runner. The user writes a YAML workflow file
+(created with `aime create <title>` in ./.aime/workflows, or in
+~/.aime/workflows with `--global`) that
+names the model, the steps, and each step's optional `goal:`; `aime
 <workflow>` executes the steps through an agentic tool loop
 (`read_file`, `write_file`, `edit_file`, `grep`, `bash`, plus discovered
 skills) until each goal is confirmed reached; the terminal shows which step
@@ -37,10 +37,10 @@ autonomously and every run leaves a durable, inspectable report.
 ## Positioning
 
 **Workflow-only agent runner — not a chat assistant.** Owner-confirmed
-direction: Pulse moved away from chat entirely; the chat-style TUI was
+direction: Aime moved away from chat entirely; the chat-style TUI was
 replaced by the headless workflow runner. Where neighboring agent CLIs
 (Claude Code, aider, opencode) are chat-first with the agent loop as the
-interface, Pulse inverts it: the workflow file is the interface. It names
+interface, Aime inverts it: the workflow file is the interface. It names
 the model (per workflow or per step), the steps, and the `goal:` each step
 runs until. Every run writes a markdown report in the launch directory —
 the durable record is the position.
@@ -48,32 +48,32 @@ the durable record is the position.
 ## Operating Context
 
 - Terminal-first and headless: one binary, zero config files; the CLI is the
-  whole product (`pulse create`, `pulse edit`, `pulse run` (bare: a
-  terminal picker over the discovered workflows), `pulse provider use`,
-  `pulse models`, `pulse version`, `pulse update`, `pulse <workflow>`).
+  whole product (`aime create`, `aime edit`, `aime run` (bare: a
+  terminal picker over the discovered workflows), `aime provider use`,
+  `aime models`, `aime version`, `aime update`, `aime <workflow>`).
 - Provider: one OpenAI-compatible endpoint (base URL + API key) configured
-  with `pulse provider use` — OpenAI, LiteLLM, Ollama's `/v1`, vLLM, … — or
+  with `aime provider use` — OpenAI, LiteLLM, Ollama's `/v1`, vLLM, … — or
   a built-in provider (`litellm`, `mistral`, `opencode`, `openrouter`) with
-  just an API key; `pulse provider` shows the current one, `pulse models`
+  just an API key; `aime provider` shows the current one, `aime models`
   lists what it offers. Workflows name the model per workflow or per step
   with bare ids (no provider prefix); there are no global model slots.
-- Workflows: YAML files — `./.pulse/workflows` first, then the current
+- Workflows: YAML files — `./.aime/workflows` first, then the current
   directory, then
-  `~/.pulse/workflows/`; per-step optional `goal:` re-runs the step with
+  `~/.aime/workflows/`; per-step optional `goal:` re-runs the step with
   reviewer feedback until confirmed reached (max 3 runs); `{{steps.<name>}}` placeholders in a step's prompt
   insert an earlier step's final result, linking the steps.
 - Runs: by default the run executes in a fresh git worktree
-  (`~/.pulse/worktrees/<run id>-<dir name>`, own branch) so the user's
+  (`~/.aime/worktrees/<run id>-<dir name>`, own branch) so the user's
   checkout is untouched; `--no-worktree` runs in the launch directory. The
   terminal shows step progress (`[i/n] step`, tool lines, worktree + report
   paths); the full run is written to `<workflow>-<timestamp>.md` in the
   launch directory, flushed as it happens. First Ctrl-C cancels (exit 130).
-- Persistence: SQLite at `~/.pulse/pulse.db` (runs still create beats so
+- Persistence: SQLite at `~/.aime/aime.db` (runs still create beats so
   context accumulates across steps; internal, not a user surface).
 - Distribution: GitHub releases via mise (`mise use -g
-  "github:xdm67x/pulse@latest"`); self-update via `pulse update`
+  "github:xdm67x/aime@latest"`); self-update via `aime update`
   (token via `GITHUB_TOKEN`/`MISE_GITHUB_TOKEN`).
-- Development: Rust workspace (`pulse-core` pure library + `pulse` CLI),
+- Development: Rust workspace (`aime-core` pure library + `aime` CLI),
   mise-driven (`mise run test|build|run|lint|web-build`), pnpm for `web/`
   only.
 
@@ -81,7 +81,7 @@ the durable record is the position.
 
 Confirmed functionality:
 
-- Provider: any OpenAI-compatible endpoint via `pulse provider use <url>
+- Provider: any OpenAI-compatible endpoint via `aime provider use <url>
   <key>` (`chat_completion`, streaming, model listing); known providers
   (`litellm`, `mistral`, `opencode`, `openrouter`) configure with an API key
   alone. Bare model ids route to the configured provider.
@@ -94,21 +94,21 @@ Confirmed functionality:
   placeholders in a step's prompt are filled with the named earlier
   step's final result, linking the steps. Workflows are
   self-contained — the run command takes only the workflow name.
-- Workflow files: `pulse create <title>` writes a blank template in
-  `./.pulse/workflows` (`--global` writes it to `~/.pulse/workflows` instead);
-  bare `pulse run` lists the discovered workflows and opens a terminal
-  picker; `pulse <workflow>` resolves by name (`./.pulse/workflows`, cwd, then
-  `~/.pulse/workflows/`) or file path.
+- Workflow files: `aime create <title>` writes a blank template in
+  `./.aime/workflows` (`--global` writes it to `~/.aime/workflows` instead);
+  bare `aime run` lists the discovered workflows and opens a terminal
+  picker; `aime <workflow>` resolves by name (`./.aime/workflows`, cwd, then
+  `~/.aime/workflows/`) or file path.
 - Every run writes `<workflow>-<timestamp>.md` (prompts, goals, tool calls,
   streamed output, results, cost) in the launch directory as it happens.
-- Worktree isolation by default: `~/.pulse/worktrees/<run id>-<dir name>`
+- Worktree isolation by default: `~/.aime/worktrees/<run id>-<dir name>`
   branched off the current HEAD (a non-repo directory runs in place;
   `--no-worktree` opts out).
 - First Ctrl-C cancels the run (exit 130); a second force-quits.
 
 Technical constraints (durable, from repo conventions):
 
-- `pulse-core` stays UI-agnostic (no UI dependencies); `pulse` only adds CLI,
+- `aime-core` stays UI-agnostic (no UI dependencies); `aime` only adds CLI,
   terminal views, and input handling.
 - Errors are `Result<_, String>` throughout core; no custom error type.
 - Prompts are compile-time templates in `crates/core/src/prompts/` with
@@ -116,11 +116,11 @@ Technical constraints (durable, from repo conventions):
 - Schema via `CREATE TABLE IF NOT EXISTS` in `db.rs::open()`; no migration
   framework.
 - API keys live in the local DB, never in code or repo.
-- Releases: single `pulse-<tag>-aarch64-apple-darwin.tar.gz` asset per
+- Releases: single `aime-<tag>-aarch64-apple-darwin.tar.gz` asset per
   version, built on tag push; the site's download button links to it (keep
   naming in sync).
 - `web/` stays self-contained (own package.json/lockfile; oxlint/oxfmt, not
-  eslint/prettier; Vite `base: './'` under `/pulse/`).
+  eslint/prettier; Vite `base: './'` under `/aime/`).
 
 Explicitly open decisions (owner did not answer; do not invent):
 
@@ -140,9 +140,9 @@ Explicitly open decisions (owner did not answer; do not invent):
 Existing brand vocabulary and assets (evidence from site and product, not
 expanded beyond what exists):
 
-- Name: **Pulse**.
+- Name: **Aime**.
 - The beat/heartbeat metaphor is the core visual vocabulary: runs still
-  create beats internally (SQLite), and the ECG/pulse-line motif runs through
+  create beats internally (SQLite), and the ECG/aime-line motif runs through
   the marketing site (animated ECG strokes, status dots and costs). User-
   facing copy has shifted to workflows, goals and markdown reports —
   "beat" is no longer a user-visible concept in the CLI.
@@ -179,5 +179,5 @@ expanded beyond what exists):
 4. **Model freedom, named in the file.** Workflows choose the model per run
    and per step; the provider endpoint is the user's (any OpenAI-compatible
    URL + key).
-5. **Core is UI-agnostic.** `pulse-core` remains a pure library so other
+5. **Core is UI-agnostic.** `aime-core` remains a pure library so other
    runtimes can drive the same harness.

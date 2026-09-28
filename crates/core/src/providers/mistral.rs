@@ -30,7 +30,7 @@ impl Provider for Mistral {
             format!("{BASE_URL}/chat/completions"),
             vec![
                 ("Authorization", format!("Bearer {key}")),
-                ("User-Agent", "Pulse/1.0".into()),
+                ("User-Agent", "Aime/1.0".into()),
             ],
             base_body(req),
         )
@@ -42,7 +42,7 @@ impl Provider for Mistral {
             format!("{BASE_URL}/models"),
             vec![
                 ("Authorization", format!("Bearer {key}")),
-                ("User-Agent", "Pulse/1.0".into()),
+                ("User-Agent", "Aime/1.0".into()),
             ],
             self.name(),
             self.prefix(),

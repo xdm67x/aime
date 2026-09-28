@@ -3,9 +3,9 @@
 //! the full run (prompts, tool calls, streamed output, results) is written
 //! to a markdown report in the current directory.
 
-use pulse_core::harness::{TaggedEvent, TaskEvent};
-use pulse_core::workflows::{RunHooks, Workflow, WorkflowStep, WorkflowStepResult};
-use pulse_core::{beats, config, harness, projects, providers, workflows};
+use aime_core::harness::{TaggedEvent, TaskEvent};
+use aime_core::workflows::{RunHooks, Workflow, WorkflowStep, WorkflowStepResult};
+use aime_core::{beats, config, harness, projects, providers, workflows};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,16 +15,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Exit code returned when a run is interrupted with Ctrl-C.
 pub const CANCELLED: i32 = 130;
 
-/// Run `pulse <workflow>`: resolve the workflow, execute every step until
+/// Run `aime <workflow>`: resolve the workflow, execute every step until
 /// its goal is reached, write the markdown report next to the user and print
 /// live step progress. Unless `use_worktree` is false the run works in a
-/// fresh git worktree under `~/.pulse/worktrees` so the user's checkout
+/// fresh git worktree under `~/.aime/worktrees` so the user's checkout
 /// stays untouched. Returns the process exit code.
 pub async fn run_workflow(name_or_path: &str, use_worktree: bool) -> i32 {
     match run_inner(name_or_path, use_worktree).await {
         Ok(code) => code,
         Err(e) => {
-            pulse_core::log::error(format!("workflow run failed: {e}"));
+            aime_core::log::error(format!("workflow run failed: {e}"));
             eprintln!("Error: {e}");
             1
         }
@@ -46,7 +46,7 @@ async fn run_inner(name_or_path: &str, use_worktree: bool) -> Result<i32, String
     )?;
 
     // By default the run executes in a fresh git worktree branched off the
-    // current HEAD: `<run id>-<directory>` under ~/.pulse/worktrees, recorded
+    // current HEAD: `<run id>-<directory>` under ~/.aime/worktrees, recorded
     // on the beat so every tool runs there. Not a git repo → run in place;
     // a repo whose worktree cannot be created is a hard error (the run would
     // otherwise silently edit the user's checkout).
@@ -414,9 +414,9 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 
 /// Shown by every provider-needing CLI path when none is configured.
 pub const NO_PROVIDER: &str =
-    "No provider configured — set one first: pulse provider use <url|litellm|mistral|opencode|openrouter> <api_key>";
+    "No provider configured — set one first: aime provider use <url|litellm|mistral|opencode|openrouter> <api_key>";
 
-/// The provider configured with `pulse provider use`, or the error every
+/// The provider configured with `aime provider use`, or the error every
 /// provider-needing command shows.
 pub fn require_provider() -> Result<&'static dyn providers::Provider, String> {
     providers::configured_provider().ok_or(NO_PROVIDER.to_string())

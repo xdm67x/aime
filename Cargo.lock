@@ -15,6 +15,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "aime"
+version = "0.15.0"
+dependencies = [
+ "aime-core",
+ "clap",
+ "crossterm",
+ "tokio",
+]
+
+[[package]]
+name = "aime-core"
+version = "0.15.0"
+dependencies = [
+ "async-trait",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -752,30 +776,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "pulse"
-version = "0.15.0"
-dependencies = [
- "clap",
- "crossterm",
- "pulse-core",
- "tokio",
-]
-
-[[package]]
-name = "pulse-core"
-version = "0.15.0"
-dependencies = [
- "async-trait",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tokio",
 ]
 
 [[package]]

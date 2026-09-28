@@ -1,6 +1,6 @@
 //! Task harness on OpenRouter / OpenCode Go, driven from beats (sessions).
 //!
-//! Every prompt runs through a **workflow** (YAML in `~/.pulse/workflows/`)
+//! Every prompt runs through a **workflow** (YAML in `~/.aime/workflows/`)
 //! that names the model for each step — there are no global model slots and
 //! no tier routing. A plain prompt runs the `base` workflow; `/workflow
 //! {name}` picks a specific one. Each step's agentic loop offers the tools
@@ -643,14 +643,14 @@ async fn compact_session(beat_id: i64, on_event: RawEvent<'_>) -> Result<TaskRes
     // model source anymore.
     let wf = workflows::load(workflows::BASE).map_err(|_| {
         "No 'base' workflow — /compact summarizes with its model. Create it with: \
-         `pulse create base` (then set `model:`)."
+         `aime create base` (then set `model:`)."
             .to_string()
     })?;
     let model = wf
         .default_model()
         .ok_or_else(|| {
             "The base workflow has no model — set `model:` in \
-             ~/.pulse/workflows/base.yml (list ids with /models)."
+             ~/.aime/workflows/base.yml (list ids with /models)."
                 .to_string()
         })?
         .to_string();
@@ -980,7 +980,7 @@ async fn run_task_inner(
         if wf_name == workflows::BASE {
             format!(
                 "{e}\nPlain prompts run through the 'base' workflow — create it with: \
-                 pulse create base (then set `model:`), or invoke one explicitly \
+                 aime create base (then set `model:`), or invoke one explicitly \
                  with /workflow {{name}}."
             )
         } else {

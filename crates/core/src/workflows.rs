@@ -3,11 +3,11 @@
 //! reviewer's feedback until the model confirms the goal is reached (bounded
 //! by [`MAX_GOAL_ATTEMPTS`]).
 //!
-//! Workflows live as files the user points at — `pulse create <title>`
-//! writes a blank template into `./.pulse/workflows` (or `~/.pulse/workflows`
+//! Workflows live as files the user points at — `aime create <title>`
+//! writes a blank template into `./.aime/workflows` (or `~/.aime/workflows`
 //! with `--global`), and
-//! [`find`] resolves a workflow by name (`./.pulse/workflows` first, then the
-//! current directory, then `~/.pulse/workflows`) or by file path. Each step names the model that
+//! [`find`] resolves a workflow by name (`./.aime/workflows` first, then the
+//! current directory, then `~/.aime/workflows`) or by file path. Each step names the model that
 //! runs it (step-level `model:`, falling back to the workflow-level
 //! `model:`); a step with neither is an error. A step's prompt can
 //! reference the final result of an earlier step with a `{{steps.<name>}}`
@@ -24,7 +24,7 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 
 /// The workflow plain prompts run through. Created by
-/// `pulse create base`.
+/// `aime create base`.
 pub const BASE: &str = "base";
 
 /// How many times a step with a `goal:` runs at most (the first attempt plus
@@ -73,7 +73,7 @@ impl Workflow {
             .ok_or_else(|| {
                 format!(
                     "Workflow '{}' step '{}' has no model — set `model:` at the step or \
-                     workflow level in the workflow file (list ids with: pulse models)",
+                     workflow level in the workflow file (list ids with: aime models)",
                     self.name, step.name
                 )
             })
@@ -202,28 +202,28 @@ pub struct RunHooks<'a> {
     pub on_event: OnEvent<'a>,
 }
 
-/// The directory of "installed" (global) workflows: `~/.pulse/workflows`.
+/// The directory of "installed" (global) workflows: `~/.aime/workflows`.
 pub fn dir() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let dir = PathBuf::from(home).join(".pulse").join("workflows");
+    let dir = PathBuf::from(home).join(".aime").join("workflows");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
 
 /// The directory of local workflows for the current directory:
-/// `./.pulse/workflows` (created if missing).
+/// `./.aime/workflows` (created if missing).
 pub fn local_dir() -> Result<PathBuf, String> {
-    let dir = PathBuf::from(".").join(".pulse").join("workflows");
+    let dir = PathBuf::from(".").join(".aime").join("workflows");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
 
-/// `./.pulse/workflows` without creating it — for read-only lookups.
+/// `./.aime/workflows` without creating it — for read-only lookups.
 fn local_dir_opt() -> PathBuf {
-    PathBuf::from(".").join(".pulse").join("workflows")
+    PathBuf::from(".").join(".aime").join("workflows")
 }
 
-/// Load a single workflow by name from `~/.pulse/workflows` (looks for
+/// Load a single workflow by name from `~/.aime/workflows` (looks for
 /// `{name}.yml` then `{name}.yaml`). Use [`find`] for the full name/path
 /// lookup the CLI does.
 pub fn load(name: &str) -> Result<Workflow, String> {
@@ -263,7 +263,7 @@ pub fn discover_dir(dir: &Path) -> Vec<(Workflow, PathBuf)> {
     out
 }
 
-/// Scan `~/.pulse/workflows/*.yml` and `*.yaml`, parse each into a [`Workflow`].
+/// Scan `~/.aime/workflows/*.yml` and `*.yaml`, parse each into a [`Workflow`].
 pub fn discover() -> Result<Vec<Workflow>, String> {
     let dir = dir()?;
     let mut workflows = vec![];
@@ -284,8 +284,8 @@ pub fn load_file(path: &Path) -> Result<(Workflow, PathBuf), String> {
 
 /// Resolve a workflow by name or file path. A value with a path separator or
 /// a `.yml`/`.yaml` suffix is treated as a path; otherwise `{name}.yml` /
-/// `{name}.yaml` is looked up in `./.pulse/workflows` first, then the current
-/// directory, then in `~/.pulse/workflows`.
+/// `{name}.yaml` is looked up in `./.aime/workflows` first, then the current
+/// directory, then in `~/.aime/workflows`.
 pub fn find(name_or_path: &str) -> Result<(Workflow, PathBuf), String> {
     let s = name_or_path.trim();
     if s.is_empty() {
@@ -308,21 +308,21 @@ pub fn find(name_or_path: &str) -> Result<(Workflow, PathBuf), String> {
         }
     }
     Err(format!(
-        "Workflow '{s}' not found — looked for ./.pulse/workflows/{s}.yml, ./{s}.yml and ~/.pulse/workflows/{s}.yml"
+        "Workflow '{s}' not found — looked for ./.aime/workflows/{s}.yml, ./{s}.yml and ~/.aime/workflows/{s}.yml"
     ))
 }
 
-/// The blank workflow template written by `pulse create <title>` into
+/// The blank workflow template written by `aime create <title>` into
 /// the current directory. It parses as-is (that's the test), but needs a
 /// `model:` before it can run.
 pub fn template(name: &str) -> String {
     format!(
-        "# Pulse workflow — run it with: pulse {name}\n\
-         # Model ids: pulse models\n\
+        "# Aime workflow — run it with: aime {name}\n\
+         # Model ids: aime models\n\
          \n\
          name: {name}\n\
          description: # what this workflow does\n\
-         model: # required — a model id from `pulse models`\n\
+         model: # required — a model id from `aime models`\n\
          \n\
          steps:\n\
          \x20 - name: step-1\n\
@@ -338,7 +338,7 @@ pub fn template(name: &str) -> String {
     )
 }
 
-/// Write a single-step workflow file (`{name}.yml`) into `~/.pulse/workflows`.
+/// Write a single-step workflow file (`{name}.yml`) into `~/.aime/workflows`.
 /// Returns the file's path.
 pub fn create(
     name: &str,
@@ -930,7 +930,7 @@ steps:
     #[test]
     fn test_discover_empty_dir() {
         // discover() creates the dir if missing and returns empty when no files exist.
-        // The ~/.pulse/workflows dir may have files from other tests; just check it
+        // The ~/.aime/workflows dir may have files from other tests; just check it
         // doesn't panic and returns a vec.
         let result = discover();
         assert!(result.is_ok());

@@ -35,8 +35,8 @@ impl Provider for OpenRouter {
             format!("{BASE_URL}/chat/completions"),
             vec![
                 ("Authorization", format!("Bearer {key}")),
-                ("HTTP-Referer", "https://pulse.dev".into()),
-                ("X-Title", "Pulse".into()),
+                ("HTTP-Referer", "https://aime.dev".into()),
+                ("X-Title", "Aime".into()),
             ],
             body,
         )

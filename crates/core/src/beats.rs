@@ -86,7 +86,7 @@ pub fn create_beat(name: &str, description: &str, project_id: Option<i64>) -> Re
         None => None,
     };
     // a beat born from a project gets its own git worktree under
-    // ~/.pulse/worktrees; status is always reported (UI shows it) and a
+    // ~/.aime/worktrees; status is always reported (UI shows it) and a
     // failure never blocks the beat — it then just runs in the project dir
     let worktree_status = project_name
         .as_deref()

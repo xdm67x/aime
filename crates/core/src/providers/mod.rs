@@ -7,7 +7,7 @@
 //! Model ids handed around the app are prefixed with the provider's `prefix()`
 //! (e.g. `OpenRouter - anthropic/claude…`, `OpenCode - kimi-k3`) so the picker
 //! and saved config always show which provider a model routes to. Bare ids
-//! route to the provider set with `pulse provider use <url> <key>` when one
+//! route to the provider set with `aime provider use <url> <key>` when one
 //! is configured, else to OpenRouter.
 
 pub mod custom;
@@ -37,7 +37,7 @@ pub trait Provider: Send + Sync {
     fn key_setting(&self) -> &'static str;
     /// True when the provider is usable: its API key is set. Unconfigured
     /// providers are skipped when listing models, so configuring a single
-    /// provider (e.g. LiteLLM) is enough to run Pulse on it alone.
+    /// provider (e.g. LiteLLM) is enough to run Aime on it alone.
     fn configured(&self) -> bool {
         config::api_key(self.key_setting())
             .ok()
@@ -91,7 +91,7 @@ pub fn provider_by_name(name: &str) -> Option<&'static dyn Provider> {
 }
 
 /// Resolve a provider by its settings key (`key_setting`) — the names
-/// `pulse provider use` accepts: "openrouter", "opencode", "litellm",
+/// `aime provider use` accepts: "openrouter", "opencode", "litellm",
 /// "mistral", plus "custom" for the URL-configured provider.
 pub fn provider_by_key(key: &str) -> Option<&'static dyn Provider> {
     let k = key.trim().to_lowercase();
@@ -104,8 +104,8 @@ pub fn provider_by_key(key: &str) -> Option<&'static dyn Provider> {
         .find(|p| p.key_setting() == k)
 }
 
-/// The provider `pulse provider use` configured — the one bare model ids
-/// route to and `pulse models` lists. Configs made before the provider name
+/// The provider `aime provider use` configured — the one bare model ids
+/// route to and `aime models` lists. Configs made before the provider name
 /// was stored fall back to the Custom provider when a URL is set.
 pub fn configured_provider() -> Option<&'static dyn Provider> {
     if let Some(name) = config::provider_name().ok().flatten() {
@@ -136,7 +136,7 @@ pub async fn list_models_of(name: &str) -> Result<Vec<Model>, String> {
 
 /// Resolve a prefixed model id to its provider, stripping the prefix. Bare
 /// ids — the normal case for the workflow CLI — route to the provider
-/// configured with `pulse provider use`, so workflow files never need a
+/// configured with `aime provider use`, so workflow files never need a
 /// provider name before the model id; an explicit prefix still wins.
 /// Without a configured provider a bare id falls back to OpenRouter —
 /// unless OpenRouter is not configured and exactly one other provider is:
@@ -165,12 +165,12 @@ fn provider_for(model: &str) -> Result<(&'static dyn Provider, String), String> 
 /* ---- chat dispatch ---- */
 
 /// The error shown when a chat is routed to a provider whose key is missing.
-/// Names the exact command so the fix is one `pulse provider use` away.
+/// Names the exact command so the fix is one `aime provider use` away.
 fn missing_key_error(p: &dyn Provider) -> String {
     let hint = if p.key_setting() == "provider" {
-        "pulse provider use <url> <api_key>".to_string()
+        "aime provider use <url> <api_key>".to_string()
     } else {
-        format!("pulse provider use {} <api_key>", p.key_setting())
+        format!("aime provider use {} <api_key>", p.key_setting())
     };
     format!("No {} API key configured — set it with: {hint}", p.name())
 }
@@ -581,7 +581,7 @@ async fn fetch_models() -> Result<Vec<Model>, String> {
         }
     }
     if configured == 0 {
-        return Err("No provider configured — set one with: pulse provider use \
+        return Err("No provider configured — set one with: aime provider use \
              <url|litellm|mistral|opencode|openrouter> <api_key>"
             .into());
     }
@@ -664,7 +664,7 @@ mod tests {
     // and log tests) so configured()/provider_for() read an isolated DB.
     fn with_temp_home(f: impl FnOnce()) {
         let _g = crate::log::HOME_LOCK.lock().unwrap();
-        let tmp = std::env::temp_dir().join(format!("pulse-providers-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("aime-providers-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         std::env::set_var("HOME", &tmp);
@@ -714,7 +714,7 @@ mod tests {
     #[test]
     fn test_bare_id_routes_to_configured_provider() {
         with_temp_home(|| {
-            // `pulse provider use mistral <key>`: bare ids belong to Mistral
+            // `aime provider use mistral <key>`: bare ids belong to Mistral
             // even though another provider is configured too
             config::save_api_key("mistral", "sk-test").unwrap();
             config::save_provider_name("Mistral").unwrap();
@@ -747,7 +747,7 @@ mod tests {
         let msg = missing_key_error(providers()[0].as_ref());
         assert_eq!(
             msg,
-            "No OpenRouter API key configured — set it with: pulse provider use openrouter <api_key>"
+            "No OpenRouter API key configured — set it with: aime provider use openrouter <api_key>"
         );
     }
 
@@ -761,7 +761,7 @@ mod tests {
         let names = provider_names();
         assert!(names.contains(&"Mistral"));
         assert!(names.contains(&"LiteLLM"));
-        // settings-key lookup: the names `pulse provider use` accepts
+        // settings-key lookup: the names `aime provider use` accepts
         assert_eq!(provider_by_key("openrouter").unwrap().name(), "OpenRouter");
         assert_eq!(provider_by_key("OpenCode").unwrap().name(), "OpenCode Go");
         assert_eq!(provider_by_key("custom").unwrap().name(), "Custom");

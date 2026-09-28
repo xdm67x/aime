@@ -1,10 +1,10 @@
 //! Logging for the harness and every runtime built on it. Always writes to
-//! files under `~/.pulse/logs/` — never to stdout/stderr, which belong to the
+//! files under `~/.aime/logs/` — never to stdout/stderr, which belong to the
 //! calling app's UI: stray writes there corrupt terminal apps that render the
 //! screen themselves (the TUI only redraws changed cells, so foreign output
 //! smears the display until restart).
 //!
-//! One file per day (`pulse-YYYY-MM-DD.log`), so a day of logs is easy to
+//! One file per day (`aime-YYYY-MM-DD.log`), so a day of logs is easy to
 //! attach to a bug report and old days can be pruned. Every write is
 //! best-effort: a failing write never panics and never breaks the caller.
 
@@ -38,10 +38,10 @@ pub fn error(msg: impl std::fmt::Display) {
     write("ERROR", &msg.to_string());
 }
 
-/// The `~/.pulse/logs` directory, created on demand.
+/// The `~/.aime/logs` directory, created on demand.
 fn log_dir() -> Option<std::path::PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    let dir = std::path::Path::new(&home).join(".pulse").join("logs");
+    let dir = std::path::Path::new(&home).join(".aime").join("logs");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
@@ -56,7 +56,7 @@ fn write(level: &str, msg: &str) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let path = dir.join(format!("pulse-{}.log", date_string(now)));
+    let path = dir.join(format!("aime-{}.log", date_string(now)));
     let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -78,7 +78,7 @@ fn prune(dir: &std::path::Path) {
         .flatten()
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
-            (name.starts_with("pulse-") && name.ends_with(".log")).then_some(name)
+            (name.starts_with("aime-") && name.ends_with(".log")).then_some(name)
         })
         .collect();
     names.sort();
@@ -128,21 +128,21 @@ mod tests {
     #[test]
     fn test_write_and_prune() {
         let _g = HOME_LOCK.lock().unwrap();
-        let tmp = std::env::temp_dir().join(format!("pulse-log-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("aime-log-test-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
         std::env::set_var("HOME", &tmp);
 
         info("hello world");
         error("boom:\nmultiline");
-        let dir = tmp.join(".pulse").join("logs");
+        let dir = tmp.join(".aime").join("logs");
         let mut files: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .flatten()
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
-        files.retain(|n| n.starts_with("pulse-"));
+        files.retain(|n| n.starts_with("aime-"));
         assert_eq!(files.len(), 1);
-        assert!(files[0].starts_with("pulse-") && files[0].ends_with(".log"));
+        assert!(files[0].starts_with("aime-") && files[0].ends_with(".log"));
         let content = std::fs::read_to_string(dir.join(&files[0])).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 2);
@@ -152,7 +152,7 @@ mod tests {
 
         // prune: seed more daily files than the retention window keeps
         for i in 0..(RETAIN_FILES as i64 + 5) {
-            let name = format!("pulse-2000-01-{:02}.log", i + 1);
+            let name = format!("aime-2000-01-{:02}.log", i + 1);
             std::fs::write(dir.join(name), "x").unwrap();
         }
         info("again");
@@ -160,7 +160,7 @@ mod tests {
             .unwrap()
             .flatten()
             .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.starts_with("pulse-") && n.ends_with(".log"))
+            .filter(|n| n.starts_with("aime-") && n.ends_with(".log"))
             .collect();
         names.sort();
         assert_eq!(names.len(), RETAIN_FILES);

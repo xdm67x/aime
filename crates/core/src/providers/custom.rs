@@ -1,4 +1,4 @@
-//! The provider configured by `pulse provider use <url> <key>`: any
+//! The provider configured by `aime provider use <url> <key>`: any
 //! OpenAI-compatible endpoint (OpenAI, LiteLLM, Ollama's `/v1`, vLLM, …).
 //!
 //! Unlike the built-in providers there is nothing hardcoded — both the base

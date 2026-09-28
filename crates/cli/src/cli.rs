@@ -1,22 +1,22 @@
-//! CLI subcommands. Pulse is headless: workflows are yaml files (created in
-//! ./.pulse/workflows with `pulse create`, or globally in
-//! ~/.pulse/workflows with `pulse create --global`), run with `pulse run
-//! <workflow>` — or bare `pulse run`, which lists the workflows found in
-//! the current directory, ./.pulse/workflows and ~/.pulse/workflows and
-//! opens a picker — and with `pulse <workflow>`. The provider is configured with
-//! `pulse provider use <url|litellm|mistral|opencode|openrouter> <key>`
-//! (shown with `pulse provider`), `pulse models` lists what the provider
-//! offers, and `pulse update` installs a newer release when one exists. Any
-//! unknown subcommand is treated as a workflow name to run — `pulse research
+//! CLI subcommands. Aime is headless: workflows are yaml files (created in
+//! ./.aime/workflows with `aime create`, or globally in
+//! ~/.aime/workflows with `aime create --global`), run with `aime run
+//! <workflow>` — or bare `aime run`, which lists the workflows found in
+//! the current directory, ./.aime/workflows and ~/.aime/workflows and
+//! opens a picker — and with `aime <workflow>`. The provider is configured with
+//! `aime provider use <url|litellm|mistral|opencode|openrouter> <key>`
+//! (shown with `aime provider`), `aime models` lists what the provider
+//! offers, and `aime update` installs a newer release when one exists. Any
+//! unknown subcommand is treated as a workflow name to run — `aime research
 //! do X` runs the `research` workflow with "do X" as the message.
 
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
-    name = "pulse",
+    name = "aime",
     version,
-    about = "Run YAML workflows through an AI agent until each step's goal is reached.\n\nRuns work in a fresh git worktree by default (--no-worktree to disable).\nRun a workflow with: pulse run (interactive picker), pulse run <workflow>, or pulse <workflow>",
+    about = "Run YAML workflows through an AI agent until each step's goal is reached.\n\nRuns work in a fresh git worktree by default (--no-worktree to disable).\nRun a workflow with: aime run (interactive picker), aime run <workflow>, or aime <workflow>",
     arg_required_else_help = true
 )]
 pub struct Cli {
@@ -26,13 +26,13 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Create a blank workflow template: in ./.pulse/workflows, or in
-    /// ~/.pulse/workflows with --global
+    /// Create a blank workflow template: in ./.aime/workflows, or in
+    /// ~/.aime/workflows with --global
     Create {
         /// Workflow title — used as the file name (`<slug>.yml`)
         title: String,
-        /// Save the workflow to ~/.pulse/workflows instead of
-        /// ./.pulse/workflows
+        /// Save the workflow to ~/.aime/workflows instead of
+        /// ./.aime/workflows
         #[arg(long)]
         global: bool,
     },
@@ -53,9 +53,9 @@ pub enum Command {
     /// Install the latest release when it is newer than this binary
     Update,
     /// Run a workflow. With a name or file path it runs directly; bare
-    /// `pulse run` lists the workflows found in the current directory,
-    /// ./.pulse/workflows and ~/.pulse/workflows and opens a picker.
-    /// Runs in a fresh git worktree under ~/.pulse/worktrees by default;
+    /// `aime run` lists the workflows found in the current directory,
+    /// ./.aime/workflows and ~/.aime/workflows and opens a picker.
+    /// Runs in a fresh git worktree under ~/.aime/worktrees by default;
     /// --no-worktree runs in the current directory instead
     Run {
         /// Workflow name or file path — omit to pick interactively
@@ -64,7 +64,7 @@ pub enum Command {
         #[arg(long)]
         no_worktree: bool,
     },
-    /// Run a workflow by name or file path — `pulse <workflow>`. Any other
+    /// Run a workflow by name or file path — `aime <workflow>`. Any other
     /// unknown subcommand lands here too
     #[command(external_subcommand)]
     External(Vec<String>),
@@ -102,7 +102,7 @@ impl Command {
     }
 }
 
-/// The parsed `pulse <workflow>` invocation.
+/// The parsed `aime <workflow>` invocation.
 #[derive(Debug)]
 pub struct RunArgs {
     pub workflow: String,
@@ -129,11 +129,11 @@ pub fn split_run_args(args: Vec<String>) -> Result<RunArgs, String> {
         } else {
             return Err(format!(
                 "Unexpected argument: '{a}' — the run command takes only a workflow \
-                 name: pulse <workflow> [--no-worktree]"
+                 name: aime <workflow> [--no-worktree]"
             ));
         }
     }
-    let workflow = workflow.ok_or("No workflow given — run one with: pulse <workflow>")?;
+    let workflow = workflow.ok_or("No workflow given — run one with: aime <workflow>")?;
     Ok(RunArgs {
         workflow,
         no_worktree,
@@ -148,7 +148,7 @@ pub async fn run(command: Command) -> Result<i32, String> {
         Command::Provider { action } => run_provider(action).await,
         Command::Models => run_models().await,
         Command::Version => {
-            println!("pulse {}", env!("CARGO_PKG_VERSION"));
+            println!("aime {}", env!("CARGO_PKG_VERSION"));
             Ok(0)
         }
         Command::Update => run_update().await,
@@ -167,13 +167,13 @@ pub async fn run(command: Command) -> Result<i32, String> {
     }
 }
 
-/// Bare `pulse run`: list the discovered workflows and open the picker;
+/// Bare `aime run`: list the discovered workflows and open the picker;
 /// the selection then runs like any named workflow.
 async fn run_pick(use_worktree: bool) -> Result<i32, String> {
     let all = crate::picker::discover_all()?;
     if all.is_empty() {
-        println!("No workflows found (current directory, ./.pulse/workflows + ~/.pulse/workflows)");
-        println!("Create one with: pulse create <title> [--global]");
+        println!("No workflows found (current directory, ./.aime/workflows + ~/.aime/workflows)");
+        println!("Create one with: aime create <title> [--global]");
         return Ok(0);
     }
     match crate::picker::pick(&all)? {
@@ -192,9 +192,9 @@ fn run_create(title: &str, global: bool) -> Result<i32, String> {
         return Err(format!("'{title}' is not a usable workflow name"));
     }
     let (dir, dir_label) = if global {
-        (pulse_core::workflows::dir()?, "~/.pulse/workflows")
+        (aime_core::workflows::dir()?, "~/.aime/workflows")
     } else {
-        (pulse_core::workflows::local_dir()?, "./.pulse/workflows")
+        (aime_core::workflows::local_dir()?, "./.aime/workflows")
     };
     let path = dir.join(format!("{name}.yml"));
     if path.is_file() {
@@ -203,16 +203,16 @@ fn run_create(title: &str, global: bool) -> Result<i32, String> {
             path.display()
         ));
     }
-    std::fs::write(&path, pulse_core::workflows::template(&name))
+    std::fs::write(&path, aime_core::workflows::template(&name))
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
-    pulse_core::log::info(format!("workflow created: {}", path.display()));
+    aime_core::log::info(format!("workflow created: {}", path.display()));
     println!("Created {} in {dir_label}", path.display());
-    println!("Set a `model:` in it (list ids with: pulse models), then run: pulse {name}");
+    println!("Set a `model:` in it (list ids with: aime models), then run: aime {name}");
     Ok(0)
 }
 
 fn run_edit(name: &str) -> Result<i32, String> {
-    let (_, path) = pulse_core::workflows::find(name)?;
+    let (_, path) = aime_core::workflows::find(name)?;
     open_editor(&path.to_string_lossy());
     Ok(0)
 }
@@ -220,7 +220,7 @@ fn run_edit(name: &str) -> Result<i32, String> {
 /* ---- provider ---- */
 
 async fn run_provider(action: Option<ProviderAction>) -> Result<i32, String> {
-    // `pulse provider` with no arguments: show what is configured.
+    // `aime provider` with no arguments: show what is configured.
     let Some(ProviderAction::Use {
         url_or_provider,
         api_key,
@@ -231,30 +231,30 @@ async fn run_provider(action: Option<ProviderAction>) -> Result<i32, String> {
             Err(_) => println!("no provider"),
         }
         println!(
-            "Set one with: pulse provider use \
+            "Set one with: aime provider use \
              <url|litellm|mistral|opencode|openrouter> <api_key>"
         );
         return Ok(0);
     };
-    let name = match pulse_core::config::parse_provider_target(&url_or_provider)? {
-        pulse_core::config::ProviderTarget::Known(key) => {
-            let p = pulse_core::providers::provider_by_key(key)
+    let name = match aime_core::config::parse_provider_target(&url_or_provider)? {
+        aime_core::config::ProviderTarget::Known(key) => {
+            let p = aime_core::providers::provider_by_key(key)
                 .ok_or_else(|| format!("Unknown provider: {key}"))?;
-            pulse_core::config::save_api_key(key, &api_key)?;
-            pulse_core::config::save_provider_name(p.name())?;
+            aime_core::config::save_api_key(key, &api_key)?;
+            aime_core::config::save_provider_name(p.name())?;
             println!("Provider saved: {}", p.name());
             p.name().to_string()
         }
-        pulse_core::config::ProviderTarget::Url(url) => {
-            pulse_core::config::save_provider(&url, &api_key)?;
+        aime_core::config::ProviderTarget::Url(url) => {
+            aime_core::config::save_provider(&url, &api_key)?;
             println!("Provider saved: {url}");
             "Custom".into()
         }
     };
     // verify the configuration by asking the endpoint for its models
-    match pulse_core::providers::list_models_of(&name).await {
+    match aime_core::providers::list_models_of(&name).await {
         Ok(models) => println!(
-            "Provider reachable — {} model(s) available (list them: pulse models)",
+            "Provider reachable — {} model(s) available (list them: aime models)",
             models.len()
         ),
         Err(e) => {
@@ -269,7 +269,7 @@ async fn run_provider(action: Option<ProviderAction>) -> Result<i32, String> {
 async fn run_models() -> Result<i32, String> {
     let p = crate::run::require_provider()?;
     let label = crate::run::provider_label()?;
-    let models = pulse_core::providers::list_models_of(p.name())
+    let models = aime_core::providers::list_models_of(p.name())
         .await
         .map_err(|e| format!("{e} (provider: {label})"))?;
     if models.is_empty() {
@@ -304,18 +304,18 @@ async fn run_models() -> Result<i32, String> {
 
 async fn run_update() -> Result<i32, String> {
     let current = env!("CARGO_PKG_VERSION");
-    let release = pulse_core::update::check(current)
+    let release = aime_core::update::check(current)
         .await
         .map_err(|e| format!("Update check failed: {e}"))?;
     let Some(release) = release else {
-        println!("pulse {current} is up to date");
+        println!("aime {current} is up to date");
         return Ok(0);
     };
     println!("New release: {} (installed: v{current})", release.tag);
-    let tag = pulse_core::update::apply(&release)
+    let tag = aime_core::update::apply(&release)
         .await
         .map_err(|e| format!("Update failed: {e}"))?;
-    println!("Updated to {tag} — restart pulse to run the new version.");
+    println!("Updated to {tag} — restart aime to run the new version.");
     Ok(0)
 }
 

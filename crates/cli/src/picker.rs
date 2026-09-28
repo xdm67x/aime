@@ -1,9 +1,10 @@
-//! The `pulse run` workflow picker: a one-screen TUI (crossterm only — no
+//! The `aime run` workflow picker: a one-screen TUI (crossterm only — no
 //! ratatui, to keep the binary lean) that lists the workflows discovered in
-//! the current directory, ./.pulse/workflows and ~/.pulse/workflows. Type to
+//! the current directory, ./.aime/workflows and ~/.aime/workflows. Type to
 //! filter, move with the arrows, Enter runs the selection, Esc cancels. UI
-//! code lives in the binary: pulse-core stays UI-agnostic.
+//! code lives in the binary: aime-core stays UI-agnostic.
 
+use aime_core::workflows::{self, Workflow};
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -11,7 +12,6 @@ use crossterm::{
     style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use pulse_core::workflows::{self, Workflow};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -49,12 +49,12 @@ impl Entry {
 }
 
 /// Discover every workflow the picker offers: the current directory,
-/// ./.pulse/workflows, then ~/.pulse/workflows.
+/// ./.aime/workflows, then ~/.aime/workflows.
 pub fn discover_all() -> Result<Vec<Entry>, String> {
     let mut out = vec![];
     for dir in [
         Path::new(".").to_path_buf(),
-        Path::new("./.pulse/workflows").to_path_buf(),
+        Path::new("./.aime/workflows").to_path_buf(),
         workflows::dir()?,
     ] {
         for (wf, path) in workflows::discover_dir(&dir) {
@@ -278,7 +278,9 @@ pub fn pick(all: &[Entry]) -> Result<Pick, String> {
     }
     let mut out = io::stdout();
     let _tui = Tui::enter().map_err(|e| {
-        format!("Failed to open the picker ({e}); run a workflow directly instead: pulse run <workflow>")
+        format!(
+            "Failed to open the picker ({e}); run a workflow directly instead: aime run <workflow>"
+        )
     })?;
     let mut st = State::new();
     loop {

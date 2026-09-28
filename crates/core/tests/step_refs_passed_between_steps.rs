@@ -4,7 +4,7 @@
 //! replies and captures the request bodies, so the test asserts the second
 //! step's prompt literally contains the first step's answer.
 
-use pulse_core::{beats, db, projects, workflows};
+use aime_core::{beats, db, projects, workflows};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::TcpListener;

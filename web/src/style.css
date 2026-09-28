@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------ */
-/* Pulse: the operator's manual                                        */
+/* Aime: the operator's manual                                        */
 /*                                                                     */
 /* Light technical paper, near-black ink, one safety-orange signal.    */
 /* Sharp corners, hairlines that organize, mono for everything the     */
@@ -102,6 +102,29 @@ a {
     gap: clamp(28px, 4.5vw, 64px);
     align-items: center;
     padding-block: clamp(48px, 8vh, 96px) clamp(56px, 9vh, 110px);
+}
+.hero-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 26px;
+}
+.brand-mark {
+    width: 20px;
+    height: 20px;
+    color: var(--signal);
+    flex: none;
+}
+.brand-name {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+.brand-def {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-2);
 }
 .hero-title {
     font-size: var(--font-hero);
@@ -681,11 +704,9 @@ a {
     text-align: center;
 }
 .close-mark {
-    width: 140px;
-    height: 38px;
-    fill: none;
-    stroke: var(--signal);
-    stroke-width: 10px;
+    width: 76px;
+    height: 76px;
+    color: var(--signal);
     margin-bottom: 26px;
 }
 .close h2 {

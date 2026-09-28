@@ -34,8 +34,8 @@ impl Provider for OpenCode {
                 // session id per conversation for routing/prompt caching.
                 // (Session id is per-app-run; per-beat ids if routing quality
                 // matters.)
-                ("User-Agent", "Pulse/1.0".into()),
-                ("x-opencode-session", "pulse-default".into()),
+                ("User-Agent", "Aime/1.0".into()),
+                ("x-opencode-session", "aime-default".into()),
             ],
             base_body(req),
         )
@@ -45,7 +45,7 @@ impl Provider for OpenCode {
         // /models is public — no key needed to list, only to run
         fetch_model_list(
             format!("{BASE_URL}/models"),
-            vec![("User-Agent", "Pulse/1.0".into())],
+            vec![("User-Agent", "Aime/1.0".into())],
             self.name(),
             self.prefix(),
         )

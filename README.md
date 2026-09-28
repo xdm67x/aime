@@ -1,8 +1,8 @@
-# Pulse
+# Aime
 
-Pulse is a headless workflow runner (plus a marketing website). You write a
+Aime is a headless workflow runner (plus a marketing website). You write a
 **workflow** — a YAML file that names the model, the steps, and each step's
-optional `goal:` — and `pulse <workflow>` executes the steps through an
+optional `goal:` — and `aime <workflow>` executes the steps through an
 agentic tool loop (`read_file`, `write_file`, `edit_file`, `grep`, `bash`,
 plus discovered skills) until each goal is reached. The terminal shows which
 step is running; everything the run produces — prompts, tool calls, streamed
@@ -11,30 +11,30 @@ in the directory where you launched it.
 
 The project is a Rust workspace with the crates under `crates/`:
 
-- `crates/core/` (`pulse-core`) — the agent harness as a pure library (no UI
+- `crates/core/` (`aime-core`) — the agent harness as a pure library (no UI
   dependencies): providers (any OpenAI-compatible endpoint, plus OpenRouter,
   OpenCode, LiteLLM, Mistral), core tools, skill discovery, workflow + goal
   engine, prompt templates, SQLite persistence.
-- `crates/cli/` (`pulse`) — the CLI on top of `pulse-core`.
+- `crates/cli/` (`aime`) — the CLI on top of `aime-core`.
 - `web/` — the static marketing site (Vite + pnpm, deployed to GitHub Pages).
 
 Development is driven by [mise](https://mise.jdx.dev); the tool versions and
 tasks live in `mise.toml`.
 
-## Using Pulse
+## Using Aime
 
 ```sh
-pulse provider                        # the configured provider (or "no provider")
-pulse provider use <url> <api_key>   # any OpenAI-compatible endpoint
-pulse provider use openrouter <key>  # …or a known provider: litellm, mistral,
+aime provider                        # the configured provider (or "no provider")
+aime provider use <url> <api_key>   # any OpenAI-compatible endpoint
+aime provider use openrouter <key>  # …or a known provider: litellm, mistral,
                                       #    opencode, openrouter — key only
-pulse models                        # what the provider offers
-pulse create <title>               # blank template in ./.pulse/workflows
-pulse create <title> --global      # …or a global one in ~/.pulse/workflows
-pulse run                           # list workflows + pick one (TUI)
-pulse run <workflow>               # run a workflow directly
-pulse <workflow>                   # run it (by name or file path)
-pulse <workflow> --no-worktree     # run it directly in the current directory
+aime models                        # what the provider offers
+aime create <title>               # blank template in ./.aime/workflows
+aime create <title> --global      # …or a global one in ~/.aime/workflows
+aime run                           # list workflows + pick one (TUI)
+aime run <workflow>               # run a workflow directly
+aime <workflow>                   # run it (by name or file path)
+aime <workflow> --no-worktree     # run it directly in the current directory
 ```
 
 The provider is either a base URL pointing at an OpenAI-compatible API root
@@ -44,10 +44,10 @@ and `""` works for endpoints without auth — or the name of a provider whose
 host is built in (`litellm`, `mistral`, `opencode`, `openrouter`), where only
 the API key is needed. Models are named per workflow or per step with bare
 ids (`model: gpt-4o`) — no provider prefix, since the provider is already
-configured. Everything lives in the local database (`~/.pulse/pulse.db`),
+configured. Everything lives in the local database (`~/.aime/aime.db`),
 never in the repo.
 
-A workflow file (`./.pulse/workflows/<name>.yml`, or `~/.pulse/workflows/` for shared ones)
+A workflow file (`./.aime/workflows/<name>.yml`, or `~/.aime/workflows/` for shared ones)
 looks like this:
 
 ```yaml
@@ -72,7 +72,7 @@ before the step runs, so steps can build on each other (a reference to a
 step that doesn't run earlier is an error before anything executes).
 
 A run works in a **fresh git worktree** by default —
-`~/.pulse/worktrees/<run id>-<directory name>` on its own branch, so your
+`~/.aime/worktrees/<run id>-<directory name>` on its own branch, so your
 checkout is never touched mid-run — and lands its changes there for you to
 merge or discard. A non-repo directory runs in place; pass `--no-worktree`
 to work in the current directory directly. During a run the terminal shows
@@ -90,7 +90,7 @@ Requirements: [mise](https://mise.jdx.dev/getting-started.html) — nothing else
 mise install        # rust 1.98.1 + node 24 + pnpm 12.4.1
 mise run test       # cargo test
 mise run build      # cargo build
-mise run run        # cargo run -p pulse (the CLI)
+mise run run        # cargo run -p aime (the CLI)
 mise run lint       # web/ lint + format check
 mise run web-build  # build the static site
 mise run release-build  # release binary for aarch64-apple-darwin
@@ -98,13 +98,13 @@ mise run release-build  # release binary for aarch64-apple-darwin
 
 ## Updating
 
-`pulse update` checks GitHub releases and, when a newer version exists,
+`aime update` checks GitHub releases and, when a newer version exists,
 downloads the latest release asset and replaces the running binary in place
-(restart pulse afterwards to run the new version):
+(restart aime afterwards to run the new version):
 
 ```sh
-pulse version  # show the installed version
-pulse update   # update to the latest release when one is newer
+aime version  # show the installed version
+aime update   # update to the latest release when one is newer
 ```
 
 The repository is private, so the updater needs a token with read access to
@@ -114,15 +114,15 @@ the latter).
 ## Install (clients, macOS ARM only)
 
 Releases are built by CI on tag push and publish a single asset per version:
-`pulse-<tag>-aarch64-apple-darwin.tar.gz` containing the `pulse` binary. mise
-installs it from GitHub releases and puts `pulse` on your PATH.
+`aime-<tag>-aarch64-apple-darwin.tar.gz` containing the `aime` binary. mise
+installs it from GitHub releases and puts `aime` on your PATH.
 
 This repository is private, so clients need a GitHub token with read access to
 it (fine-grained token with **Contents: read** is enough):
 
 ```sh
 export MISE_GITHUB_TOKEN=<token with read access to the repo>
-mise use -g "github:xdm67x/pulse@latest"
+mise use -g "github:xdm67x/aime@latest"
 ```
 
 Each release publishes a single `aarch64-apple-darwin` asset, which mise
@@ -135,12 +135,12 @@ checked out:
 
 ```sh
 mise run release-build
-# binary at target/aarch64-apple-darwin/release/pulse
+# binary at target/aarch64-apple-darwin/release/aime
 ```
 
 ## Releasing
 
 Pushing a tag (`v*`) triggers `.github/workflows/release.yml`, which builds the
-`pulse` binary for `aarch64-apple-darwin` and attaches
-`pulse-<tag>-aarch64-apple-darwin.tar.gz` to the GitHub release — the exact
+`aime` binary for `aarch64-apple-darwin` and attaches
+`aime-<tag>-aarch64-apple-darwin.tar.gz` to the GitHub release — the exact
 asset the client install above consumes, so keep the naming in sync.

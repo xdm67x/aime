@@ -1,7 +1,7 @@
-//! Pulse core: the agent harness — provider dispatch, workflow-driven runs,
+//! Aime core: the agent harness — provider dispatch, workflow-driven runs,
 //! agentic tool loop, beats/projects persistence — with no UI dependencies.
 //!
-//! Consumed today by the `pulse` binary; designed to also back other
+//! Consumed today by the `aime` binary; designed to also back other
 //! runtimes. Live progress flows through a caller-supplied [`harness::OnEvent`]
 //! callback instead of a UI handle, so any runtime can drive it.
 

@@ -18,16 +18,16 @@ jobs:
           targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2.9.2
 
-      - run: cargo build --release --target aarch64-apple-darwin -p pulse
+      - run: cargo build --release --target aarch64-apple-darwin -p aime
 
       - name: Package
         run: |
-          tar -czf pulse-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz \
-            -C target/aarch64-apple-darwin/release pulse
+          tar -czf aime-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz \
+            -C target/aarch64-apple-darwin/release aime
 
       - uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
-          name: "Pulse ${{ github.ref_name }}"
+          name: "Aime ${{ github.ref_name }}"
           body: "See the assets to download this version and install."
-          files: pulse-*.tar.gz
+          files: aime-*.tar.gz

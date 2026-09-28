@@ -1,5 +1,5 @@
 {
-    "name": "pulse-web",
+    "name": "aime-web",
     "private": true,
     "packageManager": "pnpm@12.4.1",
     "scripts": {

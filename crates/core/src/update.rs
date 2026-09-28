@@ -1,5 +1,5 @@
 //! Self-update against GitHub releases. CI publishes one asset per release —
-//! `pulse-<tag>-aarch64-apple-darwin.tar.gz` containing the `pulse` binary —
+//! `aime-<tag>-aarch64-apple-darwin.tar.gz` containing the `aime` binary —
 //! so an update is: check the latest release, download its asset, and replace
 //! the running executable in place. The repository is private, so both the
 //! API call and the download need a token ([`token`]).
@@ -10,12 +10,12 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Repository whose releases are checked.
-const REPO: &str = "xdm67x/pulse";
+const REPO: &str = "xdm67x/aime";
 
 /// Release asset name, kept in sync with `.github/workflows/release.yml` and
 /// the mise install docs.
 fn asset_name(tag: &str) -> String {
-    format!("pulse-{tag}-aarch64-apple-darwin.tar.gz")
+    format!("aime-{tag}-aarch64-apple-darwin.tar.gz")
 }
 
 #[derive(Deserialize)]
@@ -72,7 +72,7 @@ pub async fn latest_release() -> Result<Option<Release>, String> {
     let resp = client(Duration::from_secs(30))?
         .get(url)
         .header("Authorization", format!("Bearer {token}"))
-        .header("User-Agent", "pulse")
+        .header("User-Agent", "aime")
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -139,7 +139,7 @@ pub async fn check(current: &str) -> Result<Option<Release>, String> {
     Ok(is_newer(current, &release.tag).then_some(release))
 }
 
-/// Download the release asset, extract the `pulse` binary, and replace the
+/// Download the release asset, extract the `aime` binary, and replace the
 /// running executable in place. Returns the installed tag.
 pub async fn apply(release: &Release) -> Result<String, String> {
     let bytes = download_asset(&release.asset_url).await?;
@@ -164,7 +164,7 @@ async fn download_asset(url: &str) -> Result<Vec<u8>, String> {
     let resp = client(Duration::from_secs(300))?
         .get(url)
         .header("Authorization", format!("Bearer {token}"))
-        .header("User-Agent", "pulse")
+        .header("User-Agent", "aime")
         .send()
         .await
         .map_err(|e| format!("Failed to download the release: {e}"))?;
@@ -180,14 +180,14 @@ async fn download_asset(url: &str) -> Result<Vec<u8>, String> {
 
 fn downloads_dir() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
-    let dir = Path::new(&home).join(".pulse").join("downloads");
+    let dir = Path::new(&home).join(".aime").join("downloads");
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
     Ok(dir)
 }
 
 /// Unpack the release tarball with the system `tar` (the app already shells
-/// out to `gh` and `$EDITOR` elsewhere) and return the path of the `pulse`
+/// out to `gh` and `$EDITOR` elsewhere) and return the path of the `aime`
 /// binary inside it.
 fn extract_binary(archive: &Path, dir: &Path) -> Result<PathBuf, String> {
     let output = std::process::Command::new("tar")
@@ -203,11 +203,11 @@ fn extract_binary(archive: &Path, dir: &Path) -> Result<PathBuf, String> {
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    let binary = dir.join("pulse");
+    let binary = dir.join("aime");
     binary
         .is_file()
         .then_some(binary)
-        .ok_or_else(|| "Archive does not contain a `pulse` binary".to_string())
+        .ok_or_else(|| "Archive does not contain a `aime` binary".to_string())
 }
 
 /// Replace the running executable with the downloaded binary.
@@ -248,7 +248,7 @@ fn set_executable(path: &Path) -> Result<(), String> {
 pub async fn startup_notice(current: &str) -> Option<String> {
     match check(current).await {
         Ok(Some(release)) => Some(format!(
-            "→ pulse {} available — run `pulse update` to update",
+            "→ aime {} available — run `aime update` to update",
             release.tag
         )),
         Ok(None) => None,
@@ -267,7 +267,7 @@ mod tests {
     fn test_asset_name() {
         assert_eq!(
             asset_name("v0.9.0"),
-            "pulse-v0.9.0-aarch64-apple-darwin.tar.gz"
+            "aime-v0.9.0-aarch64-apple-darwin.tar.gz"
         );
     }
 
@@ -291,24 +291,24 @@ mod tests {
 
     #[test]
     fn test_extract_binary() {
-        let tmp = std::env::temp_dir().join(format!("pulse-update-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("aime-update-test-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
-        let src = tmp.join("pulse");
+        let src = tmp.join("aime");
         std::fs::write(&src, b"fake binary").unwrap();
-        let archive = tmp.join("pulse-v9.9.9-aarch64-apple-darwin.tar.gz");
+        let archive = tmp.join("aime-v9.9.9-aarch64-apple-darwin.tar.gz");
         let status = std::process::Command::new("tar")
             .arg("-czf")
             .arg(&archive)
             .arg("-C")
             .arg(&tmp)
-            .arg("pulse")
+            .arg("aime")
             .status()
             .unwrap();
         assert!(status.success());
         let out = tmp.join("out");
         std::fs::create_dir_all(&out).unwrap();
         let binary = extract_binary(&archive, &out).unwrap();
-        assert_eq!(binary, out.join("pulse"));
+        assert_eq!(binary, out.join("aime"));
         assert_eq!(std::fs::read(&binary).unwrap(), b"fake binary");
         std::fs::remove_dir_all(&tmp).unwrap();
     }
@@ -316,15 +316,15 @@ mod tests {
     #[test]
     fn test_replace_at_swaps_atomically_and_cleans_up() {
         use std::os::unix::fs::PermissionsExt;
-        let tmp = std::env::temp_dir().join(format!("pulse-replace-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("aime-replace-test-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
-        let exe = tmp.join("pulse");
+        let exe = tmp.join("aime");
         let incoming = tmp.join("incoming");
         std::fs::write(&exe, b"old").unwrap();
         std::fs::write(&incoming, b"new").unwrap();
         replace_at(&incoming, &exe).unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"new");
-        assert!(!exe.with_file_name("pulse.new").exists());
+        assert!(!exe.with_file_name("aime.new").exists());
         let mode = std::fs::metadata(&exe).unwrap().permissions().mode();
         assert_eq!(mode & 0o111, 0o111);
         std::fs::remove_dir_all(&tmp).unwrap();
