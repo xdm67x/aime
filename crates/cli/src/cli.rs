@@ -334,18 +334,15 @@ mod tests {
 
     #[test]
     fn test_split_run_args() {
-        // bare run
         let a = run(&["ship"]).unwrap();
         assert_eq!(a.workflow, "ship");
         assert!(!a.no_worktree);
-        // the flag in any position
         let a = run(&["ship", "--no-worktree"]).unwrap();
         assert_eq!(a.workflow, "ship");
         assert!(a.no_worktree);
         let a = run(&["--no-worktree", "./flows/ship.yml"]).unwrap();
         assert_eq!(a.workflow, "./flows/ship.yml");
         assert!(a.no_worktree);
-        // the run command takes only a workflow name
         assert!(run(&["ship", "fix", "it"])
             .unwrap_err()
             .contains("takes only a workflow"));
@@ -355,7 +352,6 @@ mod tests {
         assert!(run(&["ship", "--"])
             .unwrap_err()
             .contains("Unknown flag: --"));
-        // no workflow at all
         assert!(run(&["--no-worktree"]).is_err());
     }
 }

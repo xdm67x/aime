@@ -222,9 +222,9 @@ async fn usage_cost(model_id: &str, prompt: i64, completion: i64) -> f64 {
     models.iter().find(|m| m.id == model_id).map_or(0.0, |m| {
         let p: f64 = m.pricing.prompt.parse().unwrap_or(0.0);
         let c: f64 = m.pricing.completion.parse().unwrap_or(0.0);
-        // ponytail: Go prices differ per model but its /models list carries
-        // no pricing, so usage against go/ models is recorded at $0 until
-        // OpenCode exposes pricing; limits are per-subscription anyway
+        // Go prices differ per model but its /models list carries no pricing,
+        // so usage against go/ models is recorded at $0 until OpenCode exposes
+        // pricing; limits are per-subscription anyway
         p * prompt as f64 + c * completion as f64
     })
 }

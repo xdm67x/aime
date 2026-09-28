@@ -468,9 +468,8 @@ mod tests {
     #[test]
     fn test_timestamp() {
         assert_eq!(timestamp_from(0), "19700101-000000");
-        // 2024-02-29T00:00:00Z — leap day
+        // leap day
         assert_eq!(timestamp_from(1_709_164_800), "20240229-000000");
-        // 2026-09-24T12:34:56Z
         assert_eq!(timestamp_from(1_790_253_296), "20260924-123456");
     }
 

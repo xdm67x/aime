@@ -32,8 +32,8 @@ impl Provider for OpenCode {
                 ("Authorization", format!("Bearer {key}")),
                 // Go asks clients to identify themselves and send a stable
                 // session id per conversation for routing/prompt caching.
-                // ponytail: session id is per-app-run; per-beat ids if routing
-                // quality matters
+                // (Session id is per-app-run; per-beat ids if routing quality
+                // matters.)
                 ("User-Agent", "Pulse/1.0".into()),
                 ("x-opencode-session", "pulse-default".into()),
             ],

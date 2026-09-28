@@ -8,7 +8,7 @@ name = "pulse"
 path = "src/main.rs"
 
 [dependencies]
-pulse-core = { path = "../pulse-core" }
+pulse-core = { path = "../core" }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "signal", "time"] }
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"

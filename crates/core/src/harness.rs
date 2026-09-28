@@ -21,8 +21,8 @@ use tokio::task_local;
 // Per-beat cancellation: stopping one beat must not touch other sessions
 // running at the same time. Each run scopes its beat id into a task-local so
 // providers keep calling `cancelled()` unchanged, without threading a token
-// through every call. // ponytail: shared vec + task-local id — revisit only
-// if cancel checks show up in profiles
+// through every call. (Shared vec + task-local id — revisit only if cancel
+// checks show up in profiles.)
 task_local! {
     static BEAT: i64;
 }
@@ -113,7 +113,7 @@ async fn summarize_history(
     if text.is_empty() {
         return Ok(String::new());
     }
-    // ponytail: cap to the last ~6000 chars — enough context, bounded tokens
+    // cap to the last ~6000 chars — enough context, bounded tokens
     let chars: Vec<char> = text.chars().collect();
     let tail: String = chars[chars.len().saturating_sub(6000)..].iter().collect();
     let r = chat_completion(

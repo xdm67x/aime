@@ -19,16 +19,23 @@ API key; `pulse provider` shows the current one.
 
 ## Layout
 
-- `pulse-core/` — the agent harness as a pure Rust library. **No UI
-  dependencies.** Consumed today by the `pulse` binary; designed to also
-  back other runtimes. Progress flows through a caller-supplied `harness::OnEvent`
+Rust workspace with the crates under `crates/` (package names stay
+`pulse-core` and `pulse` — the `-p` flags, `pulse_core::` imports, and the
+release asset naming are unchanged):
+
+- `crates/core/` (`pulse-core`) — the agent harness as a pure Rust library.
+  **No UI dependencies.** Consumed today by the `pulse` binary; designed to
+  also back other runtimes. Progress flows through a caller-supplied `harness::OnEvent`
   callback, so any runtime can drive it.
   - `harness.rs` — agentic loop, task events (`TaskEvent`, `TaggedEvent`),
     cancellation, `run_task` entry point (resolves the workflow — plain
     prompts run `base`, `/workflow {name}` picks one — and runs its steps).
-  - `providers/` — `Provider` trait with `custom` (the OpenAI-compatible
+  - `providers/` — `Provider` trait in `mod.rs` with the shared dispatch,
+    retry, streaming, and model-cache plumbing; wire types (chat
+    requests/results, model metadata) in `types.rs`; one file per backend:
+    `custom` (the OpenAI-compatible
     endpoint configured by `pulse provider use <url> <key>`), plus
-    `openrouter`, `opencode`, `litellm`, `mistral` implementations (any of
+    `openrouter`, `opencode`, `litellm`, `mistral` (any of
     which `pulse provider use <name> <key>` configures with a key alone);
     bare model ids route to the configured provider
     (`providers::configured_provider`); `chat_completion` /
@@ -64,7 +71,7 @@ API key; `pulse provider` shows the current one.
     (`{{ steps.<name> }}` is the same reference), and `Workflow::validate`
     rejects references that don't resolve before the run starts. `run_hooked` exposes progress
     hooks; `run` is the no-op-hooks wrapper.
-- `pulse/` — the CLI on top of `pulse-core` (plus a one-screen crossterm
+- `crates/cli/` (`pulse`) — the CLI on top of `pulse-core` (plus a one-screen crossterm
   picker TUI for `pulse run`; `pulse-core` stays UI-agnostic).
   - `src/main.rs` — entry point: clap dispatch + exit codes.
   - `src/cli.rs` — subcommands: `pulse create`, `pulse edit`, `pulse provider
@@ -97,7 +104,8 @@ API key; `pulse provider` shows the current one.
 
 ## Toolchains & commands
 
-- Rust workspace (`Cargo.toml`): members are `pulse-core` and `pulse`.
+- Rust workspace (`Cargo.toml`): members are `crates/core` (`pulse-core`)
+  and `crates/cli` (`pulse`).
 - JS: pnpm 12.4.1, only for `web/` (which has its own workspace + lockfile).
 - Frontend lint/format: **oxlint** and **oxfmt** (not eslint/prettier).
 
@@ -128,14 +136,14 @@ the naming in sync when changing it.
   pattern; don't introduce a custom error type piecemeal.
 - **Async**: core uses tokio (`rt`, `time`, `process`, `macros` features).
   Provider calls are async via `async_trait`.
-- **Prompts are compile-time**: edit files in `pulse-core/src/prompts/`, not
+- **Prompts are compile-time**: edit files in `crates/core/src/prompts/`, not
   strings in code. Keep `{{placeholder}}` names in sync with `prompts::fill`.
 - **DB migrations**: schema is created with `CREATE TABLE IF NOT EXISTS` in
   `db.rs::open()`. Add columns there; there is no migration framework.
 - **API keys** live in the local DB (`~/.pulse/pulse.db`), never in code or
   the repo. Valid providers are hardcoded in `config.rs`.
-- **Tests**: unit tests live inline in `pulse-core` modules plus an
-  integration test in `pulse-core/tests/`. Add tests alongside the code you
+- **Tests**: unit tests live inline in `pulse-core` modules plus
+  integration tests in `crates/core/tests/`. Add tests alongside the code you
   change; run `cargo test` before committing.
 - **Website**: keep `web` self-contained (own package.json/lockfile); don't
   share code between it and the Rust workspace.

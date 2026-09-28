@@ -9,13 +9,13 @@ step is running; everything the run produces — prompts, tool calls, streamed
 output, results — is written to a markdown report (`<workflow>-<timestamp>.md`)
 in the directory where you launched it.
 
-The project is a Rust workspace:
+The project is a Rust workspace with the crates under `crates/`:
 
-- `pulse-core/` — the agent harness as a pure library (no UI dependencies):
-  providers (any OpenAI-compatible endpoint, plus OpenRouter, OpenCode,
-  LiteLLM, Mistral), core tools, skill discovery, workflow + goal engine,
-  prompt templates, SQLite persistence.
-- `pulse/` — the CLI on top of `pulse-core`.
+- `crates/core/` (`pulse-core`) — the agent harness as a pure library (no UI
+  dependencies): providers (any OpenAI-compatible endpoint, plus OpenRouter,
+  OpenCode, LiteLLM, Mistral), core tools, skill discovery, workflow + goal
+  engine, prompt templates, SQLite persistence.
+- `crates/cli/` (`pulse`) — the CLI on top of `pulse-core`.
 - `web/` — the static marketing site (Vite + pnpm, deployed to GitHub Pages).
 
 Development is driven by [mise](https://mise.jdx.dev); the tool versions and

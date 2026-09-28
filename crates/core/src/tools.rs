@@ -301,7 +301,6 @@ fn run_grep(args: &serde_json::Value, cwd: Option<&str>) -> Result<String, Strin
         }
         _ => {}
     }
-    // Fallback: grep -rn
     let mut cmd = std::process::Command::new("grep");
     cmd.arg("-rn").arg("--color=never");
     if let Some(g) = glob {
@@ -405,18 +404,15 @@ mod tests {
         let _ = std::fs::create_dir_all(&tmp);
         let file = tmp.join("test.txt");
 
-        // write
         write_file(
             &json!({"path": file.to_str().unwrap(), "content": "hello world"}),
             None,
         )
         .unwrap();
 
-        // read
         let content = read_file(&json!({"path": file.to_str().unwrap()}), None).unwrap();
         assert_eq!(content, "hello world");
 
-        // edit
         edit_file(
             &json!({
                 "path": file.to_str().unwrap(),
@@ -429,7 +425,6 @@ mod tests {
         let content = read_file(&json!({"path": file.to_str().unwrap()}), None).unwrap();
         assert_eq!(content, "goodbye world");
 
-        // edit: not found
         let err = edit_file(
             &json!({
                 "path": file.to_str().unwrap(),
@@ -454,7 +449,6 @@ mod tests {
         )
         .unwrap();
 
-        // read with offset/limit
         let content = read_file(
             &json!({"path": file.to_str().unwrap(), "offset": 2, "limit": 2}),
             None,
@@ -462,10 +456,8 @@ mod tests {
         .unwrap();
         assert_eq!(content, "b\nc");
 
-        // read: offset past EOF errors
         assert!(read_file(&json!({"path": file.to_str().unwrap(), "offset": 99}), None).is_err());
 
-        // edit: single line replace
         edit_file(
             &json!({"path": file.to_str().unwrap(), "start_line": 3, "new_string": "C!"}),
             None,
@@ -474,7 +466,6 @@ mod tests {
         let content = read_file(&json!({"path": file.to_str().unwrap()}), None).unwrap();
         assert_eq!(content, "a\nb\nC!\nd\ne\n");
 
-        // edit: range replace with fewer lines
         edit_file(
             &json!({"path": file.to_str().unwrap(), "start_line": 4, "end_line": 5, "new_string": "x\ny\nz"}),
             None,
@@ -483,7 +474,6 @@ mod tests {
         let content = read_file(&json!({"path": file.to_str().unwrap()}), None).unwrap();
         assert_eq!(content, "a\nb\nC!\nx\ny\nz\n");
 
-        // edit: end_line before start_line errors
         let err = edit_file(
             &json!({"path": file.to_str().unwrap(), "start_line": 5, "end_line": 2, "new_string": "q"}),
             None,
@@ -495,7 +485,6 @@ mod tests {
 
     #[test]
     fn test_resolve() {
-        // absolute paths pass through, relative ones join the cwd
         assert_eq!(resolve("/tmp/x", Some("/proj")), "/tmp/x");
         assert_eq!(resolve("src/main.rs", Some("/proj")), "/proj/src/main.rs");
         assert_eq!(resolve("src/main.rs", None), "src/main.rs");

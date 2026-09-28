@@ -840,7 +840,6 @@ steps:
         assert!(wf.model.is_none());
         assert_eq!(wf.steps.len(), 1);
         assert!(wf.steps[0].model.is_none());
-        // no model anywhere: both resolvers refuse
         assert!(wf.step_model(&wf.steps[0]).is_err());
         assert!(wf.default_model().is_none());
     }
@@ -895,22 +894,17 @@ steps:
 
     #[test]
     fn test_parse_goal_verdict() {
-        // plain JSON
         assert_eq!(
             parse_goal_verdict(r#"{"achieved": false, "reason": "tests still fail"}"#),
             Some((false, "tests still fail".into()))
         );
-        // fenced / prose-wrapped
         let fenced = "Here you go:\n```json\n{\"achieved\": true, \"reason\": \"all good\"}\n```\n";
         assert_eq!(parse_goal_verdict(fenced), Some((true, "all good".into())));
-        // missing reason is fine
         assert_eq!(
             parse_goal_verdict(r#"{"achieved": true}"#),
             Some((true, "".into()))
         );
-        // not JSON at all
         assert_eq!(parse_goal_verdict("looks done to me"), None);
-        // achieved not a boolean
         assert_eq!(parse_goal_verdict(r#"{"achieved": "yes"}"#), None);
     }
 
@@ -927,7 +921,6 @@ steps:
         let (wf, found) = find(path.to_str().unwrap()).unwrap();
         assert_eq!(wf.name, "found");
         assert_eq!(found, path);
-        // a .yml path that doesn't exist
         let missing = dir.path().join("nope.yml");
         assert!(find(missing.to_str().unwrap())
             .unwrap_err()
@@ -980,7 +973,6 @@ steps:
         );
         assert_eq!(wf.steps.len(), 1);
         assert_eq!(wf.steps[0].prompt.trim(), "{{prompt}}");
-        // discover() picks it up
         assert!(discover().unwrap().iter().any(|w| w.name == BASE));
     }
 }

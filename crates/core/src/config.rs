@@ -40,7 +40,6 @@ mod tests {
 
     #[test]
     fn test_parse_provider_target() {
-        // known provider names, case-insensitive → key only
         for name in KNOWN_PROVIDERS {
             assert_eq!(
                 parse_provider_target(name).unwrap(),
@@ -51,12 +50,10 @@ mod tests {
             parse_provider_target("OpenRouter").unwrap(),
             ProviderTarget::Known("openrouter")
         );
-        // a URL → the custom provider
         assert_eq!(
             parse_provider_target("https://api.openai.com/v1").unwrap(),
             ProviderTarget::Url("https://api.openai.com/v1".into())
         );
-        // anything else is an error naming the valid forms
         let err = parse_provider_target("grok").unwrap_err();
         assert!(err.contains("Unknown provider: grok"));
         assert!(err.contains("litellm, mistral, opencode, openrouter"));

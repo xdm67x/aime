@@ -111,7 +111,7 @@ Technical constraints (durable, from repo conventions):
 - `pulse-core` stays UI-agnostic (no UI dependencies); `pulse` only adds CLI,
   terminal views, and input handling.
 - Errors are `Result<_, String>` throughout core; no custom error type.
-- Prompts are compile-time templates in `pulse-core/src/prompts/` with
+- Prompts are compile-time templates in `crates/core/src/prompts/` with
   `{{placeholder}}` names kept in sync with `prompts::fill`.
 - Schema via `CREATE TABLE IF NOT EXISTS` in `db.rs::open()`; no migration
   framework.

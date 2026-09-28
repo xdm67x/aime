@@ -355,16 +355,13 @@ mod tests {
         assert_eq!(st.visible(&all).len(), 2);
         st.down(&all);
         assert_eq!(st.cursor, 1);
-        // any filter edit resets the cursor
         st.push_filter('s');
         assert_eq!(st.cursor, 0);
         let vis = st.visible(&all);
         assert_eq!(vis.len(), 1);
         assert_eq!(vis[0].name, "ship");
-        // backspace restores the full list
         st.pop_filter();
         assert_eq!(st.visible(&all).len(), 2);
-        // no match → empty, Enter is a no-op, down clamps to 0
         st.push_filter('z');
         assert!(st.visible(&all).is_empty());
         st.down(&all);
