@@ -8,8 +8,8 @@
 
 [tools]
 rust = "1.98.1"
-node = "24"
-pnpm = "12.4.1"
+node = "26"
+pnpm = "12.6.0"
 
 [tasks.test]
 description = "Run all workspace tests"
