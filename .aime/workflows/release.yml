@@ -1,6 +1,7 @@
 # Aime workflow — run it with: aime release
 # Bumps the workspace version, writes release notes into CHANGELOG.md,
-# and commits everything as one release commit.
+# commits everything as one release commit, and tags that commit
+# with v<version>.
 #
 # NOTE: a plain `aime release` starts from HEAD in a fresh worktree, so the
 # commit would land on the throwaway worktree branch instead of your
@@ -48,8 +49,10 @@ steps:
       Cargo.toml and Cargo.lock both carry the new version, CHANGELOG.md has
       a dated section for it at the top whose every entry traces to a real
       commit, the single commit `chore(release): bump version to <version>`
-      contains only those three files, and the working tree is clean
-      afterwards — verified with git status, not assumed.
+      contains only those three files, the working tree is clean afterwards
+      (verified with git status, not assumed), and the lightweight tag
+      `v<version>` exists and points at that exact release commit —
+      verified with `git rev-parse v<version>`, not assumed.
     prompt: |
       The next release has been decided:
 
@@ -78,10 +81,19 @@ steps:
          as: `chore(release): bump version to <version>`
          This matches how previous releases in this repo were committed.
          Stage those three explicitly; never `git add -A`.
+      5. Tag the release commit you just created — always, this is not
+         optional:
+         `git tag v<version> <commit-hash>`
+         (lightweight tag, no `-a`/`-m` — that is the convention in this
+         repo). Pin the hash explicitly so the tag lands on the release
+         commit, not on whatever HEAD happens to be. If a tag with that
+         name already exists, stop and report — do not move or overwrite
+         an existing tag.
 
       End your final message with:
-      - the version released and the commit hash (`git rev-parse --short HEAD`)
+      - the version released, the commit hash, and confirmation that
+        `git rev-parse v<version>` resolves to that same hash
       - what the release notes cover
-      - the human steps left: `git tag v<version> && git push origin main --tags`
+      - the human step left: `git push origin main --tags`
         (pushing the tag is what triggers the GitHub release build — leave
         that decision to the human).

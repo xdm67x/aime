@@ -1,10 +1,11 @@
 # Aime workflow — run it with: aime review
 # Reviews code an LLM produced in this repo, fixes the confirmed issues,
-# and validates the result.
+# validates, commits the fixes, pushes, and — when the work is not on
+# main — opens a PR describing the issues found and the fixes.
 #
-# NOTE: a plain `aime review` starts from HEAD in a fresh worktree, so it
-# won't see uncommitted changes in your checkout. To review work that is
-# sitting uncommitted in this directory, run: aime review --no-worktree
+# NOTE: a plain `aime review` starts from HEAD in a fresh worktree (on its
+# own branch — a PR is opened for it). To review work that is sitting
+# uncommitted in this directory, run: aime review --no-worktree
 # Model ids: aime models
 
 name: review
@@ -83,7 +84,11 @@ steps:
       Every critical and high finding is either fixed at the root cause or
       explicitly deferred with a reason a human can evaluate, and the
       project's checks (cargo test, plus the web lint/format checks when
-      web/ changed) pass — you ran them and saw them pass.
+      web/ changed) pass — you ran them and saw them pass. The fixes are
+      committed (only the files you edited, a Conventional Commits message)
+      and the branch is pushed; when the branch is not main, a PR exists
+      whose body lists the issues found and the fixes — its URL is in your
+      final message.
     prompt: |
       A review of the LLM-generated changes in this repo found these issues:
 
@@ -102,10 +107,31 @@ steps:
          `pnpm --dir web format:check`. If a check fails because of
          pre-existing breakage unrelated to the review, say so — do not
          fix unrelated bugs silently.
-      4. Leave the working tree as the deliverable: do not commit, do not
-         create branches.
+      4. Commit the fixes:
+         - stage ONLY the files you edited — never `git add -A`, and never
+           stage the aime run report (`review-*.md` at the repo root) or
+           anything else you did not change
+         - message per Conventional Commits (read CONTRIBUTING.md),
+           derived from what the findings were about, e.g.
+           `fix: <what the review fixed>` — one commit, no drive-by
+           changes smuggled in.
+      5. Push the branch: `git push -u origin HEAD`. If the push fails
+         (auth, no remote, rejected), say so plainly and stop there — do
+         not force-push, do not rewrite history.
+      6. Branch handling:
+         - on main (or master): the push above already delivered the fixes;
+           say so and do not open a PR.
+         - on any other branch: open a PR. Prefer `gh pr create` with a
+           title matching the commit and a body that lists the issues
+           found (from the review, with severity and path:line) and how
+           each was fixed or deferred. If `gh` is missing or fails,
+         report the compare URL instead:
+           `https://github.com/<owner>/<repo>/compare/<branch>?expand=1`
+           (derive owner/repo from `git remote get-url origin`).
 
       End your final message with:
       - one line per finding: fixed, or deferred — why
       - the validation commands you ran and their results
+      - the commit hash, the branch you pushed, and the PR URL
+        (or why there is no PR)
       - anything that needs a human decision.
