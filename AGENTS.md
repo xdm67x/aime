@@ -106,7 +106,7 @@ release asset naming are unchanged):
 
 - Rust workspace (`Cargo.toml`): members are `crates/core` (`aime-core`)
   and `crates/cli` (`aime`).
-- JS: pnpm 12.4.1, only for `web/` (which has its own workspace + lockfile).
+- JS: pnpm 12.6.0, only for `web/` (which has its own workspace + lockfile).
 - Frontend lint/format: **oxlint** and **oxfmt** (not eslint/prettier).
 
 ```sh
