@@ -60,8 +60,9 @@ API key; `pulse provider` shows the current one.
     runtime-supplied message (`harness::run_task`'s plain prompts use this;
     the workflow CLI passes none). `{{steps.<name>}}` placeholders in a
     step's prompt are filled with the named earlier step's final result,
-    linking steps; `Workflow::validate` rejects references that don't
-    resolve before the run starts. `run_hooked` exposes progress
+    linking steps; whitespace inside the braces is tolerated
+    (`{{ steps.<name> }}` is the same reference), and `Workflow::validate`
+    rejects references that don't resolve before the run starts. `run_hooked` exposes progress
     hooks; `run` is the no-op-hooks wrapper.
 - `pulse/` — the CLI on top of `pulse-core`. No TUI.
   - `src/main.rs` — entry point: clap dispatch + exit codes.

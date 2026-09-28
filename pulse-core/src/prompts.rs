@@ -23,29 +23,27 @@ pub const SYSTEM: &str = include_str!("prompts/system.md");
 /// Fill `{{key}}` placeholders in a prompt template with values.
 ///
 /// Scans the template once, left to right, so inserted values are never
-/// re-expanded even if they contain placeholder-like text. Unknown
-/// `{{...}}` markers are left in place, which keeps template typos visible
-/// in the final prompt instead of silently erasing them.
+/// re-expanded even if they contain placeholder-like text. Whitespace
+/// inside the braces is tolerated (`{{ key }}` fills like `{{key}}`).
+/// Unknown `{{...}}` markers are left in place, which keeps template typos
+/// visible in the final prompt instead of silently erasing them.
 pub fn fill(template: &str, vars: &[(&str, &str)]) -> String {
-    let tokens: Vec<(String, &str)> = vars
-        .iter()
-        .map(|(key, value)| {
-            let mut token = String::with_capacity(key.len() + 4);
-            token.push_str("{{");
-            token.push_str(key);
-            token.push_str("}}");
-            (token, *value)
-        })
-        .collect();
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
     'scan: while let Some(open) = rest.find("{{") {
-        for (token, value) in &tokens {
-            if rest[open..].starts_with(token.as_str()) {
-                out.push_str(&rest[..open]);
-                out.push_str(value);
-                rest = &rest[open + token.len()..];
-                continue 'scan;
+        let after = &rest[open + 2..];
+        let lead = after.len() - after.trim_start().len();
+        for (key, value) in vars {
+            // "{{key}}" or padded "{{ key }}" — nothing but whitespace may
+            // sit between the braces and the key (or the key and "}}")
+            if let Some(mid) = after[lead..].strip_prefix(key) {
+                let trail = mid.len() - mid.trim_start().len();
+                if mid[trail..].starts_with("}}") {
+                    out.push_str(&rest[..open]);
+                    out.push_str(value);
+                    rest = &mid[trail + 2..];
+                    continue 'scan;
+                }
             }
         }
         // no known placeholder starts here — keep the literal text
@@ -78,6 +76,22 @@ mod tests {
 
         // no vars — template passes through
         assert_eq!(fill("plain {{a}}", &[]), "plain {{a}}");
+    }
+
+    #[test]
+    fn test_fill_tolerates_placeholder_whitespace() {
+        let vars = [("steps.a", "1"), ("prompt", "hi")];
+        // padded and exact spellings fill the same
+        assert_eq!(fill("{{ steps.a }}", &vars), "1");
+        assert_eq!(fill("{{steps.a}}", &vars), "1");
+        assert_eq!(fill("{{ prompt }}", &vars), "hi");
+        // unknown markers stay visible, padding and all
+        assert_eq!(fill("{{ nope }}", &vars), "{{ nope }}");
+        // a shorter key must not eat into a longer placeholder
+        let vars = [("steps.a", "1"), ("steps.ab", "2")];
+        assert_eq!(fill("{{ steps.ab }} and {{ steps.a }}", &vars), "2 and 1");
+        // text after a padded placeholder is kept
+        assert_eq!(fill("{{ a }} trailing", &[("a", "x")]), "x trailing");
     }
 
     #[test]

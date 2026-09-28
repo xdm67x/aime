@@ -80,9 +80,10 @@ impl Workflow {
     }
 
     /// Everything a run needs up front: at least one step, a resolvable
-    /// model for every step, and `{{steps.<name>}}` references that only
-    /// point at steps running earlier. Fails before any provider call is
-    /// made.
+    /// model for every step, and `{{steps.<name>}}` references (the
+    /// whitespace-tolerant `{{ steps.<name> }}` spelling included) that
+    /// only point at steps running earlier. Fails before any provider
+    /// call is made.
     pub fn validate(&self) -> Result<(), String> {
         if self.steps.is_empty() {
             return Err(format!("Workflow '{}' has no steps", self.name));
@@ -119,21 +120,23 @@ pub struct WorkflowStep {
 }
 
 /// `{{steps.<name>}}` references in a prompt, in order of appearance. Names
-/// are taken verbatim between the marker and the closing `}}`.
+/// are taken verbatim between the marker and the closing `}}`; whitespace
+/// inside the braces is tolerated (`{{ steps.<name> }}` names the same
+/// step as `{{steps.<name>}}`).
 fn step_refs(prompt: &str) -> Vec<String> {
-    const OPEN: &str = "{{steps.";
     let mut refs = Vec::new();
     let mut rest = prompt;
-    while let Some(open) = rest.find(OPEN) {
-        let Some(close) = rest[open + OPEN.len()..].find("}}") else {
+    while let Some(open) = rest.find("{{") {
+        let Some(close) = rest[open + 2..].find("}}") else {
             break;
         };
-        let after = &rest[open + OPEN.len()..];
-        let name = &after[..close];
-        if !name.is_empty() && !name.contains("{{") {
-            refs.push(name.to_string());
+        let inner = rest[open + 2..open + 2 + close].trim();
+        if let Some(name) = inner.strip_prefix("steps.") {
+            if !name.is_empty() && !name.contains("{{") {
+                refs.push(name.to_string());
+            }
         }
-        rest = &after[close + 2..];
+        rest = &rest[open + 4 + close..];
     }
     refs
 }
@@ -328,9 +331,8 @@ pub fn template(name: &str) -> String {
          \x20   goal: |\n\
          \x20     What must be true when this step is done.\n\
          \x20   # Optional: {{{{steps.<name>}}}} inserts the final result of an\n\
-
-         \x20   # earlier step into this prompt, so steps can build on each other:\n\
-
+         \x20   # earlier step into this prompt, so steps can build on each\n\
+         \x20   # other (whitespace inside the braces is tolerated):\n\
          \x20   prompt: |\n\
          \x20     Instructions for the model.\n"
     )
@@ -625,6 +627,9 @@ steps:
         assert_eq!(step_refs("{{steps.unterminated"), Vec::<String>::new());
         assert_eq!(step_refs("{{steps.}}"), Vec::<String>::new());
         assert_eq!(step_refs("{{steps.a{{b}}"), Vec::<String>::new());
+        // whitespace inside the braces is tolerated
+        assert_eq!(step_refs("{{ steps.a }}"), vec!["a"]);
+        assert_eq!(step_refs("{{ steps.a.output }}"), vec!["a.output"]);
     }
 
     #[test]
@@ -654,6 +659,18 @@ steps:
         assert_eq!(
             effective_prompt(&step, None, &[]),
             "Based on {{steps.analyze}} (and {{prompt}}), report."
+        );
+
+        // padded spelling fills the same answer
+        let step = WorkflowStep {
+            name: "report".into(),
+            prompt: "Risk level: {{ steps.analyze }}".into(),
+            model: None,
+            goal: None,
+        };
+        assert_eq!(
+            effective_prompt(&step, None, &done),
+            "Risk level: 3 modules"
         );
     }
 
@@ -715,6 +732,51 @@ steps:
         let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
         let err = wf.validate().unwrap_err();
         assert!(err.contains("no earlier step is named 'c'"), "got: {err}");
+
+        // padded spelling resolves like the exact one
+        let yaml = r#"
+name: output-ref-ok
+model: m
+steps:
+  - name: build
+    prompt: Build.
+  - name: report
+    prompt: "Report on {{ steps.build }} and {{steps.build}}."
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        assert!(wf.validate().is_ok());
+
+        // .output is not a suffix the engine strips — it is part of the name,
+        // so such a reference fails loudly instead of silently staying put
+        let yaml = r#"
+name: output-ref
+model: m
+steps:
+  - name: build
+    prompt: "Use {{ steps.build.output }}."
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        let err = wf.validate().unwrap_err();
+        assert!(
+            err.contains("no earlier step is named 'build.output'"),
+            "got: {err}"
+        );
+
+        let yaml = r#"
+name: output-ref-loop
+model: m
+steps:
+  - name: build
+    prompt: "Use {{ steps.report }}."
+  - name: report
+    prompt: Report.
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        let err = wf.validate().unwrap_err();
+        assert!(
+            err.contains("no earlier step is named 'report'"),
+            "got: {err}"
+        );
     }
 
     #[tokio::test]
