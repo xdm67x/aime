@@ -63,6 +63,11 @@
 }
 html {
     scroll-behavior: smooth;
+    /* safety net over the minmax(0) tracks below: if anything ever measures
+       wider than the viewport, don't let the page pan sideways. hidden is
+       the fallback for engines that don't understand clip yet */
+    overflow-x: hidden;
+    overflow-x: clip;
 }
 body {
     margin: 0;
@@ -71,6 +76,9 @@ body {
     font-family: var(--sans);
     font-size: 16px;
     line-height: 1.65;
+    /* mobile Safari inflates text without this */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
 }
@@ -86,7 +94,9 @@ p code {
 .wrap {
     max-width: 1180px;
     margin: 0 auto;
-    padding-inline: var(--gutter);
+    /* viewport-fit=cover lets content under notches in landscape */
+    padding-left: max(var(--gutter), calc(env(safe-area-inset-left, 0px) + 12px));
+    padding-right: max(var(--gutter), calc(env(safe-area-inset-right, 0px) + 12px));
 }
 a {
     color: inherit;
@@ -187,9 +197,11 @@ a {
         background 0.15s ease,
         color 0.15s ease;
 }
-.copy-btn:hover {
-    background: var(--signal);
-    color: var(--on-signal);
+@media (hover: hover) {
+    .copy-btn:hover {
+        background: var(--signal);
+        color: var(--on-signal);
+    }
 }
 .copy-btn:active {
     transform: translateY(1px);
@@ -333,7 +345,9 @@ a {
 
 .anatomy {
     display: grid;
-    grid-template-columns: 1.08fr 0.92fr;
+    /* minmax(0, …): fr tracks are otherwise floored at their content's
+       min-content width, so a wide YAML line blows out the page */
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
     gap: clamp(28px, 4vw, 56px);
     align-items: start;
 }
@@ -505,7 +519,7 @@ a {
 
 .report {
     display: grid;
-    grid-template-columns: 0.9fr 1.1fr;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
     gap: clamp(28px, 4vw, 56px);
     align-items: start;
 }
@@ -548,7 +562,7 @@ a {
 
 .bento {
     display: grid;
-    grid-template-columns: 1.15fr 0.85fr;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
     grid-template-rows: auto auto;
     gap: 20px;
 }
@@ -580,7 +594,8 @@ a {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: 16px;
+    flex-wrap: wrap;
+    gap: 6px 16px;
     border-top: 1px solid var(--line);
     padding-block: 11px;
 }
@@ -735,9 +750,11 @@ a {
         background 0.15s ease,
         color 0.15s ease;
 }
-.close-btn:hover {
-    background: var(--ink);
-    border-color: var(--ink);
+@media (hover: hover) {
+    .close-btn:hover {
+        background: var(--ink);
+        border-color: var(--ink);
+    }
 }
 .close-btn:active {
     transform: translateY(1px);
@@ -791,32 +808,26 @@ a {
 
 @media (max-width: 1100px) {
     .hero {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
     .hero-copy {
         max-width: 640px;
     }
 }
 @media (max-width: 960px) {
-    .hero {
-        grid-template-columns: 1fr;
-    }
-    .hero-copy {
-        max-width: 640px;
-    }
     .anatomy,
     .report {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
     .loop {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
     .loop-back {
         display: none;
     }
     .facts,
     .bento {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
     .cell-tools {
         grid-row: auto;
@@ -825,15 +836,89 @@ a {
         grid-template-rows: auto;
     }
 }
+
+/* Phones: commands wrap instead of clipping, the terminal reflows */
 @media (max-width: 720px) {
+    .hero-cta {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 16px;
+    }
+    .hero-cta .cmd-chip {
+        width: 100%;
+    }
+    .hero-cta .cmd-chip code {
+        flex: 1;
+    }
+    .cmd-chip {
+        padding: 8px 8px 8px 12px;
+    }
+    /* the install command is longer than a phone is wide: wrap it rather
+       than hide the overflow in a scroll area nobody finds */
+    .cmd-chip code {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
     .term-body {
         height: 380px;
         font-size: 11.5px;
         white-space: pre-wrap;
+        /* pre-wrap still can't break the long worktree path on its own */
+        overflow-wrap: break-word;
     }
-    .hero-cta {
-        align-items: flex-start;
-        flex-direction: column;
+}
+
+/* Small phones: tighten the frame, keep the hairline rhythm */
+@media (max-width: 560px) {
+    .hero {
+        padding-block: 40px 48px;
+    }
+    .hero-sub {
+        font-size: 16px;
+        margin-bottom: 28px;
+    }
+    .section {
+        padding-block: 48px;
+    }
+    .sec-head {
+        margin-bottom: 28px;
+    }
+    .file-body {
+        padding: 14px 16px;
+        font-size: 12px;
+    }
+    .legend-item {
+        padding-block: 16px;
+    }
+    .loop-step {
+        padding-top: 14px;
+    }
+    .loop-n {
+        top: 14px;
+        font-size: 24px;
+    }
+    .cell {
+        padding: 18px 20px;
+    }
+    .setup-row {
+        gap: 14px;
+        padding-block: 20px;
+    }
+    .close {
+        padding-block: 56px;
+    }
+    .footer {
+        padding-block: 22px;
+    }
+}
+
+/* Touch: give the two pressable things a real hit area */
+@media (pointer: coarse) {
+    .copy-btn {
+        padding: 10px 18px;
+    }
+    .close-btn {
+        padding: 14px 28px;
     }
 }
 
