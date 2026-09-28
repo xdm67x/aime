@@ -1,0 +1,87 @@
+# Aime workflow — run it with: aime release
+# Bumps the workspace version, writes release notes into CHANGELOG.md,
+# and commits everything as one release commit.
+#
+# NOTE: a plain `aime release` starts from HEAD in a fresh worktree, so the
+# commit would land on the throwaway worktree branch instead of your
+# checkout. Run it as: aime release --no-worktree
+# Model ids: aime models
+
+name: release
+description: >
+  Decide the next version from commits since the last tag, bump the
+  workspace version, write CHANGELOG.md release notes, and commit.
+model: zai-glm-latest
+
+steps:
+  - name: changes
+    goal: |
+      Every commit since the last tag is listed and categorized, the current
+      Cargo.toml version is confirmed against that tag (a mismatch is flagged,
+      not papered over), and the proposed version follows semver from the
+      commit types — `feat!`/`BREAKING CHANGE` → major, `feat` → minor,
+      everything else → patch — with the reasoning stated.
+    prompt: |
+      Decide the next release version for this repo.
+
+      1. Find the last release tag: `git tag --sort=-v:refname` (tags look
+         like `v0.16.0`). Read the current version from the root Cargo.toml
+         (`[workspace.package]` — the only place the version lives; the
+         crates inherit it via `version.workspace = true`). Confirm the
+         version matches the last tag minus the leading `v`; if it does not,
+         stop and report the mismatch.
+      2. List every commit since that tag: `git log <tag>..HEAD --oneline`.
+         Do not skip or summarize commits you have not looked at.
+      3. Classify by Conventional Commits type and apply semver:
+         `feat!:` or a `BREAKING CHANGE:` footer → major,
+         `feat:` → minor, everything else → patch.
+      4. Read CONTRIBUTING.md if you are unsure how to read a type.
+
+      End your final message with:
+      - last tag and its commits, one line each, grouped by type
+      - the proposed version and the bump level, with the commits that
+        justify it
+      - any commits you could not classify, said plainly.
+
+  - name: release
+    goal: |
+      Cargo.toml and Cargo.lock both carry the new version, CHANGELOG.md has
+      a dated section for it at the top whose every entry traces to a real
+      commit, the single commit `chore(release): bump version to <version>`
+      contains only those three files, and the working tree is clean
+      afterwards — verified with git status, not assumed.
+    prompt: |
+      The next release has been decided:
+
+      {{steps.changes}}
+
+      Execute the release:
+
+      1. Bump the version in the root Cargo.toml `[workspace.package]` only —
+         the crates inherit it. Use edit_file; do not touch anything else in
+         the file.
+      2. Run `cargo check` to refresh Cargo.lock with the new version (and
+         prove the workspace still compiles). If it fails, stop and report —
+         do not release on top of a broken build.
+      3. Write release notes into CHANGELOG.md at the repo root:
+         - create the file if this is the first release (add a short
+           `# Changelog` header, Keep a Changelog format)
+         - add the new section at the TOP: `## [<version>] - <date>` (get the
+           date from `date +%Y-%m-%d`)
+         - group the commits under Added (feat:), Changed (refactor:, perf,
+           build:), Fixed (fix:), and Docs (docs:) — written for users, not
+           a dump of the log; skip empty groups and chore noise (deps bumps,
+           lockfile updates) unless they matter to users
+         - every entry must trace to a real commit; write nothing you cannot
+         point at.
+      4. Commit exactly three files — Cargo.toml, Cargo.lock, CHANGELOG.md —
+         as: `chore(release): bump version to <version>`
+         This matches how previous releases in this repo were committed.
+         Stage those three explicitly; never `git add -A`.
+
+      End your final message with:
+      - the version released and the commit hash (`git rev-parse --short HEAD`)
+      - what the release notes cover
+      - the human steps left: `git tag v<version> && git push origin main --tags`
+        (pushing the tag is what triggers the GitHub release build — leave
+        that decision to the human).

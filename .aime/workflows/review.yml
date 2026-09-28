@@ -1,0 +1,111 @@
+# Aime workflow — run it with: aime review
+# Reviews code an LLM produced in this repo, fixes the confirmed issues,
+# and validates the result.
+#
+# NOTE: a plain `aime review` starts from HEAD in a fresh worktree, so it
+# won't see uncommitted changes in your checkout. To review work that is
+# sitting uncommitted in this directory, run: aime review --no-worktree
+# Model ids: aime models
+
+name: review
+description: Review LLM-generated code, fix the confirmed issues, and validate.
+model: zai-glm-latest
+
+steps:
+  - name: survey
+    # No goal: this is mechanical discovery — the review step does the
+    # verified thinking.
+    prompt: |
+      Find every change an LLM produced in this repository so a reviewer
+      can see all of it and miss nothing.
+
+      1. Run `git status --porcelain` and `git diff HEAD` (covers staged +
+         unstaged). Read any new untracked code files too.
+      2. If the working tree is clean, review recent commits instead: find
+         the base branch (origin/main, main, or master) and use
+         `git log --oneline` + `git diff <base>...HEAD`; with no base branch,
+         take the last 3 commits.
+      3. If this is not a git repo at all, list files by modification time
+         (newest first, skip build artifacts and dependencies) and treat the
+         recently modified code files as the changes.
+
+      Read enough of each changed file to describe what the change actually
+      does — the full file, not just the diff hunks, when it is small.
+
+      End your final message with an inventory:
+      - what base you compared against (working tree, base branch, or mtime)
+      - one entry per change: `path — one-sentence description of the change`
+      - anything you could not determine, said plainly.
+
+  - name: review
+    goal: |
+      Every finding is verified against the actual code (you read the file,
+      you did not guess from the diff alone), and each one names a severity,
+      a path:line, why it is wrong, and a concrete fix. Findings that do not
+      hold up are dropped — no padding, no style nits dressed as bugs, and
+      no real problem left unlisted.
+    prompt: |
+      You are reviewing code an LLM generated in this repo. An earlier step
+      produced this inventory of the changes:
+
+      {{steps.survey}}
+
+      Do not trust the inventory blindly — re-derive what you need:
+
+      1. Get the diff yourself (`git diff HEAD`, or against the base the
+         inventory names). For each changed file, read the full file with
+         read_file so you see the change in context.
+      2. Check, in priority order:
+         - Correctness: logic errors, broken edge cases, wrong API usage,
+           off-by-one errors, unhandled nil/None/empty cases.
+         - Error handling: failures swallowed or misreported. In this
+           workspace, aime-core uses Result<_, String> — flag error paths
+           that deviate.
+         - Security: injection, hardcoded secrets, unsafe file handling,
+           shell commands built from untrusted input.
+         - Project conventions: read AGENTS.md and CONTRIBUTING.md and flag
+           deviations (e.g. commit message style, UI code leaking into
+           aime-core, prompts hardcoded in code instead of prompts/).
+         - Tests: is the changed behavior covered? Which existing tests
+           should have been updated?
+      3. Ground your findings: run `cargo check` from the repo root (add
+         `pnpm --dir web lint` if web/ changed). Report real failures with
+         the actual error lines; do not speculate about failures you did
+         not see.
+
+      End your final message with a numbered findings list, most severe
+      first, each as:
+      [critical|high|medium|low] path:line — what is wrong — the fix.
+      If there are no real issues, say exactly that.
+
+  - name: fix
+    goal: |
+      Every critical and high finding is either fixed at the root cause or
+      explicitly deferred with a reason a human can evaluate, and the
+      project's checks (cargo test, plus the web lint/format checks when
+      web/ changed) pass — you ran them and saw them pass.
+    prompt: |
+      A review of the LLM-generated changes in this repo found these issues:
+
+      {{steps.review}}
+
+      Fix them:
+
+      1. Work through the findings in order (critical, then high, then
+         medium if cheap and safe). Use edit_file with minimal, surgical
+         changes that fix the root cause — no drive-by refactors, no
+         reformatting of code you were not asked to touch.
+      2. Re-read each file after editing it to confirm the fix is correct
+         and complete.
+      3. Validate: run `cargo test` for the workspace. If anything under
+         web/ changed, also run `pnpm --dir web lint` and
+         `pnpm --dir web format:check`. If a check fails because of
+         pre-existing breakage unrelated to the review, say so — do not
+         fix unrelated bugs silently.
+      4. Leave the working tree as the deliverable: do not commit, do not
+         create branches.
+
+      End your final message with:
+      - one line per finding: fixed, or deferred — why
+      - the validation commands you ran and their results
+      - anything that needs a human decision.
