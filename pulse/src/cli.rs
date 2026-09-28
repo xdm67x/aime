@@ -1,7 +1,9 @@
 //! CLI subcommands. Pulse is headless: workflows are yaml files (created in
 //! ./.pulse/workflows with `pulse create`, or globally in
-//! ~/.pulse/workflows with `pulse create --global`, run with
-//! `pulse <workflow>`), the provider is configured with
+//! ~/.pulse/workflows with `pulse create --global`), run with `pulse run
+//! <workflow>` — or bare `pulse run`, which lists the workflows found in
+//! the current directory, ./.pulse/workflows and ~/.pulse/workflows and
+//! opens a picker — and with `pulse <workflow>`. The provider is configured with
 //! `pulse provider use <url|litellm|mistral|opencode|openrouter> <key>`
 //! (shown with `pulse provider`), `pulse models` lists what the provider
 //! offers, and `pulse update` installs a newer release when one exists. Any
@@ -9,13 +11,12 @@
 //! do X` runs the `research` workflow with "do X" as the message.
 
 use clap::{Parser, Subcommand};
-use std::path::Path;
 
 #[derive(Parser)]
 #[command(
     name = "pulse",
     version,
-    about = "Run YAML workflows through an AI agent until each step's goal is reached.\n\nRuns work in a fresh git worktree by default (--no-worktree to disable).\nRun a workflow with: pulse <workflow>",
+    about = "Run YAML workflows through an AI agent until each step's goal is reached.\n\nRuns work in a fresh git worktree by default (--no-worktree to disable).\nRun a workflow with: pulse run (interactive picker), pulse run <workflow>, or pulse <workflow>",
     arg_required_else_help = true
 )]
 pub struct Cli {
@@ -40,11 +41,6 @@ pub enum Command {
         /// Workflow name (or file path)
         name: String,
     },
-    /// List workflows
-    Workflow {
-        #[command(subcommand)]
-        action: WorkflowAction,
-    },
     /// Show the configured provider, or configure one (`provider use`)
     Provider {
         #[command(subcommand)]
@@ -56,19 +52,22 @@ pub enum Command {
     Version,
     /// Install the latest release when it is newer than this binary
     Update,
-    /// Run a workflow by name or file path — no other arguments. Runs in a
-    /// fresh git worktree under ~/.pulse/worktrees by default; --no-worktree
-    /// runs in the current directory instead. Any unknown subcommand lands
-    /// here: `pulse <workflow>`
+    /// Run a workflow. With a name or file path it runs directly; bare
+    /// `pulse run` lists the workflows found in the current directory,
+    /// ./.pulse/workflows and ~/.pulse/workflows and opens a picker.
+    /// Runs in a fresh git worktree under ~/.pulse/worktrees by default;
+    /// --no-worktree runs in the current directory instead
+    Run {
+        /// Workflow name or file path — omit to pick interactively
+        name: Option<String>,
+        /// Run in the current directory, not a git worktree
+        #[arg(long)]
+        no_worktree: bool,
+    },
+    /// Run a workflow by name or file path — `pulse <workflow>`. Any other
+    /// unknown subcommand lands here too
     #[command(external_subcommand)]
-    Run(Vec<String>),
-}
-
-#[derive(Subcommand)]
-pub enum WorkflowAction {
-    /// List workflows in the current directory, ./.pulse/workflows and
-    /// ~/.pulse/workflows
-    List,
+    External(Vec<String>),
 }
 
 #[derive(Subcommand)]
@@ -93,12 +92,12 @@ impl Command {
         match self {
             Command::Create { .. } => "create",
             Command::Edit { .. } => "edit",
-            Command::Workflow { .. } => "workflow",
             Command::Provider { .. } => "provider",
             Command::Models => "models",
             Command::Version => "version",
             Command::Update => "update",
-            Command::Run(_) => "run",
+            Command::Run { .. } => "run",
+            Command::External(_) => "run",
         }
     }
 }
@@ -146,7 +145,6 @@ pub async fn run(command: Command) -> Result<i32, String> {
     match command {
         Command::Create { title, global } => run_create(&title, global),
         Command::Edit { name } => run_edit(&name),
-        Command::Workflow { action } => run_workflow_cmd(action),
         Command::Provider { action } => run_provider(action).await,
         Command::Models => run_models().await,
         Command::Version => {
@@ -154,10 +152,35 @@ pub async fn run(command: Command) -> Result<i32, String> {
             Ok(0)
         }
         Command::Update => run_update().await,
-        Command::Run(args) => {
+        Command::Run {
+            name: Some(w),
+            no_worktree,
+        } => Ok(crate::run::run_workflow(&w, !no_worktree).await),
+        Command::Run {
+            name: None,
+            no_worktree,
+        } => run_pick(!no_worktree).await,
+        Command::External(args) => {
             let a = split_run_args(args)?;
             Ok(crate::run::run_workflow(&a.workflow, !a.no_worktree).await)
         }
+    }
+}
+
+/// Bare `pulse run`: list the discovered workflows and open the picker;
+/// the selection then runs like any named workflow.
+async fn run_pick(use_worktree: bool) -> Result<i32, String> {
+    let all = crate::picker::discover_all()?;
+    if all.is_empty() {
+        println!("No workflows found (current directory, ./.pulse/workflows + ~/.pulse/workflows)");
+        println!("Create one with: pulse create <title> [--global]");
+        return Ok(0);
+    }
+    match crate::picker::pick(&all)? {
+        crate::picker::Pick::Selected(path) => {
+            Ok(crate::run::run_workflow(&path.to_string_lossy(), use_worktree).await)
+        }
+        crate::picker::Pick::Cancelled(code) => Ok(code),
     }
 }
 
@@ -192,40 +215,6 @@ fn run_edit(name: &str) -> Result<i32, String> {
     let (_, path) = pulse_core::workflows::find(name)?;
     open_editor(&path.to_string_lossy());
     Ok(0)
-}
-
-fn run_workflow_cmd(action: WorkflowAction) -> Result<i32, String> {
-    match action {
-        WorkflowAction::List => {
-            let mut found = pulse_core::workflows::discover_dir(Path::new("."));
-            found.extend(pulse_core::workflows::discover_dir(Path::new(
-                "./.pulse/workflows",
-            )));
-            found.extend(pulse_core::workflows::discover_dir(
-                &pulse_core::workflows::dir()?,
-            ));
-            if found.is_empty() {
-                println!("No workflows found (current directory, ./.pulse/workflows + ~/.pulse/workflows)");
-                println!("Create one with: pulse create <title> [--global]");
-                return Ok(0);
-            }
-            let width = found
-                .iter()
-                .map(|(wf, _)| wf.name.len())
-                .max()
-                .unwrap_or(8)
-                .max(8);
-            for (wf, path) in found {
-                let desc = if wf.description.is_empty() {
-                    "-"
-                } else {
-                    &wf.description
-                };
-                println!("{:<width$}  {desc}  ({})", wf.name, path.display());
-            }
-            Ok(0)
-        }
-    }
 }
 
 /* ---- provider ---- */

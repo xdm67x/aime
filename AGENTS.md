@@ -64,17 +64,25 @@ API key; `pulse provider` shows the current one.
     (`{{ steps.<name> }}` is the same reference), and `Workflow::validate`
     rejects references that don't resolve before the run starts. `run_hooked` exposes progress
     hooks; `run` is the no-op-hooks wrapper.
-- `pulse/` — the CLI on top of `pulse-core`. No TUI.
+- `pulse/` — the CLI on top of `pulse-core` (plus a one-screen crossterm
+  picker TUI for `pulse run`; `pulse-core` stays UI-agnostic).
   - `src/main.rs` — entry point: clap dispatch + exit codes.
-  - `src/cli.rs` — subcommands: `pulse create`, `pulse edit`, `pulse workflow
-    list`, `pulse provider [use
-    <url|litellm|mistral|opencode|openrouter> <key>]`
+  - `src/cli.rs` — subcommands: `pulse create`, `pulse edit`, `pulse provider
+    [use <url|litellm|mistral|opencode|openrouter> <key>]`
     (bare `pulse provider` shows the current one), `pulse models`,
     `pulse version`,
-    `pulse update` (installs the latest release automatically when newer), and
-    `pulse <workflow> [--no-worktree]` (an external subcommand — any unknown
-    subcommand is treated as a workflow name/path to run; `split_run_args`
-    pulls out the flags).
+    `pulse update` (installs the latest release automatically when newer),
+    `pulse run [<workflow>] [--no-worktree]` (bare `pulse run` lists the
+    discovered workflows and opens the picker; with a name/path it runs
+    directly), and `pulse <workflow> [--no-worktree]` (an external
+    subcommand — any unknown subcommand is treated as a workflow name/path
+    to run; `split_run_args` pulls out the flags).
+  - `src/picker.rs` — the `pulse run` workflow picker: a one-screen TUI
+    (crossterm only, no ratatui) over the workflows discovered in the
+    current directory, ./.pulse/workflows and ~/.pulse/workflows —
+    type to filter, arrows to move, Enter runs, Esc cancels; raw mode +
+    alternate screen restored on drop, so even a panic leaves the
+    terminal intact.
   - `src/run.rs` — the headless runner: executes steps via
     `workflows::run_hooked`, prints step progress (`[i/n] step` + tool
     lines) to the terminal, and writes everything (prompts, goals, tool
@@ -98,7 +106,8 @@ cargo test                      # all workspace tests
 cargo build                     # workspace
 cargo run -p pulse -- create my-task   # create ./.pulse/workflows/my-task.yml
 cargo run -p pulse -- create my-task --global  # create ~/.pulse/workflows/my-task.yml
-cargo run -p pulse -- my-task     # run a workflow by name (or path)
+cargo run -p pulse -- run         # list workflows + pick one in the TUI
+  cargo run -p pulse -- my-task     # run a workflow by name (or path)
 cargo run -p pulse -- my-task --no-worktree   # run in the current directory, no git worktree
 pnpm --dir web lint && pnpm --dir web format:check
 pnpm --dir web build            # static site (base: './')

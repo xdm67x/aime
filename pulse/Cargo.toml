@@ -11,3 +11,4 @@ path = "src/main.rs"
 pulse-core = { path = "../pulse-core" }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "signal", "time"] }
 clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"

@@ -48,8 +48,8 @@ the durable record is the position.
 ## Operating Context
 
 - Terminal-first and headless: one binary, zero config files; the CLI is the
-  whole product (`pulse create`, `pulse edit`, `pulse workflow list`,
-  `pulse provider use`,
+  whole product (`pulse create`, `pulse edit`, `pulse run` (bare: a
+  terminal picker over the discovered workflows), `pulse provider use`,
   `pulse models`, `pulse version`, `pulse update`, `pulse <workflow>`).
 - Provider: one OpenAI-compatible endpoint (base URL + API key) configured
   with `pulse provider use` — OpenAI, LiteLLM, Ollama's `/v1`, vLLM, … — or
@@ -96,7 +96,8 @@ Confirmed functionality:
   self-contained — the run command takes only the workflow name.
 - Workflow files: `pulse create <title>` writes a blank template in
   `./.pulse/workflows` (`--global` writes it to `~/.pulse/workflows` instead);
-  `pulse <workflow>` resolves by name (`./.pulse/workflows`, cwd, then
+  bare `pulse run` lists the discovered workflows and opens a terminal
+  picker; `pulse <workflow>` resolves by name (`./.pulse/workflows`, cwd, then
   `~/.pulse/workflows/`) or file path.
 - Every run writes `<workflow>-<timestamp>.md` (prompts, goals, tool calls,
   streamed output, results, cost) in the launch directory as it happens.

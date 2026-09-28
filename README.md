@@ -31,6 +31,8 @@ pulse provider use openrouter <key>  # …or a known provider: litellm, mistral,
 pulse models                        # what the provider offers
 pulse create <title>               # blank template in ./.pulse/workflows
 pulse create <title> --global      # …or a global one in ~/.pulse/workflows
+pulse run                           # list workflows + pick one (TUI)
+pulse run <workflow>               # run a workflow directly
 pulse <workflow>                   # run it (by name or file path)
 pulse <workflow> --no-worktree     # run it directly in the current directory
 ```
