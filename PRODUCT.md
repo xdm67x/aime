@@ -23,7 +23,7 @@ inspectable, costed record.
 ## Product Purpose
 
 Pulse is a headless workflow runner. The user writes a YAML workflow file
-(created with `pulse workflow new <title>` in ./.pulse/workflows, or in
+(created with `pulse create <title>` in ./.pulse/workflows, or in
 ~/.pulse/workflows with `--global`) that
 names the model, the steps, and each step's optional `goal:`; `pulse
 <workflow>` executes the steps through an agentic tool loop
@@ -48,7 +48,8 @@ the durable record is the position.
 ## Operating Context
 
 - Terminal-first and headless: one binary, zero config files; the CLI is the
-  whole product (`pulse workflow new|list|edit`, `pulse provider use`,
+  whole product (`pulse create`, `pulse edit`, `pulse workflow list`,
+  `pulse provider use`,
   `pulse models`, `pulse version`, `pulse update`, `pulse <workflow>`).
 - Provider: one OpenAI-compatible endpoint (base URL + API key) configured
   with `pulse provider use` — OpenAI, LiteLLM, Ollama's `/v1`, vLLM, … — or
@@ -93,7 +94,7 @@ Confirmed functionality:
   placeholders in a step's prompt are filled with the named earlier
   step's final result, linking the steps. Workflows are
   self-contained — the run command takes only the workflow name.
-- Workflow files: `pulse workflow new <title>` writes a blank template in
+- Workflow files: `pulse create <title>` writes a blank template in
   `./.pulse/workflows` (`--global` writes it to `~/.pulse/workflows` instead);
   `pulse <workflow>` resolves by name (`./.pulse/workflows`, cwd, then
   `~/.pulse/workflows/`) or file path.

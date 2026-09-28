@@ -1,6 +1,6 @@
 //! Pulse — headless workflow runner. A workflow is a yaml file (created with
-//! `pulse workflow new <title>` in ./.pulse/workflows, or globally with
-//! `pulse workflow new <title> --global`); `pulse <workflow>`
+//! `pulse create <title>` in ./.pulse/workflows, or globally with
+//! `pulse create <title> --global`); `pulse <workflow>`
 //! executes its steps through the agentic tool loop until each step's goal
 //! is reached, writing a markdown report of everything that happened into
 //! the current directory while the terminal shows which step is running.

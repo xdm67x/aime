@@ -643,7 +643,7 @@ async fn compact_session(beat_id: i64, on_event: RawEvent<'_>) -> Result<TaskRes
     // model source anymore.
     let wf = workflows::load(workflows::BASE).map_err(|_| {
         "No 'base' workflow — /compact summarizes with its model. Create it with: \
-         `pulse workflow new base` (then set `model:`)."
+         `pulse create base` (then set `model:`)."
             .to_string()
     })?;
     let model = wf
@@ -980,7 +980,7 @@ async fn run_task_inner(
         if wf_name == workflows::BASE {
             format!(
                 "{e}\nPlain prompts run through the 'base' workflow — create it with: \
-                 pulse workflow new base (then set `model:`), or invoke one explicitly \
+                 pulse create base (then set `model:`), or invoke one explicitly \
                  with /workflow {{name}}."
             )
         } else {

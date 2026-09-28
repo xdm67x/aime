@@ -1,6 +1,6 @@
 //! CLI subcommands. Pulse is headless: workflows are yaml files (created in
-//! ./.pulse/workflows with `pulse workflow new`, or globally in
-//! ~/.pulse/workflows with `pulse workflow new --global`, run with
+//! ./.pulse/workflows with `pulse create`, or globally in
+//! ~/.pulse/workflows with `pulse create --global`, run with
 //! `pulse <workflow>`), the provider is configured with
 //! `pulse provider use <url|litellm|mistral|opencode|openrouter> <key>`
 //! (shown with `pulse provider`), `pulse models` lists what the provider
@@ -25,7 +25,22 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Manage workflow yaml files
+    /// Create a blank workflow template: in ./.pulse/workflows, or in
+    /// ~/.pulse/workflows with --global
+    Create {
+        /// Workflow title — used as the file name (`<slug>.yml`)
+        title: String,
+        /// Save the workflow to ~/.pulse/workflows instead of
+        /// ./.pulse/workflows
+        #[arg(long)]
+        global: bool,
+    },
+    /// Open a workflow in $EDITOR
+    Edit {
+        /// Workflow name (or file path)
+        name: String,
+    },
+    /// List workflows
     Workflow {
         #[command(subcommand)]
         action: WorkflowAction,
@@ -51,21 +66,9 @@ pub enum Command {
 
 #[derive(Subcommand)]
 pub enum WorkflowAction {
-    /// Create a blank workflow template: in ./.pulse/workflows, or in
-    /// ~/.pulse/workflows with --global
-    New {
-        /// Workflow title — used as the file name (`<slug>.yml`)
-        title: String,
-        /// Save the workflow to ~/.pulse/workflows instead of
-        /// ./.pulse/workflows
-        #[arg(long)]
-        global: bool,
-    },
     /// List workflows in the current directory, ./.pulse/workflows and
     /// ~/.pulse/workflows
     List,
-    /// Open a workflow in $EDITOR
-    Edit { name: String },
 }
 
 #[derive(Subcommand)]
@@ -88,6 +91,8 @@ impl Command {
     /// Short name for logging: which subcommand ran, without arguments.
     pub fn label(&self) -> &'static str {
         match self {
+            Command::Create { .. } => "create",
+            Command::Edit { .. } => "edit",
             Command::Workflow { .. } => "workflow",
             Command::Provider { .. } => "provider",
             Command::Models => "models",
@@ -139,6 +144,8 @@ pub fn split_run_args(args: Vec<String>) -> Result<RunArgs, String> {
 /// Run a command; the Ok value is the process exit code.
 pub async fn run(command: Command) -> Result<i32, String> {
     match command {
+        Command::Create { title, global } => run_create(&title, global),
+        Command::Edit { name } => run_edit(&name),
         Command::Workflow { action } => run_workflow_cmd(action),
         Command::Provider { action } => run_provider(action).await,
         Command::Models => run_models().await,
@@ -154,34 +161,41 @@ pub async fn run(command: Command) -> Result<i32, String> {
     }
 }
 
-/* ---- workflow ---- */
+/* ---- workflows ---- */
+
+fn run_create(title: &str, global: bool) -> Result<i32, String> {
+    let name = crate::run::slug(title);
+    if name.is_empty() {
+        return Err(format!("'{title}' is not a usable workflow name"));
+    }
+    let (dir, dir_label) = if global {
+        (pulse_core::workflows::dir()?, "~/.pulse/workflows")
+    } else {
+        (pulse_core::workflows::local_dir()?, "./.pulse/workflows")
+    };
+    let path = dir.join(format!("{name}.yml"));
+    if path.is_file() {
+        return Err(format!(
+            "Workflow already exists: {} ({dir_label})",
+            path.display()
+        ));
+    }
+    std::fs::write(&path, pulse_core::workflows::template(&name))
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    pulse_core::log::info(format!("workflow created: {}", path.display()));
+    println!("Created {} in {dir_label}", path.display());
+    println!("Set a `model:` in it (list ids with: pulse models), then run: pulse {name}");
+    Ok(0)
+}
+
+fn run_edit(name: &str) -> Result<i32, String> {
+    let (_, path) = pulse_core::workflows::find(name)?;
+    open_editor(&path.to_string_lossy());
+    Ok(0)
+}
 
 fn run_workflow_cmd(action: WorkflowAction) -> Result<i32, String> {
     match action {
-        WorkflowAction::New { title, global } => {
-            let name = crate::run::slug(&title);
-            if name.is_empty() {
-                return Err(format!("'{title}' is not a usable workflow name"));
-            }
-            let (dir, dir_label) = if global {
-                (pulse_core::workflows::dir()?, "~/.pulse/workflows")
-            } else {
-                (pulse_core::workflows::local_dir()?, "./.pulse/workflows")
-            };
-            let path = dir.join(format!("{name}.yml"));
-            if path.is_file() {
-                return Err(format!(
-                    "Workflow already exists: {} ({dir_label})",
-                    path.display()
-                ));
-            }
-            std::fs::write(&path, pulse_core::workflows::template(&name))
-                .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
-            pulse_core::log::info(format!("workflow created: {}", path.display()));
-            println!("Created {} in {dir_label}", path.display());
-            println!("Set a `model:` in it (list ids with: pulse models), then run: pulse {name}");
-            Ok(0)
-        }
         WorkflowAction::List => {
             let mut found = pulse_core::workflows::discover_dir(Path::new("."));
             found.extend(pulse_core::workflows::discover_dir(Path::new(
@@ -192,7 +206,7 @@ fn run_workflow_cmd(action: WorkflowAction) -> Result<i32, String> {
             ));
             if found.is_empty() {
                 println!("No workflows found (current directory, ./.pulse/workflows + ~/.pulse/workflows)");
-                println!("Create one with: pulse workflow new <title> [--global]");
+                println!("Create one with: pulse create <title> [--global]");
                 return Ok(0);
             }
             let width = found
@@ -209,11 +223,6 @@ fn run_workflow_cmd(action: WorkflowAction) -> Result<i32, String> {
                 };
                 println!("{:<width$}  {desc}  ({})", wf.name, path.display());
             }
-            Ok(0)
-        }
-        WorkflowAction::Edit { name } => {
-            let (_, path) = pulse_core::workflows::find(&name)?;
-            open_editor(&path.to_string_lossy());
             Ok(0)
         }
     }

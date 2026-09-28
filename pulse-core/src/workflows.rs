@@ -3,7 +3,7 @@
 //! reviewer's feedback until the model confirms the goal is reached (bounded
 //! by [`MAX_GOAL_ATTEMPTS`]).
 //!
-//! Workflows live as files the user points at — `pulse workflow new <title>`
+//! Workflows live as files the user points at — `pulse create <title>`
 //! writes a blank template into `./.pulse/workflows` (or `~/.pulse/workflows`
 //! with `--global`), and
 //! [`find`] resolves a workflow by name (`./.pulse/workflows` first, then the
@@ -24,7 +24,7 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 
 /// The workflow plain prompts run through. Created by
-/// `pulse workflow new base`.
+/// `pulse create base`.
 pub const BASE: &str = "base";
 
 /// How many times a step with a `goal:` runs at most (the first attempt plus
@@ -312,7 +312,7 @@ pub fn find(name_or_path: &str) -> Result<(Workflow, PathBuf), String> {
     ))
 }
 
-/// The blank workflow template written by `pulse workflow new <title>` into
+/// The blank workflow template written by `pulse create <title>` into
 /// the current directory. It parses as-is (that's the test), but needs a
 /// `model:` before it can run.
 pub fn template(name: &str) -> String {

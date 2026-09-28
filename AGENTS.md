@@ -66,8 +66,9 @@ API key; `pulse provider` shows the current one.
     hooks; `run` is the no-op-hooks wrapper.
 - `pulse/` — the CLI on top of `pulse-core`. No TUI.
   - `src/main.rs` — entry point: clap dispatch + exit codes.
-  - `src/cli.rs` — subcommands: `pulse workflow new|list|edit`,
-    `pulse provider [use <url|litellm|mistral|opencode|openrouter> <key>]`
+  - `src/cli.rs` — subcommands: `pulse create`, `pulse edit`, `pulse workflow
+    list`, `pulse provider [use
+    <url|litellm|mistral|opencode|openrouter> <key>]`
     (bare `pulse provider` shows the current one), `pulse models`,
     `pulse version`,
     `pulse update` (installs the latest release automatically when newer), and
@@ -95,8 +96,8 @@ API key; `pulse provider` shows the current one.
 ```sh
 cargo test                      # all workspace tests
 cargo build                     # workspace
-cargo run -p pulse -- workflow new my-task   # create ./.pulse/workflows/my-task.yml
-cargo run -p pulse -- workflow new my-task --global  # create ~/.pulse/workflows/my-task.yml
+cargo run -p pulse -- create my-task   # create ./.pulse/workflows/my-task.yml
+cargo run -p pulse -- create my-task --global  # create ~/.pulse/workflows/my-task.yml
 cargo run -p pulse -- my-task     # run a workflow by name (or path)
 cargo run -p pulse -- my-task --no-worktree   # run in the current directory, no git worktree
 pnpm --dir web lint && pnpm --dir web format:check
