@@ -237,7 +237,13 @@ impl Reporter {
         {
             println!("  goal: {}", preview(goal, 72));
         }
-        let kind = if step.script.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_some() {
+        let kind = if step
+            .script
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .is_some()
+        {
             "Script"
         } else {
             "Prompt"

@@ -98,7 +98,12 @@ impl Workflow {
         }
         let mut done: Vec<&str> = Vec::with_capacity(self.steps.len());
         for step in &self.steps {
-            let scripted = step.script.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_some();
+            let scripted = step
+                .script
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .is_some();
             if scripted && !step.prompt.trim().is_empty() {
                 return Err(format!(
                     "Workflow '{}' step '{}' defines both 'prompt' and 'script' — a step runs one or the other, not both; remove one",
@@ -221,7 +226,12 @@ async fn run_script(script: &str, dir: Option<&str>) -> Result<String, String> {
         cmd.current_dir(dir);
     }
     let child = cmd.spawn().map_err(|e| e.to_string())?;
-    match tokio::time::timeout(Duration::from_secs(SCRIPT_TIMEOUT), child.wait_with_output()).await {
+    match tokio::time::timeout(
+        Duration::from_secs(SCRIPT_TIMEOUT),
+        child.wait_with_output(),
+    )
+    .await
+    {
         Ok(Ok(output)) => {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -231,7 +241,11 @@ async fn run_script(script: &str, dir: Option<&str>) -> Result<String, String> {
                 Err(format!(
                     "exit {:?}: {}",
                     output.status.code(),
-                    if stderr.trim().is_empty() { stdout.clone() } else { stderr }
+                    if stderr.trim().is_empty() {
+                        stdout.clone()
+                    } else {
+                        stderr
+                    }
                 ))
             }
         }
@@ -565,7 +579,9 @@ pub async fn run_hooked(
             on_step_start(idx, step, &script);
             crate::log::info(format!(
                 "beat {beat_id}: workflow '{}' running script step '{}' ({} chars)",
-                workflow.name, step.name, script.len()
+                workflow.name,
+                step.name,
+                script.len()
             ));
             let answer = match run_script(&script, working_dir.as_deref()).await {
                 Ok(out) => out,
@@ -586,7 +602,9 @@ pub async fn run_hooked(
             };
             crate::log::info(format!(
                 "beat {beat_id}: workflow '{}' step '{}' done (script, {} chars)",
-                workflow.name, sr.name, sr.answer.len()
+                workflow.name,
+                sr.name,
+                sr.answer.len()
             ));
             on_step_done(&sr);
             steps.push(sr);
@@ -908,7 +926,10 @@ steps:
     prompt: Report.
 "#;
         let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(wf.steps[0].script.as_deref(), Some("mkdir -p build && echo done\n"));
+        assert_eq!(
+            wf.steps[0].script.as_deref(),
+            Some("mkdir -p build && echo done\n")
+        );
         assert_eq!(wf.steps[0].prompt, "");
         assert_eq!(wf.steps[1].script, None);
         assert!(wf.validate().is_ok());
