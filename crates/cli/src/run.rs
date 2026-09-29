@@ -237,8 +237,19 @@ impl Reporter {
         {
             println!("  goal: {}", preview(goal, 72));
         }
+        let kind = if step
+            .script
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .is_some()
+        {
+            "Script"
+        } else {
+            "Prompt"
+        };
         self.md(&format!(
-            "\n\n## Step {}/{}: {}\n\n**Prompt:**\n\n~~~\n{prompt}\n~~~\n",
+            "\n\n## Step {}/{}: {}\n\n**{kind}:**\n\n~~~\n{prompt}\n~~~\n",
             self.step_num, self.total, step.name
         ));
         if let Some(goal) = step.goal.as_deref() {
