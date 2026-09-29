@@ -987,17 +987,19 @@ steps:
     async fn test_run_script_step_executes_and_feeds_later_steps() {
         // shares log::HOME_LOCK: std::env::set_var("HOME") is process-global
         // and races across parallel tests (also with the db/log tests)
-        let _g = crate::log::HOME_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        std::env::set_var("HOME", dir.path());
-        let yaml = r#"
+        let yaml = {
+            let _g = crate::log::HOME_LOCK.lock().unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            std::env::set_var("HOME", dir.path());
+            r#"
 name: scripted-run
 model: m
 steps:
   - name: greet
     script: |
       echo hello-from-script
-"#;
+"#
+        };
         let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
         assert!(wf.validate().is_ok());
         let result = run(1, &wf, None, &[], &mut |_| {}).await.unwrap();
