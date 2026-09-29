@@ -13,6 +13,10 @@
 //! reference the final result of an earlier step with a `{{steps.<name>}}`
 //! placeholder, so steps build on each other; [`Workflow::validate`]
 //! rejects references that don't resolve before any provider call is made.
+//! A step can also declare a `script:` instead of a `prompt:` — its shell
+//! script runs directly (no model, no cost) and its stdout feeds later steps
+//! through the same placeholders; [`Workflow::validate`] fails a step that
+//! sets both (or neither) before the run starts.
 //! A runtime that supplies a user message (e.g. `harness::run_task` for
 //! plain prompts) fills `{{prompt}}` placeholders with it — the workflow
 //! CLI passes none.
@@ -22,6 +26,7 @@ use crate::prompts;
 use serde::Deserialize;
 use serde_json::json;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// The workflow plain prompts run through. Created by
 /// `aime create base`.
@@ -31,6 +36,9 @@ pub const BASE: &str = "base";
 /// retries with reviewer feedback) before the workflow accepts the last
 /// result and reports the goal as unmet.
 pub const MAX_GOAL_ATTEMPTS: usize = 3;
+
+/// How long a `script:` step may run before it's killed.
+pub const SCRIPT_TIMEOUT: u64 = 300;
 
 /// Normalize an optional model id: trimmed, and `None` when empty.
 fn non_empty(m: Option<&str>) -> Option<&str> {
@@ -90,6 +98,25 @@ impl Workflow {
         }
         let mut done: Vec<&str> = Vec::with_capacity(self.steps.len());
         for step in &self.steps {
+            let scripted = step.script.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_some();
+            if scripted && !step.prompt.trim().is_empty() {
+                return Err(format!(
+                    "Workflow '{}' step '{}' defines both 'prompt' and 'script' — a step runs one or the other, not both; remove one",
+                    self.name, step.name
+                ));
+            }
+            if !scripted && step.prompt.trim().is_empty() {
+                return Err(format!(
+                    "Workflow '{}' step '{}' defines neither 'prompt' nor 'script' — set one",
+                    self.name, step.name
+                ));
+            }
+            if scripted {
+                // script steps run no model, so they need none — but the
+                // rest of the validation still applies.
+                done.push(step.name.as_str());
+                continue;
+            }
             self.step_model(step)?;
             for name in step_refs(&step.prompt) {
                 if !done.contains(&name.as_str()) {
@@ -108,7 +135,18 @@ impl Workflow {
 #[derive(Clone, Debug, Deserialize)]
 pub struct WorkflowStep {
     pub name: String,
+    /// The prompt this step runs through the agentic loop. Absent for
+    /// script steps; [`Workflow::validate`] rejects a step that sets both
+    /// `prompt` and `script` (and a step that sets neither) before the run
+    /// starts.
+    #[serde(default, deserialize_with = "tolerant_string")]
     pub prompt: String,
+    /// Shell script this step runs directly instead of a prompt — no model,
+    /// no tool loop, no cost. The script's stdout becomes the step's answer,
+    /// so later steps can use it through `{{steps.<name>}}` placeholders.
+    /// Runs in the beat's working directory when it has one.
+    #[serde(default)]
+    pub script: Option<String>,
     /// Per-step model override. `None` → the workflow-level model (required
     /// somewhere — a step with neither fails at run time).
     #[serde(default)]
@@ -141,17 +179,13 @@ fn step_refs(prompt: &str) -> Vec<String> {
     refs
 }
 
-/// The prompt a step runs with: `{{steps.<name>}}` placeholders filled with
-/// the answers of the steps that ran before it (the first earlier step wins
-/// when names repeat), and `{{prompt}}` with the runtime-supplied message
-/// when there is one. [`Workflow::validate`] guarantees the references
-/// resolve; anything else stays visible, like `prompts::fill` does for
-/// template typos.
-fn effective_prompt(
-    step: &WorkflowStep,
-    user_prompt: Option<&str>,
-    done: &[WorkflowStepResult],
-) -> String {
+/// The text a step runs with — its prompt or its script — with
+/// `{{steps.<name>}}` placeholders filled with the answers of the steps that
+/// ran before it (the first earlier step wins when names repeat), and
+/// `{{prompt}}` with the runtime-supplied message when there is one.
+/// [`Workflow::validate`] guarantees the references resolve; anything else
+/// stays visible, like `prompts::fill` does for template typos.
+fn effective_text(text: &str, user_prompt: Option<&str>, done: &[WorkflowStepResult]) -> String {
     let mut vars: Vec<(String, String)> = done
         .iter()
         .map(|s| (format!("steps.{}", s.name), s.answer.clone()))
@@ -160,7 +194,50 @@ fn effective_prompt(
         vars.push(("prompt".to_string(), p.to_string()));
     }
     let vars: Vec<(&str, &str)> = vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    prompts::fill(&step.prompt, &vars)
+    prompts::fill(text, &vars)
+}
+
+/// The prompt a prompt step runs with.
+fn effective_prompt(
+    step: &WorkflowStep,
+    user_prompt: Option<&str>,
+    done: &[WorkflowStepResult],
+) -> String {
+    effective_text(&step.prompt, user_prompt, done)
+}
+
+/// Run a script step's shell script directly — no model, no tool loop, no
+/// cost. Runs in `dir` when the beat has a working directory, else in the
+/// process's current directory. The script's combined stdout (plus stderr
+/// when it fails) becomes the step's answer. Bounded by [`SCRIPT_TIMEOUT`].
+async fn run_script(script: &str, dir: Option<&str>) -> Result<String, String> {
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.arg("-c")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    if let Some(dir) = dir {
+        cmd.current_dir(dir);
+    }
+    let child = cmd.spawn().map_err(|e| e.to_string())?;
+    match tokio::time::timeout(Duration::from_secs(SCRIPT_TIMEOUT), child.wait_with_output()).await {
+        Ok(Ok(output)) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            if output.status.success() {
+                Ok(stdout)
+            } else {
+                Err(format!(
+                    "exit {:?}: {}",
+                    output.status.code(),
+                    if stderr.trim().is_empty() { stdout.clone() } else { stderr }
+                ))
+            }
+        }
+        Ok(Err(e)) => Err(e.to_string()),
+        Err(_) => Err(format!("Script timed out ({SCRIPT_TIMEOUT}s)")),
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -477,7 +554,44 @@ pub async fn run_hooked(
         workflow.steps.len()
     ));
 
+    let working_dir = crate::projects::working_dir(beat_id)?;
     for (idx, step) in workflow.steps.iter().enumerate() {
+        if non_empty(step.script.as_deref()).is_some() {
+            let script = effective_text(
+                step.script.as_deref().map(str::trim).unwrap_or(""),
+                user_prompt,
+                &steps,
+            );
+            on_step_start(idx, step, &script);
+            crate::log::info(format!(
+                "beat {beat_id}: workflow '{}' running script step '{}' ({} chars)",
+                workflow.name, step.name, script.len()
+            ));
+            let answer = match run_script(&script, working_dir.as_deref()).await {
+                Ok(out) => out,
+                Err(e) => {
+                    return Err(format!(
+                        "Workflow '{}' script step '{}' failed: {e}",
+                        workflow.name, step.name
+                    ))
+                }
+            };
+            let sr = WorkflowStepResult {
+                name: step.name.clone(),
+                answer: answer.clone(),
+                model: "script".to_string(),
+                cost_usd: 0.0,
+                attempts: None,
+                goal_met: None,
+            };
+            crate::log::info(format!(
+                "beat {beat_id}: workflow '{}' step '{}' done (script, {} chars)",
+                workflow.name, sr.name, sr.answer.len()
+            ));
+            on_step_done(&sr);
+            steps.push(sr);
+            continue;
+        }
         let model = workflow.step_model(step)?;
         let goal = non_empty(step.goal.as_deref());
         let mut prompt = effective_prompt(step, user_prompt, &steps);
@@ -637,6 +751,7 @@ steps:
         let step = WorkflowStep {
             name: "report".into(),
             prompt: "Based on {{steps.analyze}} (and {{prompt}}), report.".into(),
+            script: None,
             model: None,
             goal: None,
         };
@@ -665,6 +780,7 @@ steps:
         let step = WorkflowStep {
             name: "report".into(),
             prompt: "Risk level: {{ steps.analyze }}".into(),
+            script: None,
             model: None,
             goal: None,
         };
@@ -779,6 +895,96 @@ steps:
         );
     }
 
+    #[test]
+    fn test_parse_script_step() {
+        let yaml = r#"
+name: scripted
+model: m
+steps:
+  - name: setup
+    script: |
+      mkdir -p build && echo done
+  - name: report
+    prompt: Report.
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(wf.steps[0].script.as_deref(), Some("mkdir -p build && echo done\n"));
+        assert_eq!(wf.steps[0].prompt, "");
+        assert_eq!(wf.steps[1].script, None);
+        assert!(wf.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_prompt_and_script() {
+        let yaml = r#"
+name: both
+model: m
+steps:
+  - name: a
+    prompt: Do the thing.
+    script: |
+      echo hi
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        let err = wf.validate().unwrap_err();
+        assert!(
+            err.contains("defines both 'prompt' and 'script'"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_neither_prompt_nor_script() {
+        let yaml = r#"
+name: neither
+model: m
+steps:
+  - name: a
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        let err = wf.validate().unwrap_err();
+        assert!(
+            err.contains("defines neither 'prompt' nor 'script'"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validate_script_step_needs_no_model() {
+        let yaml = r#"
+name: no-model
+steps:
+  - name: a
+    script: |
+      echo hi
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        assert!(wf.validate().is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_run_script_step_executes_and_feeds_later_steps() {
+        // shares log::HOME_LOCK: std::env::set_var("HOME") is process-global
+        // and races across parallel tests (also with the db/log tests)
+        let _g = crate::log::HOME_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", dir.path());
+        let yaml = r#"
+name: scripted-run
+model: m
+steps:
+  - name: greet
+    script: |
+      echo hello-from-script
+"#;
+        let wf: Workflow = serde_yaml::from_str(yaml).unwrap();
+        assert!(wf.validate().is_ok());
+        let result = run(1, &wf, None, &[], &mut |_| {}).await.unwrap();
+        assert_eq!(result.steps.len(), 1);
+        assert_eq!(result.steps[0].answer, "hello-from-script\n");
+        assert_eq!(result.steps[0].model, "script");
+        assert_eq!(result.steps[0].cost_usd, 0.0);
+    }
     #[tokio::test]
     async fn test_run_fails_fast_on_unresolvable_step_ref() {
         let yaml = r#"
